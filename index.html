@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="public/styles-v2.css" />
 </head>
 <body>
   <div id="app" class="app">
@@ -20,44 +21,41 @@
 
       <header class="topbar">
         <button class="brand" aria-label="Rove home"><span class="brand-mark">R</span><span class="brand-name">Rove</span></button>
-        <button class="search" id="searchBtn"><span class="search-icon">⌕</span><span class="search-copy">Where do you want to go?</span><kbd>⌘ K</kbd></button>
+        <button class="search" id="searchBtn"><span class="search-icon">⌕</span><span class="search-copy">Search routes and stops</span><kbd>⌘ K</kbd></button>
         <div class="top-actions"><button class="icon-btn" id="themeBtn" aria-label="Toggle dark mode">◐</button></div>
       </header>
 
       <aside class="sidebar" id="sidebar">
-        <div class="sidebar-head"><h1>Transit</h1><button class="close-panel" id="closeSidebar" aria-label="Close">×</button></div>
-        <div class="planner-tabs" role="tablist"><button class="tab active" data-tab="plan">Plan</button><button class="tab" data-tab="nearby">Nearby</button><button class="tab" data-tab="saved">Saved</button></div>
-        <section class="tab-panel active" id="planPanel">
-          <div class="trip-inputs">
-            <div class="route-rail"><i></i><span></span><b></b></div>
-            <label><small>FROM</small><input id="fromInput" value="Current location" aria-label="Starting location"></label>
-            <label><small>TO</small><input id="toInput" placeholder="Add destination" aria-label="Destination"></label>
-            <button id="swapBtn" class="swap" aria-label="Swap origin and destination">⇅</button>
+        <div class="sheet-handle" data-sheet-handle aria-label="Resize layers panel"><i></i></div>
+        <div class="sidebar-head"><div><span class="panel-kicker">Map</span><h1>Transit layers</h1></div><button class="close-panel" id="closeSidebar" aria-label="Close layers">×</button></div>
+        <div class="planner-tabs" role="tablist"><button class="tab active" data-tab="layers">Networks</button><button class="tab" data-tab="saved">Saved</button></div>
+        <section class="tab-panel active" id="layersPanel">
+          <button class="panel-search" id="panelSearch"><span>⌕</span><span>Find a route or stop</span><b>›</b></button>
+          <div class="basemap-control" aria-label="Map appearance">
+            <button class="active" data-map-style="standard">Standard</button>
+            <button data-map-style="satellite">Satellite</button>
+            <button data-map-style="dark">Dark</button>
           </div>
-          <div class="trip-options"><button class="chip active">Leave now⌄</button><button class="chip">All modes⌄</button></div>
-          <button class="primary" id="planBtn">Plan my trip <span>→</span></button>
-          <div id="tripResult" class="trip-result hidden"></div>
-          <div class="section-title"><h2>Show networks</h2><button id="toggleAll">Show all</button></div>
+          <div class="section-title"><h2>On the map</h2><button id="toggleAll">Show all</button></div>
           <div id="agencyList" class="agency-list"></div>
           <div class="data-note"><span class="status-dot"></span><div><strong>Scheduled network</strong><p>Live connections await your 511 API key.</p></div><button id="dataInfo">i</button></div>
         </section>
-        <section class="tab-panel" id="nearbyPanel"><div class="empty-state"><span>◎</span><h2>Nearby stations</h2><p>Choose the location button to see stations around you.</p><button class="secondary" id="locateNearby">Use my location</button></div></section>
         <section class="tab-panel" id="savedPanel"><div id="savedList" class="saved-list"></div></section>
         <button id="replayTour" class="tour-link">? &nbsp;Replay the quick tour</button>
       </aside>
 
       <div class="map-tools"><button id="zoomIn" aria-label="Zoom in">+</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="locate" aria-label="Show my location">⌖</button></div>
       <div class="map-key"><span><i class="live-key"></i>Live</span><span><i class="scheduled-key"></i>Scheduled</span></div>
-      <button class="mobile-menu" id="mobileMenu">⌘ <span>Transit</span></button>
+      <button class="mobile-menu" id="mobileMenu"><span class="layers-icon">≡</span><span>Layers</span></button>
       <div class="attribution">Map illustration · Transit data sources</div>
     </main>
 
-    <aside class="detail-panel" id="detailPanel" aria-live="polite"><button class="close-panel" id="closeDetail">×</button><div id="detailContent"></div></aside>
-    <div class="modal-backdrop hidden" id="searchModal"><div class="search-modal"><div class="modal-search"><span>⌕</span><input id="globalSearch" placeholder="Search stations, routes and places" autocomplete="off"><button id="closeSearch">Esc</button></div><div id="searchResults" class="search-results"></div></div></div>
+    <aside class="detail-panel" id="detailPanel" aria-live="polite"><div class="sheet-handle" data-sheet-handle aria-label="Resize details panel"><i></i></div><button class="close-panel" id="closeDetail">×</button><div id="detailContent"></div></aside>
+    <div class="modal-backdrop hidden" id="searchModal"><div class="search-modal"><div class="modal-search"><span>⌕</span><input id="globalSearch" placeholder="Search routes and stops" autocomplete="off"><button id="closeSearch">Esc</button></div><div class="search-hint">Across BART, Muni, Caltrain, VTA and AC Transit</div><div id="searchResults" class="search-results"></div></div></div>
     <div class="toast" id="toast"></div>
     <div class="tour-backdrop hidden" id="tour"><div class="tour-card"><span class="tour-step" id="tourStep"></span><div class="tour-visual" id="tourVisual"></div><h2 id="tourTitle"></h2><p id="tourText"></p><div class="tour-progress" id="tourProgress"></div><div class="tour-actions"><button id="tourSkip">Skip</button><div><button id="tourBack">Back</button><button class="primary small" id="tourNext">Next</button></div></div></div></div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
