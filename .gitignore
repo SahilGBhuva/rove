@@ -1,0 +1,28 @@
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+.output/
+.cache/
+.parcel-cache/
+
+# Downloaded/generated source archives
+data/raw/
+data/extracted/
+
+# Logs and local tooling
+*.log
+npm-debug.log*
+.DS_Store
+.idea/
+.vscode/
+coverage/
+tmp/
+temp/

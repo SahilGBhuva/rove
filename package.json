@@ -1,0 +1,14 @@
+{
+  "name": "rove-transit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "check": "node --check server.mjs && node --check app.js",
+    "configure-511": "./scripts/configure-511-key.sh",
+    "refresh-data": "./scripts/refresh-data.sh"
+  },
+  "dependencies": {
+    "gtfs-realtime-bindings": "^1.1.1"
+  }
+}
