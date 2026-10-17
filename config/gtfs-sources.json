@@ -1,0 +1,27 @@
+{
+  "bart": {
+    "static": "https://www.bart.gov/dev/schedules/google_transit.zip",
+    "realtime": "BART direct trip updates and alerts",
+    "pairing": "verified direct-to-direct"
+  },
+  "muni": {
+    "static": "511 operator_id=SF",
+    "realtime": "511",
+    "pairing": "511-to-511; the expired SFMTA direct archive is rejected"
+  },
+  "vta": {
+    "static": "https://gtfs.vta.org/gtfs_vta.zip",
+    "realtime": "511 pending verification",
+    "pairing": "requires a verified crosswalk or migration to 511 static before live status"
+  },
+  "act": {
+    "static": "511 operator_id=AC",
+    "realtime": "511",
+    "pairing": "511-to-511; superseded mdb-1244 is not used"
+  },
+  "caltrain": {
+    "static": "https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip",
+    "realtime": "511 pending verification",
+    "pairing": "requires a verified crosswalk or migration to 511 static before live status"
+  }
+}

@@ -2,11 +2,11 @@
 set -eu
 cd "$(dirname "$0")/.."
 printf 'Paste your 511 SF Bay API key (input will be hidden): '
+trap 'stty echo 2>/dev/null || true' EXIT HUP INT TERM
 stty -echo
 IFS= read -r key
 stty echo
 printf '\n'
-trap 'stty echo 2>/dev/null || true' EXIT HUP INT TERM
 if [ -z "$key" ]; then
   echo 'No key entered; nothing changed.'
   exit 1

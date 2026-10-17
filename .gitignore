@@ -16,6 +16,7 @@ build/
 # Downloaded/generated source archives
 data/raw/
 data/extracted/
+data/reports/
 
 # Logs and local tooling
 *.log
