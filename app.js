@@ -289,14 +289,25 @@ function splitRealtimeId(value) {
   return m ? { op: m[1], local: m[2] } : { op: null, local: String(value || '') };
 }
 
+/* Which live features to show for an agency. With the v2 backend this comes from the live
+ * quality gate (quality[agency].arrivalsVerified). With the older /api/realtime it falls back
+ * to the coverage measured on October 17, 2026, overridden by any quality the server sends. */
 function coverage(agencyId) {
-  const fromServer = state.realtime?.meta?.coverage?.[agencyId];
-  return { ...(DEFAULT_COVERAGE[agencyId] || { vehicles: false, arrivals: false }), ...(fromServer || {}) };
+  const rt = state.realtime;
+  if (rt?.version === 2) {
+    const q = rt.quality?.[agencyId] || null;
+    const feedOn = agencyId === 'bart' ? Boolean(rt.configured?.bartDirect) : Boolean(rt.configured?.feed511);
+    return { vehicles: agencyId !== 'bart' && feedOn, arrivals: feedOn && Boolean(q?.arrivalsVerified), quality: q };
+  }
+  const base = { ...(DEFAULT_COVERAGE[agencyId] || { vehicles: false, arrivals: false }) };
+  if (rt?.quality?.[agencyId]) base.arrivals = Boolean(rt.quality[agencyId].arrivalsVerified);
+  return { ...base, ...(rt?.meta?.coverage?.[agencyId] || {}) };
 }
 
 /* Exact matching only. If the server ever sends agencyId and routeKey (an exact index),
  * those are used directly. Otherwise the 511 operator prefix is stripped and the route ID
  * must match a static route ID exactly. No name-based guessing. */
+
 function resolveItem(item) {
   if (item.agencyId && idx.agencies.has(item.agencyId)) {
     return { agencyId: item.agencyId, route: item.routeKey ? idx.routes.get(item.routeKey) || null : null };
@@ -318,18 +329,29 @@ function tripLabel(agencyId, item) {
 
 function liveVehicles() {
   const rt = state.realtime;
-  if (!rt?.configured || !rt.vehicles?.items) return [];
+  if (!rtConfigured()) return [];
   const out = [];
-  for (const v of rt.vehicles.items) {
+  if (rt.version === 2) {
+    for (const v of rt.vehicles || []) {
+      if (!v.routeId || !Number.isFinite(v.lat) || !Number.isFinite(v.lon) || (v.lat === 0 && v.lon === 0)) continue;
+      if (!coverage(v.agency).vehicles) continue;
+      const route = idx.routes.get(routeKey(v.agency, v.routeId));
+      if (!route) continue;
+      out.push({ v, agencyId: v.agency, route, label: null, headsign: v.headsign || null });
+    }
+    return out;
+  }
+  for (const v of rt.vehicles?.items || []) {
     if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon) || (v.lat === 0 && v.lon === 0)) continue;
     const res = resolveItem(v);
     if (!res || !coverage(res.agencyId).vehicles) continue;
     const label = res.route ? null : tripLabel(res.agencyId, v);
     if (!res.route && !label) continue;
-    out.push({ v, agencyId: res.agencyId, route: res.route, label });
+    out.push({ v, agencyId: res.agencyId, route: res.route, label, headsign: null });
   }
   return out;
 }
+
 
 function arrivalsForPlace(place) {
   const rt = state.realtime;
@@ -369,18 +391,25 @@ function delayStatus(delay) {
   return { cls: 'status-live', text: 'On time' };
 }
 
+/* Alerts for an agency, optionally narrowed to routes or stops. Works with both the v2 shape
+ * ({agencies:[...], entities with raw ids}) and the older shape (entities with 511 prefixes). */
 function activeAlerts({ agencyId, routeKeys = [], stopIds = null }) {
-  const items = state.realtime?.alerts?.items || [];
+  const rt = state.realtime;
+  const items = rt?.version === 2 ? rt.alerts || [] : rt?.alerts?.items || [];
   const now = nowSec();
   const routeIds = new Set(routeKeys.map(k => k.split('::')[1]));
   return items.filter(alert => {
     const active = !alert.activePeriods?.length || alert.activePeriods.some(p => (!p.start || p.start <= now) && (!p.end || p.end >= now));
-    if (!active || !alert.entities?.length) return false;
-    return alert.entities.some(e => {
-      const agencyOp = splitRealtimeId(e.agencyId).op || String(e.agencyId || '').toUpperCase();
+    if (!active) return false;
+    if (Array.isArray(alert.agencies) && !alert.agencies.includes(agencyId)) return false;
+    const entities = alert.entities || [];
+    if (!entities.length) return Array.isArray(alert.agencies);
+    return entities.some(e => {
       const route = splitRealtimeId(e.routeId), stop = splitRealtimeId(e.stopId);
-      const entityAgency = OPERATOR_TO_AGENCY[agencyOp] || OPERATOR_TO_AGENCY[route.op] || OPERATOR_TO_AGENCY[stop.op] || null;
-      if (entityAgency !== agencyId) return false;
+      const op = route.op || stop.op || splitRealtimeId(e.agencyId).op || String(e.agencyId || '').toUpperCase();
+      const entityAgency = OPERATOR_TO_AGENCY[op] || (Array.isArray(alert.agencies) && alert.agencies.length === 1 ? alert.agencies[0] : null);
+      if (entityAgency && entityAgency !== agencyId) return false;
+      if (!entityAgency && !Array.isArray(alert.agencies)) return false;
       if (e.routeId && !routeIds.has(route.local)) return false;
       if (e.stopId && (!stopIds || !stopIds.has(stop.local))) return false;
       return true;
@@ -388,33 +417,43 @@ function activeAlerts({ agencyId, routeKeys = [], stopIds = null }) {
   });
 }
 
+
 function realtimeAge() {
   const rt = state.realtime;
+  if (rt?.version === 2) return rt.feeds?.vehicles?.headerTimestamp || rt.feeds?.updates?.headerTimestamp || rt.feeds?.bartUpdates?.headerTimestamp || null;
   return rt?.vehicles?.headerTimestamp || rt?.updates?.headerTimestamp || null;
 }
+
 
 async function loadRealtime() {
   if (document.hidden) return;
   try {
-    const response = await fetch('/api/realtime', { cache: 'no-store' });
-    if (!response.ok) throw new Error(`Realtime returned ${response.status}`);
-    state.realtime = await response.json();
+    let response = await fetch('/api/v2/realtime', { cache: 'no-store' });
+    if (response.status === 404) {
+      response = await fetch('/api/realtime', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Realtime returned ${response.status}`);
+      state.realtime = { ...(await response.json()), version: 1 };
+    } else {
+      if (!response.ok) throw new Error(`Realtime returned ${response.status}`);
+      state.realtime = { ...(await response.json()), version: 2 };
+    }
   } catch (error) {
     console.warn('Realtime unavailable:', error.message);
-    if (state.realtime) state.realtime = { ...state.realtime, fetchFailed: true };
+    state.realtime = state.realtime ? { ...state.realtime, fetchFailed: true } : { configured: false, fetchFailed: true, version: 0 };
   }
   renderVehicles();
   refreshLiveViews();
 }
 
+/* ---------- Arrivals ---------- */
+
 /* ======================================================================
  * 5. Map styles and layers
  * ==================================================================== */
+
 const OPENFREEMAP_GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
-const MAP_STYLES = {
-  standard: 'https://tiles.openfreemap.org/styles/positron',
-  dark: 'https://tiles.openfreemap.org/styles/dark'
-};
+/* Standard and Dark both start from OpenFreeMap Positron and are recolored by restyleBasemap(). */
+const BASEMAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
 /* Esri World Imagery. Review Esri's terms before any public launch. */
 const SATELLITE_STYLE = {
   version: 8,
@@ -428,39 +467,93 @@ const SATELLITE_STYLE = {
     { id: 'reference-labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 0.85 } }
   ]
 };
-const fallbackStyle = dark => ({ version: 8, glyphs: OPENFREEMAP_GLYPHS, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': dark ? '#121315' : '#f6f4ef' } }] });
+const fallbackStyle = dark => ({ version: 8, glyphs: OPENFREEMAP_GLYPHS, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': dark ? '#15171a' : '#f4f1ea' } }] });
 
 const THEME = {
-  light: { surface: '#ffffff', ink: '#111214', bus: '#7b8088', faded: '#a9adb3', stopStroke: '#111214', journeyWalk: '#2f6bff', halo: '#ffffff' },
-  dark: { surface: '#16171a', ink: '#f2f1ee', bus: '#7d8189', faded: '#4a4c51', stopStroke: '#f2f1ee', journeyWalk: '#5c8bff', halo: '#16171a' }
+  light: { brightCasing: '#8a7d4a', surface: '#ffffff', ink: '#111214', bus: '#7b8088', faded: '#a9adb3', stopStroke: '#111214', journeyWalk: '#2f6bff', halo: '#ffffff' },
+  dark: { brightCasing: '#16171a', surface: '#16171a', ink: '#f2f1ee', bus: '#7d8189', faded: '#4a4c51', stopStroke: '#f2f1ee', journeyWalk: '#5c8bff', halo: '#16171a' }
 };
 const theme = () => (state.mapMode === 'dark' ? THEME.dark : THEME.light);
+
+/* Rove's basemap palettes, applied to the OpenFreeMap Positron layers. Land is warm off-white,
+ * water a soft blue, parks a muted sage, and roads a subtle gold, so the transit lines remain
+ * the most colorful things on the map. */
+const BASEMAP = {
+  light: {
+    land: '#f4f1ea', residential: '#efebe2', park: '#dce6cd', wood: '#d4e0c6', ice: '#f8f8f5',
+    water: '#bdd6e4', waterway: '#a9c8dc', building: '#e8e2d6', aeroway: '#ebe7de', runway: '#e2ddd2',
+    path: '#e6dfd1', minor: '#ffffff', majorCasing: '#e9dec3', major: '#fbf6e9', majorSubtle: 'rgba(222, 205, 160, 0.4)',
+    motorwayCasing: '#e4d2a6', motorway: '#f1e4c2', motorwaySubtle: 'rgba(212, 192, 146, 0.38)', rail: '#cdc6b8', railDash: '#f4f1ea',
+    boundary: '#bdb5a6', label: '#2c2e33', labelSoft: '#5f636a', roadLabel: '#6f685c', waterLabel: '#4f7491', halo: 'rgba(246, 243, 236, 0.92)'
+  },
+  dark: {
+    land: '#15171a', residential: '#181a1e', park: '#1a241f', wood: '#1b2620', ice: '#1d1f22',
+    water: '#0f2130', waterway: '#16304a', building: '#1d2024', aeroway: '#1c1e22', runway: '#26292e',
+    path: '#24272b', minor: '#2a2d32', majorCasing: '#26241f', major: '#2f2d28', majorSubtle: 'rgba(80, 72, 55, 0.45)',
+    motorwayCasing: '#363024', motorway: '#423a2b', motorwaySubtle: 'rgba(95, 82, 58, 0.45)', rail: '#33363b', railDash: '#15171a',
+    boundary: '#4a4c51', label: '#dcd9d2', labelSoft: '#a9a6a0', roadLabel: '#9c978c', waterLabel: '#86a9c2', halo: 'rgba(21, 23, 26, 0.9)'
+  }
+};
+
+function restyleBasemap(style, dark) {
+  const c = dark ? BASEMAP.dark : BASEMAP.light;
+  const fills = {
+    background: ['background-color', c.land], park: ['fill-color', c.park], water: ['fill-color', c.water],
+    landcover_ice_shelf: ['fill-color', c.ice], landcover_glacier: ['fill-color', c.ice], landuse_residential: ['fill-color', c.residential],
+    landcover_wood: ['fill-color', c.wood], building: ['fill-color', c.building], 'aeroway-area': ['fill-color', c.aeroway], road_area_pier: ['fill-color', c.land]
+  };
+  const lines = {
+    waterway: c.waterway, tunnel_motorway_casing: c.majorCasing, tunnel_motorway_inner: c.major, 'aeroway-taxiway': c.runway, 'aeroway-runway-casing': c.runway,
+    'aeroway-runway': c.aeroway, road_pier: c.land, highway_path: c.path, highway_minor: c.minor, highway_major_casing: c.majorCasing, highway_major_inner: c.major,
+    highway_major_subtle: c.majorSubtle, highway_motorway_casing: c.motorwayCasing, highway_motorway_inner: c.motorway, highway_motorway_subtle: c.motorwaySubtle,
+    highway_motorway_bridge_casing: c.motorwayCasing, highway_motorway_bridge_inner: c.motorway, railway_transit: c.rail, railway_transit_dashline: c.railDash,
+    railway_service: c.rail, railway_service_dashline: c.railDash, railway: c.rail, railway_dashline: c.railDash, boundary_3: c.boundary, boundary_2: c.boundary, boundary_disputed: c.boundary
+  };
+  for (const layer of style.layers || []) {
+    layer.paint = layer.paint || {};
+    if (fills[layer.id]) {
+      const [prop, color] = fills[layer.id];
+      layer.paint[prop] = color;
+      if (layer.id === 'building') { layer.paint['fill-outline-color'] = dark ? '#24272c' : '#ddd5c6'; layer.paint['fill-opacity'] = 0.85; }
+      if (layer.id === 'landuse_residential') layer.paint['fill-opacity'] = 0.8;
+    } else if (lines[layer.id]) {
+      layer.paint['line-color'] = lines[layer.id];
+    } else if (layer.type === 'symbol') {
+      if (/housenumber/.test(layer.id)) { layer.layout = { ...(layer.layout || {}), visibility: 'none' }; continue; }
+      let color = c.label;
+      if (/water/.test(layer.id)) color = c.waterLabel;
+      else if (/highway-name|road/.test(layer.id)) color = c.roadLabel;
+      else if (/label_other|label_state|airport/.test(layer.id)) color = c.labelSoft;
+      layer.paint['text-color'] = color;
+      layer.paint['text-halo-color'] = c.halo;
+      layer.paint['text-halo-width'] = Math.max(1.2, Number(layer.paint['text-halo-width']) || 0);
+    }
+  }
+  return style;
+}
 
 async function fetchStyle(mode) {
   if (mode === 'satellite') return SATELLITE_STYLE;
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 7000);
-    const response = await fetch(MAP_STYLES[mode], { signal: controller.signal });
+    const response = await fetch(BASEMAP_STYLE_URL, { signal: controller.signal });
     clearTimeout(timer);
     if (!response.ok) throw new Error(`Style returned ${response.status}`);
-    const style = await response.json();
-    for (const layer of style.layers || []) {
-      if (/poi|housenumber|aerodrome_label|airport/i.test(layer.id)) layer.layout = { ...(layer.layout || {}), visibility: 'none' };
-    }
-    return style;
+    return restyleBasemap(await response.json(), mode === 'dark');
   } catch (error) {
     console.warn('Basemap unavailable, using a plain background:', error.message);
     return fallbackStyle(mode === 'dark');
   }
 }
 
+
 function routeFeatures() {
   const features = [];
   for (const info of idx.routes.values()) {
     for (const shape of info.r.shapes || []) {
       if (!shape || shape.length < 2) continue;
-      features.push({ type: 'Feature', properties: { key: info.key, agency: info.a.id, cat: info.cat, color: info.color }, geometry: { type: 'LineString', coordinates: shape } });
+      features.push({ type: 'Feature', properties: { key: info.key, agency: info.a.id, cat: info.cat, color: info.color, bright: luminance(info.color) > 0.55 ? 1 : 0 }, geometry: { type: 'LineString', coordinates: shape } });
     }
   }
   return { type: 'FeatureCollection', features };
@@ -501,9 +594,9 @@ function addTransitLayers() {
   const line = { type: 'line', source: 'transit-routes', layout: { 'line-cap': 'round', 'line-join': 'round' } };
   map.addLayer({ ...line, id: 'tr-bus', minzoom: 11.5, filter: ['==', ['get', 'cat'], 'bus'], paint: { 'line-color': t.bus, 'line-width': ['interpolate', ['linear'], ['zoom'], 11.5, 0.7, 14, 1.4, 17, 2.6], 'line-opacity': ['interpolate', ['linear'], ['zoom'], 11.5, 0, 12.5, 0.38] } }, before);
   map.addLayer({ ...line, id: 'tr-light', minzoom: 9.5, filter: ['==', ['get', 'cat'], 'light'], paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 9.5, 1.1, 13, 2.4, 16, 4], 'line-opacity': 0.75 } }, before);
-  map.addLayer({ ...line, id: 'tr-heavy-casing', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': t.surface, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 8], 'line-opacity': 0.9 } }, before);
+  map.addLayer({ ...line, id: 'tr-heavy-casing', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.surface], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 8], 'line-opacity': 0.9 } }, before);
   map.addLayer({ ...line, id: 'tr-heavy', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.6, 12, 3, 16, 5], 'line-opacity': 0.92 } }, before);
-  map.addLayer({ ...line, id: 'tr-selected-casing', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': t.surface, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 5, 12, 8, 16, 11] } }, before);
+  map.addLayer({ ...line, id: 'tr-selected-casing', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.surface], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 5, 12, 8, 16, 11] } }, before);
   map.addLayer({ ...line, id: 'tr-selected', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 7] } }, before);
 
   map.addLayer({ id: 'journey-casing', type: 'line', source: 'journey', filter: ['==', ['get', 'mode'], 'TRANSIT'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': t.surface, 'line-width': 9 } });
@@ -608,13 +701,13 @@ function highlightPlace(place) {
 function renderVehicles() {
   const source = state.map?.getSource('vehicles');
   if (!source) return;
-  const stale = Boolean(state.realtime?.vehicles?.stale);
-  const features = liveVehicles().map(({ v, agencyId, route, label }) => {
+  const stale = vehiclesStale();
+  const features = liveVehicles().map(({ v, agencyId, route, label, headsign }) => {
     const a = idx.agencies.get(agencyId);
     const color = route ? route.color : normalizeColor(a?.color);
     return {
       type: 'Feature',
-      properties: { id: v.id, vehicle: v.label || v.id || '', key: route?.key || '', agency: agencyId, cat: route?.cat || (agencyId === 'caltrain' ? 'heavy' : 'bus'), color, badge: route?.badge || label || '', title: route?.title || label || '', ts: v.timestamp || 0, stale },
+      properties: { id: v.id, headsign: headsign ? displayName(headsign) : '', vehicle: v.label || v.id || '', key: route?.key || '', agency: agencyId, cat: route?.cat || (agencyId === 'caltrain' ? 'heavy' : 'bus'), color, badge: route?.badge || label || '', title: route?.title || label || '', ts: v.timestamp || 0, stale },
       geometry: { type: 'Point', coordinates: [v.lon, v.lat] }
     };
   });
@@ -682,6 +775,7 @@ function setupMapInteractions() {
   });
 
   map.on('click', e => {
+    if (state.mapPick) { endMapPick(e.lngLat); return; }
     const box = isMobile() ? 12 : 6;
     const hits = map.queryRenderedFeatures([[e.point.x - box, e.point.y - box], [e.point.x + box, e.point.y + box]], { layers: present() });
     if (!hits.length) return;
@@ -694,7 +788,17 @@ function setupMapInteractions() {
     else if (keys.length > 1) showRouteChooser(e.lngLat, keys);
   });
 
-  map.on('dragstart', () => { if (isMobile() && state.detent !== 'peek') setDetent('peek'); closePopovers(); });
+  map.on('dragstart', () => { if (isMobile() && state.detent !== 'peek' && !['plan'].includes(currentView().name)) setDetent('peek'); closePopovers(); });
+
+  map.on('contextmenu', e => {
+    const point = placeFromPoint(e.lngLat);
+    const html = `<div class="vehicle-pop"><strong>${esc(point.name)}</strong><div class="map-menu"><button class="text-button" data-pin="to">Directions to here</button><button class="text-button" data-pin="from">Leave from here</button></div></div>`;
+    const popup = new maplibregl.Popup({ offset: 6, maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(html).addTo(map);
+    popup.getElement().querySelectorAll('[data-pin]').forEach(b => b.addEventListener('click', () => {
+      popup.remove();
+      openPlan(b.dataset.pin === 'to' ? { to: point, from: state.plan.from || currentLocationPlace() } : { from: point });
+    }));
+  });
 }
 
 function showVehiclePopup(feature) {
@@ -703,7 +807,7 @@ function showVehiclePopup(feature) {
   const info = p.key ? idx.routes.get(p.key) : null;
   const badge = info ? badgeHtml(info) : `<span class="badge" style="background:${esc(normalizeColor(a?.color))};color:#fff">${esc(p.badge)}</span>`;
   const html = `<div class="vehicle-pop">${badge}<strong>${esc(info ? info.title : `${AGENCY_SHORT[p.agency] || ''} ${p.badge}`)}</strong>
-    <div class="row-meta">${esc(AGENCY_SHORT[p.agency] || '')}${p.vehicle ? ` · Vehicle ${esc(p.vehicle)}` : ''}</div>
+    <div class="row-meta">${p.headsign ? `To ${esc(p.headsign)} · ` : ''}${esc(AGENCY_SHORT[p.agency] || '')}${p.vehicle ? ` · Vehicle ${esc(p.vehicle)}` : ''}</div>
     <div class="row-meta ${p.stale ? 'status-stale' : ''}">${p.stale ? 'Location may be out of date. ' : ''}${esc(ageLabel(Number(p.ts)))}</div>
     ${info ? `<button class="text-button" data-popup-route="${esc(info.key)}">View line</button>` : ''}</div>`;
   const popup = new maplibregl.Popup({ offset: 12, maxWidth: '280px' }).setLngLat(feature.geometry.coordinates).setHTML(html).addTo(state.map);
@@ -721,15 +825,27 @@ function showRouteChooser(lngLat, keys) {
  * 6. Panel and bottom sheet
  * ==================================================================== */
 const isMobile = () => window.matchMedia('(max-width: 767px)').matches;
+const safeArea = { top: 0, bottom: 0 };
+
+function measureSafeArea() {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;left:0;top:0;width:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none';
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  safeArea.top = parseFloat(cs.paddingTop) || 0;
+  safeArea.bottom = parseFloat(cs.paddingBottom) || 0;
+  probe.remove();
+}
+
 const DETENTS = ['peek', 'half', 'full'];
 
 function detentHeight(name) {
   const vh = window.innerHeight;
-  const safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-t')) || 0;
-  if (name === 'peek') return 152;
-  if (name === 'half') return Math.round(vh * 0.5);
-  return Math.round(vh - 56 - safeTop);
+  if (name === 'peek') return Math.round(148 + safeArea.bottom);
+  if (name === 'half') return Math.round(Math.max(vh * 0.5, Math.min(360, vh - 120)));
+  return Math.round(vh - 56 - safeArea.top);
 }
+
 function currentSheetHeight() { return isMobile() ? detentHeight(state.detent) : 0; }
 
 function setDetent(name) {
@@ -737,21 +853,38 @@ function setDetent(name) {
   const panel = $('#panel');
   panel.classList.remove('detent-peek', 'detent-half', 'detent-full');
   panel.classList.add(`detent-${name}`);
+  $('#sheetGrabber').setAttribute('aria-valuetext', name === 'peek' ? 'Collapsed' : name === 'half' ? 'Half height' : 'Full height');
   applySheetHeight(isMobile() ? detentHeight(name) : 0);
+  if (name === 'peek') $('#panelBody').scrollTop = 0;
 }
+
 
 function applySheetHeight(px) {
   document.documentElement.style.setProperty('--sheet-h', `${px}px`);
   $('#mapControls').classList.toggle('hidden-by-sheet', isMobile() && px > window.innerHeight * 0.62);
 }
 
+/* Sheet heights on phones. Peek shows the search field (or the title of a detail view),
+ * half shows the main content next to the map, and full leaves a strip of map visible. */
+
+function nearestDetent(height, velocity, from) {
+  const current = DETENTS.indexOf(from);
+  if (Math.abs(velocity) > 0.45) return DETENTS[clamp(current + (velocity > 0 ? 1 : -1), 0, 2)];
+  return DETENTS.reduce((best, d) => (Math.abs(detentHeight(d) - height) < Math.abs(detentHeight(best) - height) ? d : best), 'peek');
+}
+
 function setupSheet() {
+  measureSafeArea();
   const panel = $('#panel');
-  const handles = [$('#sheetGrabber'), $('.panel-top')];
+  const body = $('#panelBody');
+  const minH = () => detentHeight('peek') - 48;
+  const maxH = () => detentHeight('full');
+
+  // Grabber and header: pointer events (mouse, pen, and touch).
   let drag = null;
   const onDown = e => {
     if (!isMobile() || e.target.closest('input, button:not(#sheetGrabber)')) return;
-    drag = { y: e.clientY, h: detentHeight(state.detent), t: performance.now(), moved: false, id: e.pointerId, el: e.currentTarget };
+    drag = { y: e.clientY, h: detentHeight(state.detent), t: performance.now(), moved: false, id: e.pointerId, fromGrabber: e.currentTarget.id === 'sheetGrabber' };
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
   const onMove = e => {
@@ -760,43 +893,82 @@ function setupSheet() {
     if (Math.abs(dy) > 4) drag.moved = true;
     if (!drag.moved) return;
     panel.classList.add('dragging');
-    applySheetHeight(clamp(drag.h + dy, detentHeight('peek') - 40, detentHeight('full')));
+    applySheetHeight(clamp(drag.h + dy, minH(), maxH()));
   };
   const onUp = e => {
     if (!drag || e.pointerId !== drag.id) return;
     panel.classList.remove('dragging');
-    const dy = drag.y - e.clientY, dt = Math.max(1, performance.now() - drag.t), velocity = dy / dt;
-    const wasTap = !drag.moved;
-    const current = DETENTS.indexOf(state.detent);
-    const height = drag.h + dy;
-    const fromGrabber = drag.el.id === 'sheetGrabber';
+    const dy = drag.y - e.clientY, velocity = dy / Math.max(1, performance.now() - drag.t);
+    const { moved, fromGrabber, h } = drag;
     drag = null;
-    if (wasTap) { if (fromGrabber) setDetent(DETENTS[(current + 1) % 3]); else setDetent(state.detent); return; }
-    let target;
-    if (Math.abs(velocity) > 0.5) target = DETENTS[clamp(current + (velocity > 0 ? 1 : -1), 0, 2)];
-    else target = DETENTS.reduce((best, d) => Math.abs(detentHeight(d) - height) < Math.abs(detentHeight(best) - height) ? d : best, 'peek');
-    setDetent(target);
+    if (!moved) { if (fromGrabber) setDetent(DETENTS[(DETENTS.indexOf(state.detent) + 1) % 3]); else setDetent(state.detent); return; }
+    setDetent(nearestDetent(h + dy, velocity, state.detent));
   };
-  for (const h of handles) {
+  for (const h of [$('#sheetGrabber'), $('.panel-top')]) {
     h.addEventListener('pointerdown', onDown);
     h.addEventListener('pointermove', onMove);
     h.addEventListener('pointerup', onUp);
     h.addEventListener('pointercancel', onUp);
   }
+
+  // Content area: below full height every vertical swipe moves the sheet. At full height the
+  // content scrolls, and pulling down from the top of the content lowers the sheet.
+  let touch = null;
+  body.addEventListener('touchstart', e => {
+    if (!isMobile() || e.touches.length !== 1 || e.target.closest('input, select, textarea')) { touch = null; return; }
+    touch = { y: e.touches[0].clientY, x: e.touches[0].clientX, t: performance.now(), h: detentHeight(state.detent), atTop: body.scrollTop <= 0, dragging: false, decided: false };
+  }, { passive: true });
+  body.addEventListener('touchmove', e => {
+    if (!touch) return;
+    const y = e.touches[0].clientY, dy = touch.y - y, dx = touch.x - e.touches[0].clientX;
+    if (!touch.decided) {
+      if (Math.abs(dy) < 6 && Math.abs(dx) < 6) return;
+      touch.decided = true;
+      const vertical = Math.abs(dy) > Math.abs(dx);
+      touch.dragging = vertical && (state.detent !== 'full' || (touch.atTop && body.scrollTop <= 0 && dy < 0));
+      if (touch.dragging) { touch.y = y; touch.t = performance.now(); }
+    }
+    if (!touch.dragging) return;
+    e.preventDefault();
+    panel.classList.add('dragging');
+    touch.lastDy = touch.y - y;
+    applySheetHeight(clamp(touch.h + touch.lastDy, minH(), maxH()));
+  }, { passive: false });
+  const endTouch = () => {
+    if (!touch?.dragging) { touch = null; return; }
+    panel.classList.remove('dragging');
+    const dy = touch.lastDy || 0, velocity = dy / Math.max(1, performance.now() - touch.t);
+    const target = nearestDetent(touch.h + dy, velocity, state.detent);
+    touch = null;
+    setDetent(target);
+  };
+  body.addEventListener('touchend', endTouch);
+  body.addEventListener('touchcancel', endTouch);
+
   $('#sheetGrabber').addEventListener('keydown', e => {
-    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'Enter' && e.key !== ' ') return;
+    if (!['ArrowUp', 'ArrowDown', 'Enter', ' '].includes(e.key)) return;
     e.preventDefault();
     const i = DETENTS.indexOf(state.detent);
     if (e.key === 'ArrowUp') setDetent(DETENTS[clamp(i + 1, 0, 2)]);
     else if (e.key === 'ArrowDown') setDetent(DETENTS[clamp(i - 1, 0, 2)]);
     else setDetent(DETENTS[(i + 1) % 3]);
   });
-  window.addEventListener('resize', () => setDetent(state.detent));
+  let resizeTimer, wasMobile = isMobile();
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      measureSafeArea();
+      setDetent(state.detent);
+      // Re-render only when crossing the phone breakpoint; an on-screen keyboard also resizes the window.
+      if (wasMobile !== isMobile()) { wasMobile = isMobile(); if (!document.activeElement?.matches('input, select')) render(); }
+    }, 120);
+  });
 }
 
 /* ======================================================================
  * 7. Views
  * ==================================================================== */
+
 const currentView = () => state.stack[state.stack.length - 1];
 
 function pushView(view, { detent } = {}) {
@@ -841,7 +1013,11 @@ function render() {
   const body = $('#panelBody');
   const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources };
   body.innerHTML = (renderers[view.name] || viewHome)(view);
-  $('#searchInput').closest('.search-field').hidden = ['plan', 'results', 'navigate'].includes(view.name);
+  const hideSearch = ['plan', 'results', 'navigate'].includes(view.name) || (isMobile() && ['route', 'stop', 'lines', 'sources'].includes(view.name));
+  $('#searchInput').closest('.search-field').hidden = hideSearch;
+  $('#panel').classList.toggle('search-hidden', hideSearch);
+  updatePlanMarkers();
+  setTimeout(prefetchVisibleArrivals, 0);
 }
 
 /* Re-renders views that show live data, without moving the scroll position. */
@@ -849,12 +1025,20 @@ function refreshLiveViews() {
   const view = currentView();
   if (!['home', 'route', 'stop', 'sources'].includes(view.name)) return;
   const body = $('#panelBody');
+  if (body.contains(document.activeElement) && document.activeElement.matches('input, select')) return;
   const scroll = body.scrollTop;
+  const focusedAction = document.activeElement?.closest?.('[data-action]');
+  const focusKey = focusedAction ? `${focusedAction.dataset.action}|${focusedAction.dataset.key || ''}|${focusedAction.dataset.stop || ''}` : null;
   const expanded = $$('.alert-row.expanded', body).map(el => el.dataset.alert);
   render();
   expanded.forEach(id => $(`.alert-row[data-alert="${CSS.escape(id)}"]`, body)?.classList.add('expanded'));
   body.scrollTop = scroll;
+  if (focusKey) {
+    const [action, key, stop] = focusKey.split('|');
+    $$(`[data-action="${CSS.escape(action)}"]`, body).find(el => (el.dataset.key || '') === key && (el.dataset.stop || '') === stop)?.focus({ preventScroll: true });
+  }
 }
+
 
 function backHeader(trailing = '') {
   return `<div class="view-head"><button class="back-button" data-action="back">${ICONS.back}<span>Back</span></button><span class="spacer"></span>${trailing}</div>`;
@@ -872,11 +1056,13 @@ function badgesFor(routes, max = 4) {
 function liveStatusLine() {
   const rt = state.realtime;
   if (!rt) return 'Checking for live data.';
-  if (!rt.configured) return 'Live data is not connected on this server. Lines and stops show scheduled information only.';
+  if (!rtConfigured()) return rt.fetchFailed ? 'Live data could not be reached. Lines and stops show scheduled information.' : 'Live data is not connected on this server. Lines and stops show scheduled information only.';
   if (rt.fetchFailed) return 'Live data could not be refreshed. Showing the last update.';
-  const stale = rt.vehicles?.stale || rt.updates?.stale;
-  return `${stale ? 'Live data is delayed. ' : ''}Live data ${ageLabel(realtimeAge()).toLowerCase()}.`;
+  const stale = rt.version === 2 ? Object.values(rt.feeds || {}).some(f => f?.stale) : (rt.vehicles?.stale || rt.updates?.stale);
+  const partial = rt.version === 2 && rt.configured && !rt.configured.feed511 && rt.configured.bartDirect ? ' Only BART live data is connected.' : '';
+  return `${stale ? 'Some live data is delayed. ' : ''}Live data ${ageLabel(realtimeAge()).toLowerCase()}.${partial}`;
 }
+
 
 function alertsHtml(alerts, max = 2) {
   if (!alerts.length) return '';
@@ -916,22 +1102,21 @@ function viewHome() {
 }
 
 function placeRow(place, trailing = '') {
-  const arrivals = arrivalsForPlace(place);
-  let meta = `${AGENCY_SHORT[place.a.id]}${place.s.k || idx.children.has(stopKey(place.a.id, place.s.id)) ? ' · Station' : ''}`;
-  if (arrivals?.length) {
-    const next = arrivals[0];
-    const first = next.times.find(t => !t.skipped);
+  const arrivals = cachedArrivals(place);
+  const isStation = place.s.k || idx.children.has(stopKey(place.a.id, place.s.id));
+  let meta = esc(`${AGENCY_SHORT[place.a.id]}${isStation ? ' · Station' : ''}`);
+  const next = arrivals?.status === 'live' ? arrivals.groups[0] : null;
+  if (next) {
+    const m = minutesLabel(next.times[0].time);
     const label = next.route ? next.route.badge : next.label;
-    const m = minutesLabel(first.time);
-    meta = `${ICONS.live}<span class="status-live">${esc(label)} ${esc(m.value)}${m.unit ? ` ${m.unit}` : ''}</span> · ${esc(meta)}`;
-  } else {
-    meta = esc(meta);
+    meta = `${ICONS.live}<span class="status-live">${esc(label)} in ${esc(m.value)}${m.unit ? ` ${m.unit}` : ''}</span> · ${meta}`;
   }
   return `<li><button class="row" data-action="stop" data-agency="${esc(place.a.id)}" data-stop="${esc(place.s.id)}">
     ${badgesFor(place.routes, 3)}
     <span class="row-main"><span class="row-title">${esc(place.s.n)}</span><span class="row-meta">${meta}</span></span>
     ${trailing ? `<span class="row-end caption">${esc(trailing)}</span>` : ICONS.chevron}</button></li>`;
 }
+
 
 function nearbyPlaces(location, limit) {
   const candidates = [];
@@ -1087,30 +1272,34 @@ function viewStop({ agency, stop }) {
   const { a, s } = place;
   const isSaved = state.saved.some(x => x.a === a.id && x.id === s.id);
   const isStation = s.k || idx.children.has(stopKey(a.id, s.id));
-  const arrivals = arrivalsForPlace(place);
   const cov = coverage(a.id);
-  const rt = state.realtime;
   const alerts = activeAlerts({ agencyId: a.id, routeKeys: place.routes.map(r => r.key), stopIds: place.ids });
+  const arrivals = rtConfigured() && cov.arrivals ? cachedArrivals(place) : null;
 
   let departures;
-  if (!rt?.configured) {
+  if (!rtConfigured()) {
     departures = '<p class="empty">Live arrivals are not connected on this server. The lines that serve this stop are listed below.</p>';
-  } else if (!cov.arrivals) {
-    departures = `<p class="empty">Live arrivals for ${esc(AGENCY_SHORT[a.id])} are not available yet. The lines that serve this stop are listed below.</p>`;
-  } else if (!arrivals?.length) {
-    departures = '<p class="empty">No live predictions for this stop right now. Service may have ended for the day, or vehicles may not be reporting.</p>';
+  } else if (!cov.arrivals || arrivals?.status === 'unverified') {
+    departures = `<p class="empty">Live arrivals for ${esc(AGENCY_SHORT[a.id])} are unavailable right now. Rove only shows predictions it can match to the schedule. The lines that serve this stop are listed below.</p>`;
+  } else if (!arrivals) {
+    departures = '<p class="empty" aria-busy="true">Loading live arrivals.</p>';
+  } else if (arrivals.status === 'error') {
+    departures = '<p class="empty">Live arrivals could not be loaded. Rove will try again shortly.</p>';
+  } else if (!arrivals.groups.length) {
+    departures = '<p class="empty">No live predictions for the next three hours. Service may have ended for the day, or vehicles may not be reporting.</p>';
   } else {
-    departures = `<ul class="departures">${arrivals.slice(0, 8).map((g, i) => departureRow(g, i === 0)).join('')}</ul>`;
+    departures = `<ul class="departures">${arrivals.groups.slice(0, 8).map((g, i) => departureRow(g, i === 0, a.id)).join('')}</ul>`;
   }
-  const ageText = rt?.configured && cov.arrivals ? ` · ${ageLabel(rt.updates?.headerTimestamp)}` : '';
-  const staleText = rt?.updates?.stale ? ' <span class="status-stale">Live times may be out of date.</span>' : '';
+  const canceled = arrivals?.canceled?.length ? `<ul class="rows canceled-list">${arrivals.canceled.slice(0, 4).map(c => `<li><div class="row">${c.route ? badgeHtml(c.route) : `<span class="badge" style="background:var(--fill);color:var(--ink)">${esc(c.routeName || 'Trip')}</span>`}<span class="row-main"><span class="row-title status-canceled">${c.reason === 'stop-skipped' ? 'Not stopping here' : 'Canceled'}</span><span class="row-meta">${c.headsign ? `Toward ${esc(c.headsign)}` : 'One trip'}</span></span></div></li>`).join('')}</ul>` : '';
+  const ageText = arrivals?.feedTs ? ` · ${ageLabel(arrivals.feedTs)}` : '';
+  const staleText = arrivals?.stale ? ' <span class="status-stale">Live times may be out of date.</span>' : '';
 
   return `${backHeader(`<button class="icon-button" data-action="save" aria-pressed="${isSaved}" aria-label="${isSaved ? 'Remove from saved stops' : 'Save this stop'}">${isSaved ? ICONS.starFilled : ICONS.star}</button>`)}
     <div class="hero">
       <h1 class="title-1">${esc(s.n)}</h1>
       <p class="caption">${esc(a.name)}${isStation ? ' · Station' : ' · Stop'}${esc(ageText)}${staleText}</p>
     </div>
-    <section class="section" style="margin-top:8px"><h2 class="label">Departures</h2>${departures}</section>
+    <section class="section" style="margin-top:4px"><h2 class="label">Departures</h2>${departures}${canceled}</section>
     ${alerts.length ? `<div style="margin-top:16px">${alertsHtml(alerts, 1)}</div>` : ''}
     <div class="action-bar" style="margin-top:20px">
       <button class="button primary" data-action="plan-to" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Directions</button>
@@ -1119,30 +1308,29 @@ function viewStop({ agency, stop }) {
     <section class="section"><h2 class="label"><span>Lines here</span><span>${place.routes.length}</span></h2><ul class="rows">${place.routes.map(info => `<li><button class="row" data-action="route" data-key="${esc(info.key)}">${badgeHtml(info)}<span class="row-main"><span class="row-title">${esc(info.title)}</span></span>${ICONS.chevron}</button></li>`).join('')}</ul></section>`;
 }
 
-function departureRow(group, first) {
-  const upcoming = group.times.filter(t => !t.skipped);
-  const next = upcoming[0];
+
+function departureRow(group, first, agencyId) {
+  const next = group.times[0];
   const m = minutesLabel(next.time);
   const status = delayStatus(next.delay);
-  const later = upcoming.slice(1, 3).map(t => minutesLabel(t.time));
+  const later = group.times.slice(1, 3).map(t => minutesLabel(t.time));
   let laterText = '';
   if (later.length) {
     const allMinutes = later.every(x => x.unit === 'min');
     laterText = allMinutes ? `Then ${later.map(x => x.value).join(' and ')} min` : `Then ${later.map(x => (x.unit ? `${x.value} ${x.unit}` : x.value)).join(' and ')}`;
   }
-  const skipped = group.times.some(t => t.skipped);
   const badge = group.route ? badgeHtml(group.route) : `<span class="badge" style="background:var(--ink);color:var(--surface)">${esc(group.label)}</span>`;
-  const title = group.route ? group.route.title : `Caltrain ${group.label}`;
+  const title = group.headsign ? `To ${displayName(group.headsign)}` : group.route ? group.route.title : `${AGENCY_SHORT[agencyId] || ''} ${group.label}`.trim();
   return `<li class="departure${first ? ' first' : ''}">
     <span class="when"><strong>${esc(m.value)}</strong>${m.unit ? `<span>${m.unit}</span>` : ''}</span>
     <span class="what">${badge}<div class="row-title" style="margin-top:6px">${esc(title)}</div>
       <div class="status ${status.cls}">${ICONS.live}${esc(status.text)}</div>
-      ${laterText ? `<div class="then">${esc(laterText)}</div>` : ''}
-      ${skipped ? '<div class="then status-canceled">One trip is not stopping here</div>' : ''}</span>
+      ${laterText ? `<div class="then">${esc(laterText)}</div>` : ''}</span>
     <span class="row-end"></span></li>`;
 }
 
 /* ---------- Lines directory ---------- */
+
 function viewLines() {
   const groups = state.network.agencies.map(a => {
     const infos = sortRoutes(a.routes.map(r => idx.routes.get(routeKey(a.id, r.id))).filter(Boolean));
@@ -1155,7 +1343,7 @@ function viewLines() {
 function viewSources() {
   const rows = state.network.agencies.map(a => `<li><div class="row"><span class="dot" style="background:${esc(a.color)}"></span><span class="row-main"><span class="row-title">${esc(a.name)}</span><span class="row-meta">${plural(a.routes.length, 'line')} · Schedule valid ${esc(formatGtfsDate(a.feed?.start))} to ${esc(formatGtfsDate(a.feed?.end))}</span></span></div></li>`).join('');
   const rt = state.realtime;
-  const budget = rt?.meta?.requestBudget;
+  const budget = rt?.meta?.requestBudget || rt?.requestBudget;
   return `${backHeader()}
     <div class="hero"><h1 class="title-1">Data sources</h1><p class="caption">Schedules updated ${esc(dateFormat.format(new Date(state.network.generatedAt)))}</p></div>
     <section class="section"><h2 class="label">Schedules</h2><ul class="rows">${rows}</ul></section>
@@ -1185,6 +1373,7 @@ function placeFromStop(agencyId, stopId) {
   if (!place) return null;
   return { kind: 'stop', name: place.s.n, lat: place.s.p[1], lon: place.s.p[0], agency: place.a.id, stop: place.s.id };
 }
+
 function currentLocationPlace() {
   return state.userLocation ? { kind: 'location', name: 'Your location', lat: state.userLocation[1], lon: state.userLocation[0] } : null;
 }
@@ -1196,32 +1385,46 @@ function openPlan({ from, to } = {}) {
   if (from !== undefined) plan.from = from;
   if (to !== undefined) plan.to = to;
   if (!plan.from && state.userLocation) plan.from = currentLocationPlace();
-  plan.results = null; plan.error = null; plan.focus = null; plan.query = '';
+  plan.results = null; plan.error = null; plan.errorField = null; plan.focus = null; plan.query = '';
   pushView({ name: 'plan' }, { detent: 'full' });
+  fetchPlanStatus();
+  updatePlanMarkers();
   requestAnimationFrame(() => { if (!plan.to) $('#planTo')?.focus(); else if (!plan.from) $('#planFrom')?.focus(); });
 }
 
+
 function viewPlan() {
   const plan = state.plan;
-  const field = (id, which, label, value) => `<label class="plan-field"><span class="marker"><i></i></span><span class="visually-hidden">${label}</span>
-    <input id="${id}" data-plan-field="${which}" value="${esc(value?.name || '')}" placeholder="${label}" autocomplete="off" spellcheck="false" /></label>`;
+  const status = state.planStatus;
+  const field = (id, which, label, value) => `<label class="plan-field${plan.errorField === which ? ' invalid' : ''}"><span class="marker"><i></i></span><span class="visually-hidden">${label}</span>
+    <input id="${id}" data-plan-field="${which}" value="${esc(value?.name || '')}" placeholder="${label}" autocomplete="off" spellcheck="false" ${plan.errorField === which ? 'aria-invalid="true"' : ''} /></label>`;
   let suggestions = '';
   if (plan.focus) {
     const q = plan.query;
     const items = [];
     if (state.userLocation && (!q || 'your location'.includes(q.toLowerCase()))) items.push(`<li><button class="row" data-action="plan-pick-location"><span class="row-main"><span class="row-title">Your location</span></span></button></li>`);
-    else if (!state.userLocation && !q) items.push(`<li><button class="row" data-action="plan-locate"><span class="row-main"><span class="row-title">Use my location</span><span class="row-meta">Rove asks your browser for permission</span></span></button></li>`);
+    else if (!state.userLocation && !q) items.push(`<li><button class="row" data-action="plan-locate"><span class="row-main"><span class="row-title">Use my location</span><span class="row-meta">Your browser will ask for permission</span></span></button></li>`);
+    if (!q) items.push(`<li><button class="row" data-action="plan-map"><span class="row-main"><span class="row-title">Choose on map</span><span class="row-meta">Tap any point on the map</span></span></button></li>`);
     if (q.length >= 2) {
       for (const { a, s } of searchNetwork(q, { routes: false, stopLimit: 8 }).stops) {
         items.push(`<li><button class="row" data-action="plan-pick" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">${badgesFor(sortRoutes(routesForStop(a.id, s.id)), 3)}<span class="row-main"><span class="row-title">${highlight(s.n, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[a.id])}</span></span></button></li>`);
       }
-      if (items.length <= 1) items.push(`<li><p class="empty">No stops match “${esc(q)}”. Rove plans trips between stops and your location.</p></li>`);
+      if (items.length === 0 || !items.some(i => i.includes('plan-pick"'))) items.push(`<li><p class="empty">No stops match “${esc(q)}”. Try a station name, or choose a point on the map.</p></li><li><button class="row" data-action="plan-map"><span class="row-main"><span class="row-title">Choose on map</span></span></button></li>`);
     }
     suggestions = `<ul class="rows suggestions">${items.join('')}</ul>`;
   }
-  const canPlan = plan.from && plan.to;
+  const canPlan = Boolean(plan.from && plan.to);
+  let submit;
+  if (status && !status.available) {
+    submit = '';
+  } else if (canPlan) {
+    submit = `<button type="submit" class="button primary block plan-submit" ${plan.loading ? 'aria-busy="true"' : ''}>${plan.loading ? 'Finding routes' : 'Find routes'}</button>`;
+  } else {
+    submit = `<p class="caption" style="margin-top:12px">${plan.from ? 'Choose a destination to see routes.' : 'Choose a starting point to see routes.'}</p>`;
+  }
   return `${backHeader()}
     <div class="hero" style="padding-bottom:8px"><h1 class="title-2">Plan a trip</h1></div>
+    <div id="planNotice">${planNoticeHtml()}</div>
     <form class="plan-form" data-plan-form novalidate>
       <div class="plan-fields">
         ${field('planFrom', 'from', 'Starting point', plan.from)}
@@ -1234,11 +1437,11 @@ function viewPlan() {
           <option value="depart" ${plan.timeMode === 'depart' ? 'selected' : ''}>Depart at</option>
           <option value="arrive" ${plan.timeMode === 'arrive' ? 'selected' : ''}>Arrive by</option>
         </select>
-        ${plan.timeMode !== 'now' ? `<input type="datetime-local" id="planDateTime" aria-label="Date and time" value="${esc(plan.dateTime || localInputValue(new Date()))}" />` : ''}
+        ${plan.timeMode !== 'now' ? `<input type="datetime-local" id="planDateTime" aria-label="Date and time" class="${plan.errorField === 'time' ? 'invalid' : ''}" value="${esc(plan.dateTime || localInputValue(new Date()))}" />` : ''}
       </div>
-      <button type="submit" class="button primary block plan-submit" ${canPlan ? '' : 'disabled style="opacity:.45;cursor:default"'} ${plan.loading ? 'aria-busy="true"' : ''}>${plan.loading ? 'Finding routes' : 'Find routes'}</button>`}
+      ${submit}`}
     </form>
-    ${plan.error ? `<p class="empty" role="alert" style="padding-top:16px">${esc(plan.error)}</p>` : ''}`;
+    ${plan.error && !plan.focus ? `<p class="empty plan-error" role="alert">${esc(plan.error)}</p>` : ''}`;
 }
 
 function localInputValue(date) {
@@ -1261,41 +1464,43 @@ async function submitPlan() {
   const plan = state.plan;
   if (!plan.from || !plan.to || plan.loading) return;
   if (plan.timeMode !== 'now') plan.dateTime = $('#planDateTime')?.value || plan.dateTime || localInputValue(new Date());
-  const local = plan.timeMode === 'now' ? localInputValue(new Date()) : plan.dateTime;
-  const body = {
-    from: { name: plan.from.name, lat: plan.from.lat, lon: plan.from.lon },
-    to: { name: plan.to.name, lat: plan.to.lat, lon: plan.to.lon },
-    dateTime: pacificIso(local),
-    arriveBy: plan.timeMode === 'arrive',
-    modes: ['TRANSIT', 'WALK']
-  };
-  plan.loading = true; plan.error = null;
+  const params = new URLSearchParams({
+    fromLat: plan.from.lat.toFixed(6), fromLon: plan.from.lon.toFixed(6), fromName: plan.from.name,
+    toLat: plan.to.lat.toFixed(6), toLon: plan.to.lon.toFixed(6), toName: plan.to.name, limit: '5'
+  });
+  const requestTime = plan.timeMode === 'now' ? new Date() : new Date(pacificIso(plan.dateTime));
+  if (plan.timeMode !== 'now') params.set('time', pacificIso(plan.dateTime));
+  if (plan.timeMode === 'arrive') params.set('arriveBy', 'true');
+  plan.loading = true; plan.error = null; plan.errorField = null;
   render();
   try {
-    const response = await fetch('/api/journeys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout ? AbortSignal.timeout(30000) : undefined });
-    let data = null;
-    try { data = await response.json(); } catch { data = null; }
-    if (response.status === 404 || response.status === 501) throw new PlanError('Trip planning is not available on this server yet.');
-    if (!response.ok || data?.error) {
-      const code = data?.error?.code;
-      if (code === 'NO_PATH') throw new PlanError('No transit route was found for this time. Try a different time or a nearby stop.');
-      throw new PlanError(data?.error?.message ? `Trip planning failed: ${data.error.message}` : 'Trip planning failed. Please try again in a moment.');
+    const response = await fetch(`/api/v2/plan?${params}`, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(35000) : undefined });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      const err = planErrorMessage(response.status, body);
+      if (err.offline) state.planStatus = { available: false, reason: response.status === 404 ? 'missing' : 'ROUTING_UNAVAILABLE', checkedAt: Date.now() };
+      throw new PlanError(err.text, err.which);
     }
-    const itineraries = Array.isArray(data?.itineraries) ? data.itineraries : [];
-    if (!itineraries.length) throw new PlanError('No transit route was found for this time. Try a different time or a nearby stop.');
-    plan.results = { itineraries, generatedAt: data.generatedAt, request: body };
+    const itineraries = (body?.itineraries || []).map(normalizeItinerary).filter(it => it.legs.length);
+    if (!itineraries.length) throw new PlanError(body?.errors?.[0]?.message || 'No transit route was found for this time. Try a different time or a nearby stop.');
+    plan.results = { itineraries, request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive' }, scheduledOnly: body.routing?.realtime !== 'partial' };
     plan.expanded = 0;
     plan.loading = false;
     state.journey = itineraries[0];
     pushView({ name: 'results' }, { detent: 'half' });
-    renderJourney(); applyMapState(); fitJourney(itineraries[0]);
+    renderJourney(); applyMapState(); updatePlanMarkers(); fitJourney(itineraries[0]);
   } catch (error) {
     plan.loading = false;
-    plan.error = error instanceof PlanError ? error.message : 'Rove could not reach the trip planner. Check your connection and try again.';
+    if (error instanceof PlanError) { plan.error = error.message; plan.errorField = error.field || null; }
+    else plan.error = error?.name === 'TimeoutError' ? 'The trip planner took too long to respond. Please try again.' : 'Rove could not reach the trip planner. Check your connection and try again.';
     render();
   }
 }
-class PlanError extends Error {}
+
+class PlanError extends Error {
+  constructor(message, field = null) { super(message); this.field = field; }
+}
+
 
 function fitJourney(it) {
   const coords = [];
@@ -1312,14 +1517,16 @@ function legInfo(leg) {
   const agencyId = idx.agencies.has(leg.agencyId) ? leg.agencyId : null;
   const color = normalizeColor(leg.routeColor, '#3d4046');
   const known = agencyId && leg.routeId ? idx.routes.get(routeKey(agencyId, leg.routeId)) : null;
+  const fallbackBadge = agencyId === 'caltrain' && leg.tripShortName ? `Train ${leg.tripShortName}` : leg.routeName || 'Transit';
   return {
     agencyId,
     color: known?.color || color,
-    text: known?.text || readableText(color),
-    badge: known?.badge || leg.routeName || leg.routeShortName || 'Transit',
-    title: known?.title || leg.routeLongName || leg.routeName || 'Transit'
+    text: known?.text || readableText(color, normalizeColor(leg.routeTextColor, '#ffffff')),
+    badge: known ? (agencyId === 'caltrain' && leg.tripShortName ? `${known.badge} ${leg.tripShortName}` : known.badge) : fallbackBadge,
+    title: known?.title || displayName(leg.routeLongName || leg.routeName || 'Transit')
   };
 }
+
 
 function journeyBar(it) {
   const total = Math.max(1, (new Date(it.endTime) - new Date(it.startTime)) / 1000);
@@ -1328,29 +1535,36 @@ function journeyBar(it) {
     const pct = Math.max(4, dur / total * 100);
     if (leg.mode === 'WALK') return `<span class="seg walk" style="flex:${pct}"></span>`;
     const li = legInfo(leg);
-    return `<span class="seg" style="flex:${pct};background:${esc(li.color)}"><span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span></span>`;
+    const showBadge = !leg.staySeated;
+    return `<span class="seg${leg.canceled ? ' canceled' : ''}" style="flex:${pct};background:${esc(li.color)}">${showBadge ? `<span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>` : ''}</span>`;
   }).join('')}</div>`;
 }
 
+
 function itinerarySummary(it) {
   const transitLegs = (it.legs || []).filter(l => l.mode !== 'WALK');
+  if (!transitLegs.length) return esc(`Walk the whole way · ${distanceLabel(it.walkMeters || 0)}`);
   const first = transitLegs[0];
-  const transfers = Number.isFinite(it.transfers) ? it.transfers : Math.max(0, transitLegs.length - 1);
+  const transfers = Number.isFinite(it.transfers) ? it.transfers : Math.max(0, transitLegs.filter(l => !l.staySeated).length - 1);
   const leaveIn = Math.round((new Date(it.startTime) - Date.now()) / 60000);
   const leave = leaveIn <= 0 ? 'Leave now' : leaveIn < 60 ? `Leave in ${leaveIn} min` : `Leave at ${clock(new Date(it.startTime))}`;
-  const fromName = first?.from?.name ? ` from ${first.from.name}` : '';
-  const walk = Number.isFinite(it.walkMeters) ? ` · ${distanceLabel(it.walkMeters)} walk` : '';
-  const live = transitLegs.some(l => l.realtime);
-  return `${live ? ICONS.live : ''}${esc(`${leave}${fromName}`)} · ${transfers === 0 ? 'No transfers' : plural(transfers, 'transfer')}${esc(walk)}${live ? '' : ' · Scheduled'}`;
+  const board = first.from?.name && first.from.name !== state.plan.from?.name ? ` from ${first.from.name}` : '';
+  const walk = Number.isFinite(it.walkMeters) && it.walkMeters > 0 ? ` · ${distanceLabel(it.walkMeters)} walk` : '';
+  const parts = [`${it.usesRealtime ? ICONS.live : ''}${esc(`${leave}${board}`)}`, esc(transfers === 0 ? 'No transfers' : plural(transfers, 'transfer'))];
+  let text = parts.join(' · ') + esc(walk);
+  if (it.hasCancellation) text += ' · <span class="status-canceled">Includes a canceled trip</span>';
+  return text;
 }
+
 
 function viewResults() {
   const plan = state.plan;
   const its = plan.results?.itineraries || [];
+  const when = plan.results?.request?.time ? clock(new Date(plan.results.request.time)) : '';
   return `${backHeader()}
     <div class="hero" style="padding-bottom:8px">
       <h1 class="title-2">${esc(plan.from?.name)} to ${esc(plan.to?.name)}</h1>
-      <p class="caption">${plan.timeMode === 'arrive' ? 'Arriving by' : 'Departing'} ${esc(clock(new Date(plan.results?.request?.dateTime || Date.now())))} · Times are from published schedules unless marked live</p>
+      <p class="caption">${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Times are from published schedules' : ''}</p>
     </div>
     <ul class="itineraries">${its.map((it, i) => {
       const open = plan.expanded === i;
@@ -1359,8 +1573,10 @@ function viewResults() {
         ${journeyBar(it)}
         <div class="it-meta">${itinerarySummary(it)}</div></button>
         ${open ? `${itineraryTimeline(it)}<div class="action-bar" style="padding-bottom:16px"><button class="button primary" data-action="nav-start" data-index="${i}">Start</button></div>` : ''}</li>`;
-    }).join('')}</ul>`;
+    }).join('')}</ul>
+    <p class="note">Rove plans with published schedules. Check live departures at your stop before you leave.</p>`;
 }
+
 
 function itineraryTimeline(it) {
   const items = [];
@@ -1368,16 +1584,24 @@ function itineraryTimeline(it) {
   legs.forEach((leg, i) => {
     if (leg.mode === 'WALK') {
       const meters = Number.isFinite(leg.distanceMeters) ? leg.distanceMeters : null;
-      items.push(`<li><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"></span><span class="body"><strong>Walk${meters ? ` ${esc(distanceLabel(meters))}` : ''}</strong><span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))} to ${esc(leg.to?.name || 'your destination')}</span></span></li>`);
+      const isLast = i === legs.length - 1;
+      items.push(`<li><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"></span><span class="body"><strong>Walk${meters ? ` ${esc(distanceLabel(meters))}` : ''}</strong><span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? '' : ` to ${esc(leg.to?.name || 'the stop')}`}</span></span></li>`);
       return;
     }
     const li = legInfo(leg);
-    const stopsCount = Array.isArray(leg.intermediateStops) ? leg.intermediateStops.length + 1 : null;
-    items.push(`<li style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body">
-      <strong>${esc(leg.from?.name || 'Board')}</strong>
-      <span class="row-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px"><span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? `<span>Toward ${esc(leg.headsign)}</span>` : ''}</span>
-      <span class="row-meta">${stopsCount ? `${plural(stopsCount, 'stop')} · ` : ''}${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${leg.realtime ? ` · <span class="${delayStatus(leg.delaySeconds).cls}">${ICONS.live}${esc(delayStatus(leg.delaySeconds).text)}</span>` : ' · Scheduled'}</span></span></li>`);
+    const stopsCount = leg.intermediateStops ? leg.intermediateStops.length + 1 : null;
+    const timing = leg.canceled ? '<span class="status-canceled">Canceled</span>' : leg.realtime ? `<span class="${delayStatus(leg.delaySeconds).cls}">${ICONS.live}${esc(delayStatus(leg.delaySeconds).text)}</span>` : 'Scheduled';
+    if (!leg.staySeated) {
+      items.push(`<li style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body">
+        <strong>${esc(leg.from?.name || 'Board')}</strong>
+        <span class="row-meta leg-line"><span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? `<span>To ${esc(displayName(leg.headsign))}</span>` : ''}</span>
+        <span class="row-meta">${leg.from?.platform ? `Platform ${esc(leg.from.platform)} · ` : ''}${stopsCount ? `${plural(stopsCount, 'stop')} · ` : ''}${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))} · ${timing}</span>
+        ${legAlertsHtml(leg)}</span></li>`);
+    } else {
+      items.push(`<li style="--leg-color:${esc(li.color)}"><span class="t"></span><span class="rail"></span><span class="body"><span class="row-meta leg-line">Stay on board. It continues as <span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? ` to ${esc(displayName(leg.headsign))}` : ''}</span></span></li>`);
+    }
     const next = legs[i + 1];
+    if (next && next.mode !== 'WALK' && next.staySeated) return;
     if (!next || next.mode === 'WALK') {
       items.push(`<li style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legEnd(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body"><strong>${esc(leg.to?.name || 'Get off')}</strong><span class="row-meta">Get off</span></span></li>`);
     } else {
@@ -1390,33 +1614,52 @@ function itineraryTimeline(it) {
 }
 
 /* ---------- Step-by-step navigation ---------- */
+
 function buildSteps(it) {
   const steps = [];
   for (const leg of it.legs || []) {
     if (leg.mode === 'WALK') {
-      steps.push({ type: 'walk', leg, title: `Walk to ${leg.to?.name || 'your destination'}`, big: durationLabel((legEnd(leg) - legStart(leg)) / 1000), meta: Number.isFinite(leg.distanceMeters) ? distanceLabel(leg.distanceMeters) : '' });
-    } else {
-      const li = legInfo(leg);
-      steps.push({ type: 'wait', leg, li, title: `Board ${li.badge}${leg.headsign ? ` toward ${leg.headsign}` : ''} at ${leg.from?.name || 'the stop'}`, departs: legStart(leg) });
-      const stopsCount = Array.isArray(leg.intermediateStops) ? leg.intermediateStops.length + 1 : null;
-      steps.push({ type: 'ride', leg, li, title: `Ride to ${leg.to?.name || 'your stop'}`, big: stopsCount ? plural(stopsCount, 'stop') : durationLabel((legEnd(leg) - legStart(leg)) / 1000), meta: `Get off at ${clock(legEnd(leg))}` });
+      const last = leg === it.legs[it.legs.length - 1];
+      steps.push({ type: 'walk', leg, title: last ? `Walk to ${state.plan.to?.name || 'your destination'}` : `Walk to ${leg.to?.name || 'the stop'}`, big: durationLabel((legEnd(leg) - legStart(leg)) / 1000), meta: Number.isFinite(leg.distanceMeters) ? distanceLabel(leg.distanceMeters) : '' });
+      continue;
     }
+    const li = legInfo(leg);
+    const stopsCount = leg.intermediateStops ? leg.intermediateStops.length + 1 : null;
+    const ride = { type: 'ride', leg, li, title: `Ride to ${leg.to?.name || 'your stop'}`, big: stopsCount ? plural(stopsCount, 'stop') : durationLabel((legEnd(leg) - legStart(leg)) / 1000), meta: `Get off at ${clock(legEnd(leg))}` };
+    if (leg.staySeated) {
+      steps.push({ ...ride, title: `Stay on board as it continues as ${li.badge}${leg.headsign ? ` to ${displayName(leg.headsign)}` : ''}. Ride to ${leg.to?.name || 'your stop'}.` });
+      continue;
+    }
+    const where = `${leg.from?.name || 'the stop'}${leg.from?.platform ? `, platform ${leg.from.platform}` : ''}`;
+    steps.push({ type: 'wait', leg, li, title: `Board ${li.badge}${leg.headsign ? ` to ${displayName(leg.headsign)}` : ''} at ${where}`, departs: legStart(leg) });
+    steps.push(ride);
   }
   steps.push({ type: 'arrive', title: `You have arrived at ${state.plan.to?.name || 'your destination'}.` });
   return steps;
 }
 
+
 async function startNavigation(index) {
   const it = state.plan.results?.itineraries?.[index];
   if (!it) return;
   state.journey = it;
-  state.nav = { it, steps: buildSteps(it), i: 0 };
+  state.nav = { it, steps: buildSteps(it), i: 0, tracking: false, watchId: null };
   renderJourney(); applyMapState();
   pushView({ name: 'navigate' }, { detent: 'half' });
   focusStep();
   try { if ('wakeLock' in navigator) state.wakeLock = await navigator.wakeLock.request('screen'); } catch { /* wake lock refused */ }
+  if (state.userLocation && 'geolocation' in navigator) {
+    state.nav.watchId = navigator.geolocation.watchPosition(onNavPosition, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+    state.nav.tracking = true;
+    render();
+  }
 }
-function releaseWakeLock() { try { state.wakeLock?.release(); } catch { /* already released */ } state.wakeLock = null; }
+
+function releaseWakeLock() {
+  try { state.wakeLock?.release(); } catch { /* already released */ }
+  state.wakeLock = null;
+  if (state.nav?.watchId != null) { navigator.geolocation.clearWatch(state.nav.watchId); state.nav.watchId = null; state.nav.tracking = false; }
+}
 
 function focusStep() {
   const step = state.nav?.steps[state.nav.i];
@@ -1432,15 +1675,15 @@ function viewNavigate() {
   const step = nav.steps[nav.i];
   const total = nav.steps.length - 1;
   const head = `<div class="view-head"><button class="back-button" data-action="nav-end">${ICONS.back}<span>End trip</span></button></div>
-    <div class="nav-head"><div class="title-2">Arrive ${esc(clock(new Date(nav.it.endTime)))}</div><div class="caption">${esc(durationLabel((new Date(nav.it.endTime) - Date.now()) / 1000))} remaining · Times are scheduled unless marked live</div></div>`;
+    <div class="nav-head"><div class="title-2">Arrive ${esc(clock(new Date(nav.it.endTime)))}</div><div class="caption">${esc(durationLabel((new Date(nav.it.endTime) - Date.now()) / 1000))} remaining${nav.it.usesRealtime ? '' : ' · Scheduled times'}${nav.tracking ? ' · Following your location' : ''}</div></div>`;
   if (step.type === 'arrive') {
     return `${head}<div class="arrived"><h2 class="title-1">${esc(step.title)}</h2><p class="caption" style="margin-top:8px">${esc(clock(new Date()))}</p><div style="margin-top:20px"><button class="button primary" data-action="nav-end">Done</button></div></div>`;
   }
   let big = step.big || '', meta = step.meta || '';
   if (step.type === 'wait') {
     const m = minutesLabel(step.departs.getTime() / 1000);
-    big = m.unit ? `${m.value} min` : m.value;
-    meta = `Departs ${clock(step.departs)}${step.leg.realtime ? '' : ' · Scheduled'}`;
+    big = m.value === 'Now' ? 'Now' : m.unit ? `${m.value} min` : m.value;
+    meta = step.leg.canceled ? 'This trip is canceled. Plan again for another option.' : `Departs ${clock(step.departs)}${step.leg.realtime ? '' : ' · Scheduled'}`;
   }
   const color = step.li?.color || 'var(--ink)';
   const list = nav.steps.slice(0, total).map((s, i) => `<li class="${i < nav.i ? 'done' : ''}" ${i === nav.i ? 'aria-current="step" style="color:var(--ink);font-weight:600"' : ''}>${i < nav.i ? ICONS.check : ICONS.circle}<span>${esc(s.title)}</span></li>`).join('');
@@ -1448,17 +1691,19 @@ function viewNavigate() {
     <div class="step-card" style="--leg-color:${esc(color)}">
       <p class="label">Step ${nav.i + 1} of ${total}</p>
       <h2>${esc(step.title)}</h2>
-      <div class="big">${esc(big)}</div>
+      <div class="big${step.leg?.canceled ? ' status-canceled' : ''}">${esc(big)}</div>
       ${meta ? `<p class="caption" style="margin:6px 0 0">${esc(meta)}</p>` : ''}
+      ${step.leg ? legAlertsHtml(step.leg) : ''}
     </div>
     <div class="action-bar">
       ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
-      <button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'Arrive' : 'Next step'}</button>
+      <button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'I have arrived' : 'Next step'}</button>
     </div>
     <ol class="step-list" style="margin-top:20px">${list}</ol>`;
 }
 
 /* ---------- Event handling ---------- */
+
 function clearSearchField() {
   state.searchQuery = '';
   $('#searchInput').value = '';
@@ -1507,6 +1752,8 @@ function handleAction(el) {
     case 'plan-pick': state.plan[state.plan.focus] = placeFromStop(el.dataset.agency, el.dataset.stop); afterPick(); break;
     case 'plan-pick-location': state.plan[state.plan.focus] = currentLocationPlace(); afterPick(); break;
     case 'plan-locate': locate({ thenPick: state.plan.focus }); break;
+    case 'plan-map': startMapPick(state.plan.focus || (state.plan.to ? 'from' : 'to')); break;
+    case 'plan-recheck': fetchPlanStatus(true); break;
     case 'save': if (view.name === 'stop') toggleSaved(view.agency, view.stop); break;
     case 'toggle-alert': { el.classList.toggle('expanded'); el.setAttribute('aria-expanded', String(el.classList.contains('expanded'))); break; }
     case 'it-toggle': {
@@ -1528,6 +1775,7 @@ function afterPick() {
   const plan = state.plan;
   const picked = plan.focus;
   plan.focus = null; plan.query = '';
+  if (plan.errorField === picked) { plan.error = null; plan.errorField = null; }
   render();
   const next = picked === 'from' && !plan.to ? '#planTo' : picked === 'to' && !plan.from ? '#planFrom' : null;
   if (next) requestAnimationFrame(() => $(next)?.focus());
@@ -1664,6 +1912,7 @@ function bindChrome() {
     const typing = /input|select|textarea/i.test(document.activeElement?.tagName || '');
     if (e.key === '/' && !typing) { e.preventDefault(); $('#searchInput').focus(); }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('#searchInput').focus(); }
+    if (e.key === 'Escape' && state.mapPick) { endMapPick(null); return; }
     if (e.key === 'Escape' && !typing) {
       if (!$('#layersPopover').hidden || !$('#menu').hidden) closePopovers();
       else if (!$('#intro').hidden) finishIntro();
@@ -1724,6 +1973,266 @@ function initialAgencies() {
   return new Set(chosen.length ? chosen : ids);
 }
 
+function rtConfigured() {
+  const c = state.realtime?.configured;
+  return c === true || Boolean(c && typeof c === 'object' && (c.feed511 || c.bartDirect));
+}
+
+function vehiclesStale() {
+  const rt = state.realtime;
+  return Boolean(rt?.version === 2 ? rt.feeds?.vehicles?.stale : rt?.vehicles?.stale);
+}
+
+const arrivalCache = new Map();
+
+const placeCacheKey = place => `${place.a.id}|${place.s.id}`;
+
+/* Returns cached arrivals for a place in one normalized shape:
+ * { status: 'live'|'no-predictions'|'unverified'|'offline', groups:[{route, label, headsign, times:[{time, delay}]}], canceled:[...], feedTs, stale } */
+function cachedArrivals(place) {
+  if (state.realtime?.version !== 2) return legacyArrivals(place);
+  return arrivalCache.get(placeCacheKey(place))?.data || null;
+}
+
+function legacyArrivals(place) {
+  if (!rtConfigured()) return { status: 'offline', groups: [], canceled: [] };
+  if (!coverage(place.a.id).arrivals) return { status: 'unverified', groups: [], canceled: [] };
+  const groups = arrivalsForPlace(place) || [];
+  return {
+    status: groups.length ? 'live' : 'no-predictions',
+    groups: groups.map(g => ({ route: g.route, label: g.label, headsign: null, times: g.times.filter(t => !t.skipped) })),
+    canceled: [],
+    feedTs: state.realtime?.updates?.headerTimestamp || null,
+    stale: Boolean(state.realtime?.updates?.stale)
+  };
+}
+
+async function fetchArrivals(place, { maxAgeMs = 25000 } = {}) {
+  if (state.realtime?.version !== 2) return;
+  const cacheKey = placeCacheKey(place);
+  const cached = arrivalCache.get(cacheKey);
+  if (cached && (cached.pending || Date.now() - cached.at < maxAgeMs)) return cached.pending;
+  const isStation = idx.children.has(stopKey(place.a.id, place.s.id));
+  const ids = isStation ? [place.s.id] : place.members.map(m => m.id).slice(0, 4);
+  const task = (async () => {
+    try {
+      const results = await Promise.all(ids.map(id => fetch(`/api/v2/arrivals?agency=${encodeURIComponent(place.a.id)}&stop=${encodeURIComponent(id)}`, { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).catch(() => null)));
+      const ok = results.filter(Boolean);
+      if (!ok.length) throw new Error('No arrivals response');
+      const statuses = ok.map(r => r.status);
+      const status = statuses.includes('live') ? 'live' : statuses.every(st => st === 'unverified') ? 'unverified' : 'no-predictions';
+      const seen = new Set();
+      const arrivals = ok.flatMap(r => r.arrivals || []).filter(a => { const k = `${a.tripId}|${a.stopId}`; if (seen.has(k)) return false; seen.add(k); return true; });
+      const groups = new Map();
+      for (const a of arrivals) {
+        const route = a.routeId ? idx.routes.get(routeKey(place.a.id, a.routeId)) : null;
+        const gk = `${a.routeId || a.routeName}|${a.headsign || ''}`;
+        if (!groups.has(gk)) groups.set(gk, { route, label: route ? null : a.routeName || 'Trip', headsign: a.headsign || null, times: [] });
+        groups.get(gk).times.push({ time: a.time, delay: a.delay });
+      }
+      const list = [...groups.values()].map(g => { g.times.sort((x, y) => x.time - y.time); return g; }).sort((x, y) => x.times[0].time - y.times[0].time);
+      const canceled = ok.flatMap(r => r.canceled || []).map(c => ({ ...c, route: c.routeId ? idx.routes.get(routeKey(place.a.id, c.routeId)) : null }));
+      const feed = ok.find(r => r.feed)?.feed || null;
+      const data = { status, groups: list, canceled, feedTs: feed?.headerTimestamp || null, stale: ok.some(r => r.stale), reasons: ok.find(r => r.reasons)?.reasons || null };
+      arrivalCache.set(cacheKey, { at: Date.now(), data });
+      return data;
+    } catch {
+      const data = { status: 'error', groups: [], canceled: [] };
+      arrivalCache.set(cacheKey, { at: Date.now() - maxAgeMs + 10000, data });
+      return data;
+    }
+  })();
+  arrivalCache.set(cacheKey, { ...(cached || {}), at: cached?.at || 0, pending: task });
+  const result = await task;
+  refreshLiveViews();
+  return result;
+}
+
+/* Fetch arrivals for the places currently on screen, then re-render once. */
+function prefetchVisibleArrivals() {
+  if (state.realtime?.version !== 2 || document.hidden) return;
+  const view = currentView();
+  let places = [];
+  if (view.name === 'stop') places = [placeFor(view.agency, view.stop)];
+  else if (view.name === 'home') {
+    if (state.userLocation) places.push(...nearbyPlaces(state.userLocation, 6).map(n => n.place));
+    places.push(...state.saved.map(x => placeFor(x.a, x.id)));
+  }
+  places.filter(Boolean).filter(p => coverage(p.a.id).arrivals).forEach(p => fetchArrivals(p));
+}
+
+/* A point picked on the map is named after the nearest stop when one is close. */
+function placeFromPoint(lngLat) {
+  const point = [lngLat.lng, lngLat.lat];
+  let best = null;
+  for (const entry of idx.searchable) {
+    const d = distanceMeters(point, entry.s.p);
+    if (d < 250 && (!best || d < best.d)) best = { d, entry };
+  }
+  return { kind: 'pin', name: best ? `Near ${best.entry.s.n}` : 'Pinned location', lat: point[1], lon: point[0] };
+}
+
+async function fetchPlanStatus(force = false) {
+  const st = state.planStatus;
+  if (!force && st && Date.now() - st.checkedAt < 60000) return st;
+  let next;
+  try {
+    const response = await fetch('/api/v2/plan/status', { cache: 'no-store' });
+    if (response.status === 404) next = { available: false, reason: 'missing' };
+    else {
+      const body = await response.json().catch(() => ({}));
+      next = { available: response.ok && body.available !== false, reason: response.ok ? null : body.code || 'ROUTING_UNAVAILABLE' };
+    }
+  } catch {
+    next = { available: false, reason: 'network' };
+  }
+  const changed = !st || st.available !== next.available;
+  state.planStatus = { ...next, checkedAt: Date.now() };
+  if (changed && currentView().name === 'plan') {
+    if (state.plan.focus) { const el = $('#planNotice'); if (el) el.innerHTML = planNoticeHtml(); }
+    else render();
+  }
+  return state.planStatus;
+}
+
+function planNoticeHtml() {
+  const status = state.planStatus;
+  if (!status || status.available) return '';
+  const text = status.reason === 'missing' ? 'Trip planning is not available on this server.' : 'Trip planning is offline right now. You can still choose places, then check again in a few minutes.';
+  return `<div class="plan-notice" role="status"><p>${esc(text)}</p>${status.reason === 'missing' ? '' : '<button type="button" class="text-button" data-action="plan-recheck">Check again</button>'}</div>`;
+}
+
+/* Converts a /api/v2/plan itinerary (docs/API_CONTRACT.md) into the shape the views render. */
+function normalizeItinerary(it) {
+  const legs = (it.legs || []).map(leg => {
+    const transit = Boolean(leg.transit);
+    const startTime = leg.start?.estimated || leg.start?.scheduled;
+    const endTime = leg.end?.estimated || leg.end?.scheduled;
+    const end = p => p ? { name: displayName(p.stop?.station?.name || p.name || ''), lat: p.lat, lon: p.lon, platform: p.stop?.platform || null, stopName: p.name } : null;
+    return {
+      mode: transit ? 'TRANSIT' : 'WALK',
+      transitMode: leg.mode,
+      agencyId: leg.agency?.id || null,
+      routeId: leg.route?.id || null,
+      routeName: leg.route?.shortName || leg.route?.longName || null,
+      routeLongName: leg.route?.longName || null,
+      routeColor: leg.route?.color || null,
+      routeTextColor: leg.route?.textColor || null,
+      headsign: leg.headsign || leg.trip?.headsign || null,
+      tripShortName: leg.trip?.shortName || null,
+      from: end(leg.from),
+      to: end(leg.to),
+      startTime,
+      endTime,
+      scheduledStart: leg.start?.scheduled || startTime,
+      delaySeconds: leg.start?.delaySeconds ?? null,
+      realtime: Boolean(leg.realtime && leg.start?.estimated),
+      canceled: Boolean(leg.canceled),
+      staySeated: Boolean(leg.staySeated),
+      intermediateStops: Array.isArray(leg.intermediateStops) ? leg.intermediateStops : null,
+      distanceMeters: leg.distanceMeters ?? null,
+      durationSeconds: leg.durationSeconds ?? null,
+      geometry: leg.geometry,
+      alerts: (leg.alerts || []).filter(a => a.header || a.description)
+    };
+  });
+  return {
+    id: it.id,
+    startTime: it.start,
+    endTime: it.end,
+    durationSeconds: it.durationSeconds,
+    walkMeters: it.walkMeters,
+    walkSeconds: it.walkSeconds,
+    transfers: it.transfers,
+    usesRealtime: Boolean(it.usesRealtime),
+    hasCancellation: Boolean(it.hasCancellation),
+    legs
+  };
+}
+
+function planErrorMessage(status, body) {
+  const field = body?.field || '';
+  const which = /^from/.test(field) ? 'from' : /^to/.test(field) ? 'to' : field === 'time' ? 'time' : null;
+  if (status === 400) {
+    const message = String(body?.error || '');
+    if (/same place/i.test(message)) return { which: 'to', text: 'The starting point and destination are the same place.' };
+    if (which === 'from') return { which, text: /outside/i.test(message) ? 'The starting point is outside the area Rove covers.' : 'Choose the starting point again.' };
+    if (which === 'to') return { which, text: /outside/i.test(message) ? 'The destination is outside the area Rove covers.' : 'Choose the destination again.' };
+    if (which === 'time') return { which, text: 'Choose a time within the next 60 days.' };
+    return { which: null, text: 'Rove could not plan this trip. Check the places and time, then try again.' };
+  }
+  if (status === 503) return { which: null, text: 'Trip planning is offline right now. Please try again in a few minutes.', offline: true };
+  if (status === 404) return { which: null, text: 'Trip planning is not available on this server.', offline: true };
+  return { which: null, text: 'Trip planning ran into a problem. Please try again.' };
+}
+
+function legAlertsHtml(leg) {
+  if (!leg.alerts?.length) return '';
+  return leg.alerts.slice(0, 2).map(a => `<span class="row-meta leg-alert">${ICONS.alert}<span>${esc(a.header || a.description)}</span></span>`).join('');
+}
+
+/* Advances walk and ride steps when the rider reaches the end of the leg. Riders can always
+ * move between steps with the buttons; this only saves taps. */
+function onNavPosition(pos) {
+  const nav = state.nav;
+  if (!nav) return;
+  const here = [pos.coords.longitude, pos.coords.latitude];
+  state.userLocation = here;
+  const step = nav.steps[nav.i];
+  if (!step?.leg || step.type === 'arrive') return;
+  const target = [step.leg.to?.lon, step.leg.to?.lat];
+  const accuracy = Math.min(pos.coords.accuracy || 50, 100);
+  const radius = step.type === 'walk' ? 35 + accuracy : 120 + accuracy;
+  if ((step.type === 'walk' || step.type === 'ride') && distanceMeters(here, target) < radius) {
+    nav.i = Math.min(nav.i + 1, nav.steps.length - 1);
+    render(); focusStep();
+  } else if (step.type === 'wait' && Date.now() > step.departs.getTime() && distanceMeters(here, [step.leg.from?.lon, step.leg.from?.lat]) > 300) {
+    nav.i += 1; render(); focusStep();
+  }
+}
+
+/* Small start and end markers for the trip being planned. */
+const planMarkers = { from: null, to: null };
+
+function updatePlanMarkers() {
+  if (!state.map || typeof maplibregl === 'undefined') return;
+  const active = ['plan', 'results', 'navigate'].includes(currentView().name) || state.mapPick;
+  for (const which of ['from', 'to']) {
+    const p = state.plan[which];
+    if (!active || !p || p.kind === 'location') { planMarkers[which]?.remove(); planMarkers[which] = null; continue; }
+    if (!planMarkers[which]) {
+      const el = document.createElement('div');
+      el.className = `plan-marker plan-marker-${which}`;
+      el.setAttribute('aria-hidden', 'true');
+      planMarkers[which] = new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(state.map);
+    } else planMarkers[which].setLngLat([p.lon, p.lat]);
+  }
+}
+
+function startMapPick(which) {
+  state.mapPick = which;
+  state.plan.focus = null;
+  const banner = $('#mapPick');
+  $('#mapPickText').textContent = which === 'from' ? 'Tap the map to set the starting point.' : 'Tap the map to set the destination.';
+  banner.hidden = false;
+  document.body.classList.add('map-picking');
+  if (isMobile()) setDetent('peek');
+  $('#mapPickCancel').focus({ preventScroll: true });
+}
+
+function endMapPick(lngLat) {
+  const which = state.mapPick;
+  state.mapPick = null;
+  $('#mapPick').hidden = true;
+  document.body.classList.remove('map-picking');
+  if (!which) return;
+  if (lngLat) state.plan[which] = placeFromPoint(lngLat);
+  if (isMobile()) setDetent('full');
+  render();
+  updatePlanMarkers();
+}
+
+/* @@INSERT */
 async function init() {
   try {
     const response = await fetch('public/data/network.json');
@@ -1791,7 +2300,8 @@ async function init() {
 
   loadRealtime();
   state.realtimeTimer = setInterval(loadRealtime, 60000);
-  setInterval(() => { if (!document.hidden) refreshLiveViews(); }, 30000);
+  setInterval(() => { if (!document.hidden) { prefetchVisibleArrivals(); refreshLiveViews(); } }, 30000);
+  $('#mapPickCancel').addEventListener('click', () => endMapPick(null));
 }
 
 init();

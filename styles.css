@@ -398,3 +398,34 @@ body.map-satellite .maplibregl-ctrl-attrib { background: rgba(255, 255, 255, .9)
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- Phase 2 additions ---------- */
+.plan-field.invalid input, input.invalid { color: var(--canceled); }
+.plan-field.invalid .marker i { border-color: var(--canceled); }
+.plan-error { padding-top: 16px; color: var(--canceled); }
+.leg-line { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.leg-alert { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; color: var(--ink-2); }
+.leg-alert svg { width: 16px; height: 16px; flex: none; color: var(--late); margin-top: 1px; }
+.journey-bar .seg.canceled { opacity: .35; }
+.canceled-list { margin-top: 4px; }
+.map-menu { display: flex; flex-direction: column; margin-top: 4px; }
+
+.plan-marker { width: 18px; height: 18px; border-radius: 50%; background: var(--surface); border: 4px solid var(--ink); box-shadow: var(--shadow); }
+.plan-marker-to { border-radius: 3px; background: var(--ink); border-color: var(--surface); width: 16px; height: 16px; }
+
+.map-pick {
+  position: fixed; z-index: 25; top: calc(16px + var(--safe-t)); left: calc(var(--panel-w) + (100vw - var(--panel-w)) / 2); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 16px; padding: 4px 8px 4px 16px; background: var(--ink); color: var(--surface);
+  border-radius: 8px; box-shadow: var(--shadow); font-size: 15px; font-weight: 600; max-width: calc(100vw - 24px);
+}
+.map-pick .text-button { color: var(--surface); text-decoration-color: rgba(255, 255, 255, .4); }
+body.map-picking .map { cursor: crosshair; }
+
+@media (max-width: 767px) {
+  .map-pick { left: 12px; right: 12px; transform: none; justify-content: space-between; }
+  .panel:not(.detent-full) .panel-body { overflow: hidden; }
+  .panel.search-hidden .panel-top { padding-bottom: 0; }
+  .panel.detent-peek .view-head + .hero { padding-top: 0; }
+}
+.plan-notice { margin: 0 var(--pad) 12px; padding: 12px 16px 4px; border-radius: 8px; background: var(--paper); border: 1px solid var(--rule); }
+.plan-notice p { margin: 0; font-size: 15px; color: var(--ink-2); }

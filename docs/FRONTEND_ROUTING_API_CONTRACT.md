@@ -1,80 +1,35 @@
-# Frontend routing API contract
+# Frontend use of the backend API
 
-This document defines the frontend boundary for Claude's OpenTripPlanner work. The frontend must not guess OTP's raw GraphQL schema or call OTP directly.
+Updated October 17, 2026. The authoritative contract is `docs/API_CONTRACT.md` on the backend branch (`claude-development`, commit `41849f9`). This file records how the frontend on `claude-frontend` uses it, and what the frontend asks the backend to change.
 
-## Endpoint
+The earlier `POST /api/journeys` proposal is withdrawn. The frontend now uses the backend's real endpoints.
 
-`POST /api/journeys`
+## Endpoints the frontend calls
 
-Request:
-
-```json
-{
-  "from": { "name": "Montgomery St", "lat": 37.7894, "lon": -122.4011 },
-  "to": { "name": "19th St Oakland", "lat": 37.8079, "lon": -122.2680 },
-  "dateTime": "2026-10-23T17:30:00-07:00",
-  "arriveBy": false,
-  "modes": ["TRANSIT", "WALK"]
-}
-```
-
-Successful response:
-
-```json
-{
-  "generatedAt": "2026-10-23T23:55:00Z",
-  "itineraries": [
-    {
-      "id": "stable-result-id",
-      "startTime": "2026-10-23T17:32:00-07:00",
-      "endTime": "2026-10-23T17:51:00-07:00",
-      "durationSeconds": 1140,
-      "walkMeters": 240,
-      "transfers": 0,
-      "legs": [
-        {
-          "mode": "TRANSIT",
-          "agencyId": "bart",
-          "routeId": "Yellow-N",
-          "routeName": "Yellow",
-          "routeColor": "#F9E300",
-          "from": { "name": "Montgomery St", "lat": 37.7894, "lon": -122.4011 },
-          "to": { "name": "19th St Oakland", "lat": 37.8079, "lon": -122.2680 },
-          "startTime": "2026-10-23T17:35:00-07:00",
-          "endTime": "2026-10-23T17:48:00-07:00",
-          "headsign": "Antioch",
-          "geometry": { "type": "LineString", "coordinates": [] },
-          "realtime": false,
-          "delaySeconds": null
-        }
-      ]
-    }
-  ]
-}
-```
-
-Errors use `{ "error": { "code": "NO_PATH", "message": "No transit journey found." } }` with an appropriate HTTP status. `realtime` must be false unless OTP has actually applied verified realtime data. The frontend will label scheduled-only results honestly.
-
-The existing global search remains the sole search entry point. Once the endpoint exists, it can gain an explicit Plan mode that collects origin and destination without reintroducing a permanent dashboard form.
-
-## Additions from the claude-frontend branch (October 17, 2026)
-
-The frontend now implements this contract in `app.js` (`submitPlan`, `viewResults`, `viewNavigate`). It also reads these optional fields when present. None are required.
-
-| Field | Where | Used for |
+| Endpoint | Used for | Frontend code |
 |---|---|---|
-| `legs[].distanceMeters` | Walk legs | "Walk 0.2 mi" in the timeline and step view |
-| `legs[].intermediateStops` | Transit legs (array) | Stop counts, for example "5 stops" |
-| `legs[].routeLongName`, `legs[].routeShortName` | Transit legs | Fallback labels when the route is not in `network.json` |
-| `legs[].agencyId` + `legs[].routeId` | Transit legs | When these match `network.json` IDs (`bart`, `muni`, `caltrain`, `vta`, `act`), the frontend uses Rove's own badge text and colors |
+| `GET /api/v2/realtime` | Live vehicles, alerts, per-agency quality gate, feed ages. Polled every 60 seconds while the tab is visible. | `loadRealtime`, `liveVehicles`, `coverage`, `activeAlerts` |
+| `GET /api/v2/arrivals?agency=&stop=` | Departures on stop pages, and the next departure on nearby and saved rows. Cached for 25 seconds per stop. | `fetchArrivals`, `viewStop`, `placeRow` |
+| `GET /api/v2/plan/status` | Shows an offline notice and removes the Find routes button when routing is down. | `fetchPlanStatus`, `planNoticeHtml` |
+| `GET /api/v2/plan` | Trip results, timeline, and step-by-step navigation. | `submitPlan`, `normalizeItinerary`, `viewResults`, `buildSteps` |
+| `GET /api/realtime` | Fallback only, when `/api/v2/realtime` returns 404 (an older server). | `loadRealtime` |
 
-HTTP 404 or 501 from `/api/journeys` is shown as "Trip planning is not available on this server yet." Error code `NO_PATH` is shown as a no-route message.
+Origin and destination search uses the browser's copy of `network.json` for instant results, and sends the station's coordinates (the parent station when one exists). Riders can also choose any point on the map, or right-click the map on desktop.
 
-## Realtime fields the frontend understands
+## How the frontend follows the display rules
 
-`/api/realtime` keeps its current shape. Two optional additions let the backend take over matching without another frontend change:
+- Times are shown from `start.estimated` when present, otherwise `start.scheduled`, and are labeled "Scheduled" unless the leg is real time.
+- `staySeated: true` is shown as "Stay on board. It continues as ..." and is not counted or drawn as a transfer.
+- `canceled` legs and `hasCancellation` itineraries are labeled in the canceled color.
+- Leg `alerts` are shown under the leg in the timeline and on the navigation step.
+- An empty `itineraries` list shows `errors[0].message`.
+- `400` responses highlight the field named in `field` (origin, destination, or time) with plain-language text. `503` shows the offline notice. Other failures show a retry message. No trip is ever fabricated.
+- Arrivals with status `unverified` show "Live arrivals are unavailable right now" instead of an empty board. `canceled` entries are listed separately as "Canceled" or "Not stopping here". `stale` arrivals show their age and "Live times may be out of date."
+- Vehicles are drawn only when `routeId` is not null. BART never has vehicles.
 
-1. `meta.coverage[agencyId] = { "vehicles": true|false, "arrivals": true|false }` overrides the frontend's built-in coverage table (Muni and AC Transit fully on, Caltrain on with train numbers, VTA vehicles only, BART off).
-2. Per item, `agencyId` and `routeKey` (`"<agencyId>::<routeId>"`, for example `"bart::1"`) from a server-side exact index. When present, they are used directly instead of the 511 prefix match. This is the hook for BART direct Trip Updates and the VTA and Caltrain fixes.
+## Requests for the backend
 
-The frontend never guesses a route by name. Items it cannot match exactly are not shown.
+1. **Several stops in one arrivals call.** Same-named stops on opposite sides of a street (for example both Muni platforms at "Market St & Sansome St") are one place in the interface. The frontend currently makes up to four `/api/v2/arrivals` calls for one place. Accepting `stop=15689,15690` would make that one call.
+2. **Alert entity IDs.** 511 alerts keep prefixed IDs (`SF:38R`) while BART alerts use static IDs. The frontend handles both, but static IDs plus `agency` on every entity would be simpler and less fragile.
+3. **Fonts.** `lib/app.mjs` has no MIME type for `.woff2`. The self-hosted font in `public/fonts/` is served as `application/octet-stream`. Browsers accept this, but please add `'.woff2': 'font/woff2'`.
+4. **Route type bug, still present.** `scripts/build-data.mjs` writes `type:+r.route_type||3`, which turns route type `0` (light rail) into `3` (bus). Muni Metro and VTA light rail are typed as buses in `network.json`. Please change it to treat `0` as a valid value and rebuild the data. Until then, `app.js` classifies those lines explicitly (`RAIL_ROUTE_IDS`).

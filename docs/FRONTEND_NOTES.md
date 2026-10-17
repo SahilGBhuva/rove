@@ -1,6 +1,6 @@
 # Frontend notes (claude-frontend branch)
 
-Updated October 17, 2026.
+Updated October 17, 2026 (Phase 2).
 
 ## What changed
 
@@ -30,3 +30,26 @@ Not yet tested: real basemap tiles (blocked in the test environment), a real 511
 ## Open item
 
 Esri World Imagery terms need review before any public launch.
+
+## Phase 2 changes
+
+- **Backend integration:** the frontend uses the backend's v2 endpoints (`/api/v2/realtime`, `/api/v2/arrivals`, `/api/v2/plan`, `/api/v2/plan/status`). See `FRONTEND_ROUTING_API_CONTRACT.md` for how each display rule is handled and what the frontend asks the backend to change.
+- **Trip planning:** search for stops, use your location, choose any point on the map, or right-click the map on desktop. Results show transfers, walking legs, platforms, interlined trains ("Stay on board"), cancellations, and leg alerts. Navigation shows one step at a time, keeps the screen awake, and advances walking and riding steps automatically when it can follow the rider's location.
+- **Map:** Standard and Dark both start from OpenFreeMap Positron and are recolored in `restyleBasemap()`: warm off-white land, soft blue water, sage parks, and subtle gold roads. Bright lines such as BART Yellow get a darker edge so they stay readable.
+- **Phone layout:** the sheet can be dragged from its handle, its header, or its content. Below full height, a vertical swipe moves the sheet; at full height the content scrolls, and pulling down from the top lowers the sheet. Safe areas are measured, and the search field is hidden on detail screens to give the content more room.
+
+## Phase 2 testing and data sources
+
+| What | Data | Kind |
+|---|---|---|
+| Backend code | `claude-development` at `41849f9`, run locally with the frontend files from this branch | Real code |
+| Backend unit tests | 51 passed, 5 skipped, 0 failed | Real |
+| BART arrivals | A live BART feed recorded by the backend session at 23:10 UTC today, replayed to the server. 100% trip and stop match; 31 arrivals at Montgomery Street. The feed was more than two minutes old, so the stale label was exercised too. | Real data, recorded |
+| 511 realtime (Muni, VTA, Caltrain, AC Transit) | Not tested. No 511 key is available in this environment. The "Live arrivals unavailable" state was tested for those agencies. | Not tested |
+| Journey planning | The real `lib/routing/otp.mjs` talking to a stand-in OpenTripPlanner that returns three itineraries built from real `network.json` geometry, and a no-route error. A real OTP graph was not available (it needs Java 21 and about 6 GB of memory). | Fixture |
+| Routing engine down | Fake OTP stopped; `/api/v2/plan/status` returned 503 and the planner showed its offline notice | Real backend behavior |
+| Basemap tiles | The new palette rendered on real OpenFreeMap tiles in a browser on the Mac, at Bay Area and city zoom, light and dark | Real tiles |
+| Layout | 320, 375, 390, 430, 768, 1024, and 1440 px: no horizontal overflow, no text under 12.5 px, no touch target under 24 px, no console errors | Headless Chromium |
+| Bottom sheet | Swipe up from half to full, down to half, down to peek (synthetic touch events) | Headless Chromium |
+
+Not yet tested: real trips from OpenTripPlanner, 511 live data, and a physical phone.

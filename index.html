@@ -9,7 +9,7 @@
   <meta name="description" content="A map-first guide to BART, Muni, VTA, AC Transit, and Caltrain." />
   <link rel="preload" href="public/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=9" />
+  <link rel="stylesheet" href="styles.css?v=10" />
 </head>
 <body>
   <a class="skip-link" href="#panelBody">Skip to transit information</a>
@@ -81,9 +81,14 @@
     </div>
   </div>
 
+  <div class="map-pick" id="mapPick" role="status" hidden>
+    <span id="mapPickText">Tap the map to set the destination.</span>
+    <button class="text-button" id="mapPickCancel">Cancel</button>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>
