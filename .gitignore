@@ -17,6 +17,8 @@ build/
 data/raw/
 data/extracted/
 data/reports/
+data/otp/
+data/osm/
 
 # Logs and local tooling
 *.log

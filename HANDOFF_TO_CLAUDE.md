@@ -148,3 +148,18 @@ npm run check-secrets
 ## Definition of the October 23 MVP
 
 Prioritize: valid current schedules; verified Muni/AC vehicles and arrivals; honest scheduled-only/partial labels elsewhere; secure key handling; a working scheduled OpenTripPlanner path; essential desktop/mobile flows; reproducible tests; private GitHub checkpoint. Defer cosmetic work and any unverified realtime or routing claims.
+
+## Claude backend checkpoint (October 17, 2026, branch `claude-development`)
+
+Backend only; `index.html`, `styles.css` and `app.js` are unchanged. The frontend contract is in `docs/API_CONTRACT.md`; OTP operations are in `docs/ROUTING.md`.
+
+- `server.mjs` is now a thin bootstrap. Logic lives in `lib/` (`agencies`, `gtfs/static-index`, `realtime/{decode,feed-cache,match,match-log,service}`, `routing/otp`, `stops-search`, `app`). The static-file allowlist and 404 boundary are unchanged and covered by tests.
+- Exact realtime index: every trip update and vehicle is resolved server-side by agency + trip_id + service date against static GTFS. Route ids always come from static `trips.txt` (fixes Caltrain, and VTA's 76.9% route match). Stops resolve by exact stop_id, unique stop_code (VTA), or (trip_id, stop_sequence); disagreements are conflicts and never guessed. The browser's fuzzy matcher now receives only exact `PREFIX:id` values or empty strings.
+- Live quality gate: arrivals for an agency are exposed only when the current feed shows at least 99% trip and stop match, no conflicts, and at least 20 predictions. Hourly match rates go to `data/reports/match-rates.jsonl` and `/api/v2/realtime/quality`.
+- BART direct GTFS-RT trip updates and alerts (key-free) replace 511's BART entries when live; 511 remains the fallback. Antioch 600-range trip ids are reported as documented exceptions. No BART vehicle positions are produced.
+- Cancellations, skipped stops and NO_DATA stops carry no prediction times and are reported separately.
+- Fixed a pre-existing cache bug: after a rate-limited response the in-flight slot was never cleared, so every later request returned the same rate-limited result.
+- OpenTripPlanner 2.8.1: setup/build/start scripts, committed build and router configs, `/api/v2/plan` (planConnection) and `/api/v2/plan/status`, `/api/v2/stops/search`. The query and variables are validated against the 2.8.1 schema in tests.
+- Tests: `npm test` (node:test, 56 tests: matching, cancellations, skipped/NO_DATA stops, stale and rate-limited feeds, missing predictions, routing normalisation and errors, HTTP boundary, real-GTFS checks).
+
+Not yet verified live (blocked in Claude's environments by the network allowlist, and by the 511 key living only on Sahil's Mac): the OTP graph build and real itineraries (`npm run otp:setup && npm run otp:build && npm run otp:start`, then `npm run verify-routing`), and live VTA/Caltrain/BART match rates (`npm start`, then `npm run verify-realtime`).

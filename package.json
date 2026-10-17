@@ -4,14 +4,25 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.mjs",
-    "check": "node --check server.mjs && node --check app.js && node --check scripts/audit-gtfs.mjs && node --check scripts/fetch-511-static.mjs && node --check scripts/check-secrets.mjs && node --check scripts/verify-realtime.mjs",
+    "test": "node --test --test-reporter=spec test/*.test.mjs",
+    "check": "node scripts/check-syntax.mjs",
     "check-secrets": "node --env-file-if-exists=.env scripts/check-secrets.mjs",
     "audit-data": "node scripts/audit-gtfs.mjs",
     "verify-realtime": "node scripts/verify-realtime.mjs",
+    "verify-routing": "node scripts/verify-routing.mjs",
     "configure-511": "./scripts/configure-511-key.sh",
-    "refresh-data": "./scripts/refresh-data.sh"
+    "refresh-data": "./scripts/refresh-data.sh",
+    "otp:setup": "./scripts/otp/setup-otp.sh",
+    "otp:build": "./scripts/otp/build-graph.sh",
+    "otp:start": "./scripts/otp/start-otp.sh"
   },
   "dependencies": {
     "gtfs-realtime-bindings": "^1.1.1"
+  },
+  "devDependencies": {
+    "graphql": "^16.9.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

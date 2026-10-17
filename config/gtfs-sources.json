@@ -1,8 +1,8 @@
 {
   "bart": {
     "static": "https://www.bart.gov/dev/schedules/google_transit.zip",
-    "realtime": "BART direct trip updates and alerts",
-    "pairing": "verified direct-to-direct"
+    "realtime": "BART direct GTFS-RT trip updates and alerts (http://api.bart.gov/gtfsrt/tripupdate.aspx, alerts.aspx); no vehicle positions published",
+    "pairing": "direct-to-direct; joined on trip_id; realtime trip ids 600-699 (Pittsburg Center/Antioch) have no GTFS match by BART's own notice and are reported as documented exceptions"
   },
   "muni": {
     "static": "511 operator_id=SF",
@@ -11,8 +11,8 @@
   },
   "vta": {
     "static": "https://gtfs.vta.org/gtfs_vta.zip",
-    "realtime": "511 pending verification",
-    "pairing": "requires a verified crosswalk or migration to 511 static before live status"
+    "realtime": "511 (SC)",
+    "pairing": "exact trip_id join; stops resolved by exact stop_id, unique stop_code, or (trip_id, stop_sequence), with conflicts rejected; arrivals shown only when live stop match >= 99%"
   },
   "act": {
     "static": "511 operator_id=AC",
@@ -21,7 +21,7 @@
   },
   "caltrain": {
     "static": "https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip",
-    "realtime": "511 pending verification",
-    "pairing": "requires a verified crosswalk or migration to 511 static before live status"
+    "realtime": "511 (CT)",
+    "pairing": "exact trip_id join; route_id taken from static trips.txt (511 route ids differ); arrivals gated at 99% live match"
   }
 }

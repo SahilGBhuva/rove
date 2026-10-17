@@ -1,0 +1,14 @@
+{
+  "transitServiceStart": "-P3D",
+  "transitServiceEnd": "P4M",
+  "osm": [
+    { "source": "bay-area.osm.pbf", "timeZone": "America/Los_Angeles" }
+  ],
+  "transitFeeds": [
+    { "type": "gtfs", "source": "bart-gtfs.zip", "feedId": "bart" },
+    { "type": "gtfs", "source": "muni-gtfs.zip", "feedId": "muni" },
+    { "type": "gtfs", "source": "caltrain-gtfs.zip", "feedId": "caltrain" },
+    { "type": "gtfs", "source": "vta-gtfs.zip", "feedId": "vta" },
+    { "type": "gtfs", "source": "act-gtfs.zip", "feedId": "act" }
+  ]
+}
