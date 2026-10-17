@@ -2,60 +2,88 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#eef1ec" />
-  <title>Rove — Bay Area Transit</title>
-  <meta name="description" content="A calm, map-first way to explore Bay Area public transit." />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0e0f11" media="(prefers-color-scheme: dark)" />
+  <title>Rove | Bay Area Transit</title>
+  <meta name="description" content="A map-first guide to BART, Muni, VTA, AC Transit, and Caltrain." />
+  <link rel="preload" href="public/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="stylesheet" href="public/styles-v2.css" />
+  <link rel="stylesheet" href="styles.css?v=9" />
 </head>
 <body>
-  <div id="app" class="app">
-    <main class="map-shell" aria-label="Interactive Bay Area transit map">
-      <div id="map" class="map" role="application" aria-label="Interactive geographic map of Bay Area transit routes"></div>
-      <div class="map-loading" id="mapLoading"><span></span><strong>Loading the Bay Area</strong><small>Parsing complete GTFS network…</small></div>
+  <a class="skip-link" href="#panelBody">Skip to transit information</a>
 
-      <header class="topbar">
-        <button class="brand" aria-label="Rove home"><span class="brand-mark">R</span><span class="brand-name">Rove</span></button>
-        <button class="search" id="searchBtn"><span class="search-icon">⌕</span><span class="search-copy">Search routes and stops</span><kbd>⌘ K</kbd></button>
-        <div class="top-actions"><button class="icon-btn" id="themeBtn" aria-label="Toggle dark mode">◐</button></div>
-      </header>
+  <main class="map-area" aria-label="Map">
+    <div id="map" class="map" role="region" aria-label="Interactive map of Bay Area transit lines and stops"></div>
+    <div class="map-loading" id="mapLoading" role="status"><span class="spinner" aria-hidden="true"></span><span>Loading the Bay Area transit network</span></div>
+  </main>
 
-      <aside class="sidebar" id="sidebar">
-        <div class="sheet-handle" data-sheet-handle aria-label="Resize layers panel"><i></i></div>
-        <div class="sidebar-head"><div><span class="panel-kicker">Map</span><h1>Transit layers</h1></div><button class="close-panel" id="closeSidebar" aria-label="Close layers">×</button></div>
-        <div class="planner-tabs" role="tablist"><button class="tab active" data-tab="layers">Networks</button><button class="tab" data-tab="saved">Saved</button></div>
-        <section class="tab-panel active" id="layersPanel">
-          <button class="panel-search" id="panelSearch"><span>⌕</span><span>Find a route or stop</span><b>›</b></button>
-          <div class="basemap-control" aria-label="Map appearance">
-            <button class="active" data-map-style="standard">Standard</button>
-            <button data-map-style="satellite">Satellite</button>
-            <button data-map-style="dark">Dark</button>
-          </div>
-          <div class="section-title"><h2>On the map</h2><button id="toggleAll">Show all</button></div>
-          <div id="agencyList" class="agency-list"></div>
-          <div class="data-note"><span class="status-dot"></span><div><strong>Scheduled network</strong><p>Live connections await your 511 API key.</p></div><button id="dataInfo">i</button></div>
-        </section>
-        <section class="tab-panel" id="savedPanel"><div id="savedList" class="saved-list"></div></section>
-        <button id="replayTour" class="tour-link">? &nbsp;Replay the quick tour</button>
-      </aside>
+  <aside class="panel" id="panel" aria-label="Transit information">
+    <div class="sheet-grabber" id="sheetGrabber" role="button" tabindex="0" aria-label="Resize panel. Use the up and down arrow keys."><span></span></div>
+    <header class="panel-top">
+      <div class="brand-row">
+        <span class="wordmark" aria-label="Rove">rove</span>
+        <button class="icon-button" id="menuButton" aria-haspopup="menu" aria-expanded="false" aria-label="More options">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="16" cy="10" r="1.6"/></svg>
+        </button>
+      </div>
+      <div class="search-field" role="search">
+        <svg class="search-glyph" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M12.6 12.6 17 17"/></svg>
+        <input id="searchInput" type="search" placeholder="Search stops and lines" autocomplete="off" spellcheck="false" aria-label="Search stops and lines" aria-controls="panelBody" />
+        <button class="search-clear" id="searchClear" aria-label="Clear search" hidden>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15"/></svg>
+        </button>
+      </div>
+    </header>
+    <div class="panel-body" id="panelBody" tabindex="-1" aria-live="polite"></div>
+  </aside>
 
-      <div class="map-tools"><button id="zoomIn" aria-label="Zoom in">+</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="locate" aria-label="Show my location">⌖</button></div>
-      <div class="map-key"><span><i class="live-key"></i>Live</span><span><i class="scheduled-key"></i>Scheduled</span></div>
-      <button class="mobile-menu" id="mobileMenu"><span class="layers-icon">≡</span><span>Layers</span></button>
-      <div class="attribution">Map illustration · Transit data sources</div>
-    </main>
-
-    <aside class="detail-panel" id="detailPanel" aria-live="polite"><div class="sheet-handle" data-sheet-handle aria-label="Resize details panel"><i></i></div><button class="close-panel" id="closeDetail">×</button><div id="detailContent"></div></aside>
-    <div class="modal-backdrop hidden" id="searchModal"><div class="search-modal"><div class="modal-search"><span>⌕</span><input id="globalSearch" placeholder="Search routes and stops" autocomplete="off"><button id="closeSearch">Esc</button></div><div class="search-hint">Across BART, Muni, Caltrain, VTA and AC Transit</div><div id="searchResults" class="search-results"></div></div></div>
-    <div class="toast" id="toast"></div>
-    <div class="tour-backdrop hidden" id="tour"><div class="tour-card"><span class="tour-step" id="tourStep"></span><div class="tour-visual" id="tourVisual"></div><h2 id="tourTitle"></h2><p id="tourText"></p><div class="tour-progress" id="tourProgress"></div><div class="tour-actions"><button id="tourSkip">Skip</button><div><button id="tourBack">Back</button><button class="primary small" id="tourNext">Next</button></div></div></div></div>
+  <div class="menu" id="menu" role="menu" hidden>
+    <button role="menuitem" data-menu="lines">All lines</button>
+    <button role="menuitem" data-menu="intro">Show the introduction</button>
+    <button role="menuitem" data-menu="sources">Data sources and credits</button>
   </div>
+
+  <div class="map-controls" id="mapControls">
+    <div class="control-group desktop-only">
+      <button id="zoomIn" aria-label="Zoom in"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg></button>
+      <button id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12"/></svg></button>
+    </div>
+    <div class="control-group">
+      <button id="locateButton" aria-label="Show my location"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16.5 16 10 12.8 3.5 16Z" transform="rotate(45 10 10)"/></svg></button>
+      <button id="layersButton" aria-label="Map layers" aria-expanded="false" aria-controls="layersPopover"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3 18 7.5 10 12 2 7.5Z"/><path d="M2 11.5 10 16l8-4.5"/></svg></button>
+    </div>
+  </div>
+
+  <section class="layers-popover" id="layersPopover" aria-label="Map layers" hidden>
+    <div class="popover-head"><h2>Map</h2><button class="icon-button" id="layersClose" aria-label="Close map layers"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15"/></svg></button></div>
+    <div class="segmented" role="radiogroup" aria-label="Map style">
+      <button role="radio" data-map-mode="standard">Standard</button>
+      <button role="radio" data-map-mode="satellite">Satellite</button>
+      <button role="radio" data-map-mode="dark">Dark</button>
+    </div>
+    <h3 class="label">Agencies</h3>
+    <div id="agencyToggles" class="toggle-list"></div>
+    <h3 class="label">Show</h3>
+    <div class="toggle-list">
+      <label class="toggle-row"><span>Live vehicles</span><input type="checkbox" id="vehiclesToggle" checked /><i aria-hidden="true"></i></label>
+    </div>
+  </section>
+
+  <div class="intro" id="intro" role="dialog" aria-modal="false" aria-labelledby="introTitle" hidden>
+    <p class="intro-step" id="introStep"></p>
+    <h2 id="introTitle"></h2>
+    <p id="introText"></p>
+    <div class="intro-actions">
+      <button class="text-button" id="introSkip">Skip</button>
+      <button class="button primary" id="introNext">Next</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
