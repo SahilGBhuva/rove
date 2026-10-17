@@ -19,6 +19,7 @@ data/extracted/
 data/reports/
 data/otp/
 data/osm/
+data/live/
 
 # Logs and local tooling
 *.log

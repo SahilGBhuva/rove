@@ -168,3 +168,19 @@ test('entities without a recognisable operator prefix are counted as unassigned'
   assert.equal(r.unassigned.updates, 1);
   assert.equal(r.updates.length, 0);
 });
+
+test('BART Antioch line: real predictions at real stops are shown without inventing a route', () => {
+  const r = matcher().match([{ source: 'bart', agency: AGENCIES.bart, updates: updatesOf([
+    ...Array.from({ length: 25 }, (_, i) => tripUpdate(`b${i}`, { tripId: '1965118', stops: [{ stopId: 'A10-1', seq: 0, t: NOW_S + 60 + i }] })),
+    tripUpdate('antioch', { tripId: '668', stops: [{ stopId: 'A10-2', seq: 0, t: NOW_S + 300 }, { stopId: 'NOT-A-STOP', seq: 1, t: NOW_S + 400 }] })
+  ]) }]);
+  const ex = r.updates.find(u => u.rawTripId === '668');
+  assert.deepEqual(ex.stopTimes.map(s => s.stopId), ['A10-2', null]);
+  assert.equal(r.quality.bart.stopTimes, 25, 'exception stops do not count toward the quality gate');
+  const board = arrivalsForStop({ updates: r.updates, quality: r.quality, agencyId: 'bart', stopId: 'LAKE', includeChildStops: ['A10-1', 'A10-2'], now: NOW_S });
+  const antioch = board.arrivals.find(a => a.tripId === '668');
+  assert.equal(antioch.routeId, null);
+  assert.equal(antioch.scheduled, false);
+  assert.match(antioch.note, /Antioch/);
+  assert.equal(board.arrivals.find(a => a.tripId === '1965118').scheduled, true);
+});

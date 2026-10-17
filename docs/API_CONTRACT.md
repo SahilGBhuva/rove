@@ -85,7 +85,7 @@ Returns `{query, results:[{agency, agencyName, id, name, station, stopIds:[...],
 { "agency":"muni", "stop":{...search result shape...},
   "status":"live",                      // live | no-predictions | unverified | unknown-agency
   "reasons":[],                         // present when unverified: why predictions are withheld
-  "arrivals":[{"tripId":"...","routeId":"38R","routeName":"38R","headsign":"Ocean Beach","stopId":"15550","time":1792281000,"delay":60,"uncertainty":null,"source":"511"}],
+  "arrivals":[{"tripId":"...","routeId":"38R","routeName":"38R","headsign":"Ocean Beach","stopId":"15550","time":1792281000,"delay":60,"uncertainty":null,"source":"511","scheduled":true,"note":null}],
   "canceled":[{"tripId":"...","routeId":"14","routeName":"14","headsign":"...","stopId":"15550","reason":"trip-canceled"}],
   "stale": false, "feed": {"headerTimestamp":..., "fetchedAt":..., "stale":false, "cache":"fresh", "error":null}, "generatedAt": 1792280000000 }
 ```
@@ -94,6 +94,7 @@ Returns `{query, results:[{agency, agencyName, id, name, station, stopIds:[...],
 - `no-predictions` means the agency is verified but nothing is predicted for this stop in the next three hours.
 - `canceled` lists canceled trips and skipped stops for this stop. Show them as canceled; they never appear in `arrivals`.
 - For a station id (BART `POWL`), predictions for all of its platforms are included.
+- `scheduled: false` marks a real prediction for a trip that is not in the published schedule: BART's Antioch line (Pittsburg Center and Antioch stations) and BART added trips. These have `routeId: null` and a `note`; show them as "BART" with the note rather than guessing a line.
 - When `stale` is true, label the data with its age (`feed.headerTimestamp`).
 
 ### `GET /api/v2/realtime`

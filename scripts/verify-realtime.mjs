@@ -15,7 +15,7 @@ const agencies = Object.fromEntries(Object.entries(q.quality).map(([id, a]) => [
   stopMethods: a.stopMethods, stopConflicts: a.stopConflicts, sequenceMismatches: a.sequenceMismatches,
   documentedExceptions: a.documentedExceptions, addedTrips: a.addedTrips, serviceDateMismatch: a.serviceDateMismatch,
   canceledTrips: a.canceledTrips, skippedStops: a.skippedStops, noDataStops: a.noDataStops,
-  arrivalsVerified: a.arrivalsVerified, gateReasons: a.gateReasons
+  arrivalsVerified: a.arrivalsVerified, gateReasons: a.gateReasons, samples: a.samples
 }]));
 const report = { verifiedAt: new Date().toISOString(), feeds: q.feeds, errors: q.errors, unassigned: q.unassigned, agencies, hourly: q.hourly };
 fs.mkdirSync(path.join(root, 'data/reports'), { recursive: true });
