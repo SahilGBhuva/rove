@@ -811,3 +811,27 @@ body.map-satellite .maplibregl-ctrl-attrib { background: rgba(255, 255, 255, .9)
   .ia-type { clip-path: none; }
   .ia-caret { display: none; }
 }
+
+/* Rove home refinement: make navigation the hero, metadata the footer. */
+@media (min-width: 768px) {
+  :root { --panel-w: 368px; --pad: 22px; }
+  .panel { top: 18px; left: 18px; max-height: calc(100dvh - 36px); border-radius: 22px; box-shadow: 0 2px 5px rgba(20,30,40,.07), 0 18px 56px rgba(20,30,40,.16); }
+  .brand-row { height: 68px; }
+}
+.panel-top { padding-bottom: 18px; }
+.wordmark { letter-spacing: -.045em; }
+.search-field { height: 54px; background: var(--paper); border: 1px solid var(--rule); border-radius: 13px; }
+.search-field input { font-size: 15px; }
+.search-field:hover { border-color: var(--ink-3); background: var(--paper); }
+.quick-row { gap: 10px; padding-top: 2px; padding-bottom: 14px; }
+.quick { border-radius: 12px; min-height: 46px; padding: 0 16px; font-size: 14px; transition: transform .16s ease, box-shadow .16s ease, background .16s ease; }
+.quick:first-child { box-shadow: 0 3px 8px rgba(0,0,0,.12); }
+.quick:hover { transform: translateY(-1px); }
+.panel-body > .section { margin-top: 6px; }
+.home-footer { margin: 8px var(--pad) 4px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.home-service-status { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.home-footer-links { display: flex; gap: 16px; flex-wrap: wrap; }
+.home-footer-links .text-button { font-size: 12px; color: var(--ink-2); text-decoration: none; }
+.home-footer-links .text-button:hover { color: var(--ink); text-decoration: underline; }
+@media (max-width: 767px) { .panel-top { padding-bottom: 10px; } .quick-row { padding-bottom: 10px; } }
+@media (prefers-reduced-motion: reduce) { .quick { transition: none; } .quick:hover { transform: none; } }

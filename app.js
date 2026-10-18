@@ -1261,9 +1261,9 @@ function viewHome() {
 
   parts.push(`<section class="section"><h2 class="label">Explore</h2><ul class="rows">
     <li><button class="row" data-action="lines"><span class="row-main"><span class="row-title">All lines</span><span class="row-meta">${idx.routes.size} lines across 5 agencies</span></span>${ICONS.chevron}</button></li>
-    <li><button class="row" data-action="sources"><span class="row-main"><span class="row-title">Data sources and credits</span><span class="row-meta">Schedules, live data, maps, and address search</span></span>${ICONS.chevron}</button></li>
+
   </ul></section>`);
-  parts.push(`<p class="note">${esc(liveStatusLine())}</p><div class="note-actions"><button class="text-button" data-action="intro">Show the introduction</button></div>`);
+  parts.push(`<div class="home-footer"><p class="note home-service-status">${esc(liveStatusLine())}</p><div class="home-footer-links"><button class="text-button" data-action="sources">Data & credits</button><button class="text-button" data-action="intro">How Rove works</button></div></div>`);
   return parts.join('');
 }
 
