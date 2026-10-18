@@ -85,6 +85,23 @@ test('BART: a platform stop id is accepted when the realtime stop_sequence numbe
   assert.equal(r.quality.bart.sequenceMismatches, 0, 'sequence 7 does not exist on the trip, so nothing disagrees');
 });
 
+test('BART: a different platform of a station the trip serves is a platform change, not a conflict (live SFO case)', () => {
+  // Trip 1965118 is scheduled at Lake Merritt platform A10-1; the feed reports platform A10-2.
+  const r = matcher().match([{ source: 'bart', agency: AGENCIES.bart, updates: updatesOf([
+    tripUpdate('p', { tripId: '1965118', stops: [{ stopId: 'A10-2', seq: 0, t: NOW_S + 120 }, { stopId: 'M30-1', seq: 1, t: NOW_S + 900 }] }),
+    tripUpdate('x', { tripId: '1965200', stops: [{ stopId: 'E20-1', seq: 0, t: NOW_S + 300 }] })
+  ]) }]);
+  const [moved, wrong] = r.updates;
+  assert.equal(moved.stopTimes[0].stopId, 'A10-2', 'the platform the feed reports is kept');
+  assert.equal(moved.stopTimes[0].platformChange, true);
+  assert.equal(moved.stopTimes[1].platformChange, false);
+  assert.equal(wrong.stopTimes[0].stopId, null, 'a stop at a station the trip never serves is still rejected');
+  assert.equal(r.quality.bart.platformChanges, 1);
+  assert.equal(r.quality.bart.stopConflicts, 1);
+  const board = arrivalsForStop({ updates: r.updates, quality: { bart: { arrivalsVerified: true } }, agencyId: 'bart', stopId: 'LAKE', includeChildStops: ['A10-1', 'A10-2'], now: NOW_S });
+  assert.equal(board.arrivals[0]?.stopId, 'A10-2');
+});
+
 test('service date: a trip whose service does not run on start_date is not matched', () => {
   const r = run511([tripUpdate('w', { tripId: 'SF:11003', startDate: '20261020', stops: [{ stopId: 'SF:15550', seq: 1, t: NOW_S }] })]);
   assert.equal(r.updates[0].tripMatch, 'service-date-mismatch');

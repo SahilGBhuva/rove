@@ -121,6 +121,14 @@ At the same time, BART's trip match was 88.7%, below the 99% gate, so Rove corre
 
 Fix: a trip with no schedule match is treated as Antioch service when every stop it predicts is at Pittsburg Center or Antioch, whatever its id. A trip that is not in the schedule and predicts any other station is still an unknown trip and keeps counting against the gate. Rerunning the matcher on the four saved BART captures (October 17, 22:58, 23:03 and 23:10 UTC, and October 18, 03:57 UTC) gives 100% trip and stop matching with zero conflicts in each. This has not yet been rechecked against a fresh live run; `npm run verify-all` on the Mac does that.
 
+### BART fresh capture (October 18, 2026, 16:33 UTC): second defect found and fixed
+
+A new capture of BART's live feed, through the Mac's browser: 70 trip updates, 60 matched to the schedule, 10 Antioch-line trips (back in the 600 range, recognized by station), no unknown trips. One stop prediction failed: trip 1973631 is scheduled at SFO platform 2 (`Y10-2`), and BART reported that the train used platform 3 (`Y10-3`). The matcher counted it as a conflict, and that one conflict withheld all BART arrivals.
+
+Fix: a platform of a station the trip serves is accepted as a platform change, under the platform the feed reports, and counted separately (`platformChanges`). A stop at any station the trip does not serve is still a conflict. Result for this capture: 100% of trips, 853 of 853 stop predictions, 0 conflicts, 1 platform change, arrivals verified.
+
+BART's alerts feed was empty (header only) in this capture as well.
+
 ## Launch scenarios (October 20, 2026 schedules)
 
 `npm run verify-scenarios` against the API (`/api/v2/places/search`, then `/api/v2/plan`). These are schedule-based: real GTFS schedules and OpenStreetMap streets through OpenTripPlanner, not live data. Run in the cloud workspace for a Tuesday.

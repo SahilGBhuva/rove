@@ -39,7 +39,7 @@ for (const file of files) {
       tripUpdates: q.tripUpdates, tripMatched: q.tripMatched, tripMatchPct: q.tripMatchPct, documentedExceptions: q.documentedExceptions,
       addedTrips: q.addedTrips, serviceDateMismatch: q.serviceDateMismatch, tripUnknown: q.tripUnknown, canceledTrips: q.canceledTrips,
       stopTimes: q.stopTimes, stopMatched: q.stopMatched, stopMatchPct: q.stopMatchPct, stopMethods: q.stopMethods, stopConflicts: q.stopConflicts,
-      sequenceMismatches: q.sequenceMismatches, skippedStops: q.skippedStops, noDataStops: q.noDataStops,
+      sequenceMismatches: q.sequenceMismatches, platformChanges: q.platformChanges, skippedStops: q.skippedStops, noDataStops: q.noDataStops,
       vehicles: q.vehicles, vehicleMatchPct: q.vehicleMatchPct, arrivalsVerified: q.arrivalsVerified, gateReasons: q.gateReasons
     }])),
     unmatchedTripSample: unmatchedTrips.slice(0, 15), unmatchedStopSample: unmatchedStops.slice(0, 15),

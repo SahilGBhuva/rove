@@ -12,7 +12,7 @@ const q = await response.json();
 const agencies = Object.fromEntries(Object.entries(q.quality).map(([id, a]) => [id, {
   tripUpdates: a.tripUpdates, vehicles: a.vehicles,
   tripMatchPct: a.tripMatchPct, stopMatchPct: a.stopMatchPct, vehicleMatchPct: a.vehicleMatchPct,
-  stopMethods: a.stopMethods, stopConflicts: a.stopConflicts, sequenceMismatches: a.sequenceMismatches,
+  stopMethods: a.stopMethods, stopConflicts: a.stopConflicts, sequenceMismatches: a.sequenceMismatches, platformChanges: a.platformChanges,
   documentedExceptions: a.documentedExceptions, addedTrips: a.addedTrips, serviceDateMismatch: a.serviceDateMismatch,
   canceledTrips: a.canceledTrips, skippedStops: a.skippedStops, noDataStops: a.noDataStops,
   arrivalsVerified: a.arrivalsVerified, gateReasons: a.gateReasons, samples: a.samples
