@@ -118,7 +118,7 @@ const state = {
   stack: [{ name: 'home' }],
   searchQuery: '',
   detent: 'half',
-  plan: { from: null, to: null, draft: { from: '', to: '' }, timeMode: 'now', dateTime: '', results: null, error: null, loading: false, expanded: 0, focus: null, query: '', sort: 'fastest' },
+  plan: { from: null, to: null, draft: { from: '', to: '' }, access: store.get('rove-first-mile-v1', 'WALK') === 'CAR_PARKING' ? 'CAR_PARKING' : 'WALK', driveNote: false, timeMode: 'now', dateTime: '', results: null, error: null, loading: false, expanded: 0, focus: null, query: '', sort: 'fastest' },
   focusLeg: null,
   nav: null,
   wakeLock: null,
@@ -471,8 +471,8 @@ const SATELLITE_STYLE = {
 const fallbackStyle = dark => ({ version: 8, glyphs: OPENFREEMAP_GLYPHS, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': dark ? '#15171a' : '#f4f1ea' } }] });
 
 const THEME = {
-  light: { brightCasing: '#8a7d4a', surface: '#ffffff', ink: '#111214', bus: '#7b8088', faded: '#a9adb3', stopStroke: '#111214', journeyWalk: '#2f6bff', halo: '#ffffff' },
-  dark: { brightCasing: '#16171a', surface: '#16171a', ink: '#f2f1ee', bus: '#7d8189', faded: '#4a4c51', stopStroke: '#f2f1ee', journeyWalk: '#5c8bff', halo: '#16171a' }
+  light: { brightCasing: '#8a7d4a', surface: '#ffffff', ink: '#111214', bus: '#7b8088', faded: '#a9adb3', stopStroke: '#111214', journeyWalk: '#2f6bff', journeyDrive: '#4b5260', halo: '#ffffff' },
+  dark: { brightCasing: '#16171a', surface: '#16171a', ink: '#f2f1ee', bus: '#7d8189', faded: '#4a4c51', stopStroke: '#f2f1ee', journeyWalk: '#5c8bff', journeyDrive: '#c3c6cc', halo: '#16171a' }
 };
 const theme = () => (state.mapMode === 'dark' ? THEME.dark : THEME.light);
 
@@ -607,7 +607,9 @@ function addTransitLayers() {
   map.addLayer({ ...jl, id: 'journey-casing', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': ['get', 'casing'], 'line-width': jWidth(9, 12), 'line-opacity': jOpacity } });
   map.addLayer({ ...jl, id: 'journey-transit', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': ['get', 'color'], 'line-width': jWidth(5.5, 8), 'line-opacity': jOpacity } });
   map.addLayer({ ...jl, id: 'journey-approx', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 1]], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': ['get', 'stroke'], 'line-width': jWidth(4, 6), 'line-opacity': jOpacity, 'line-dasharray': [2, 1.5] } });
-  map.addLayer({ ...jl, id: 'journey-walk', filter: ['!=', ['get', 'mode'], 'TRANSIT'], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(3.5, 5), 'line-opacity': jOpacity, 'line-dasharray': [0.2, 2] } });
+  map.addLayer({ ...jl, id: 'journey-drive-casing', filter: ['==', ['get', 'mode'], 'CAR'], paint: { 'line-color': t.surface, 'line-width': jWidth(8, 11), 'line-opacity': jOpacity } });
+  map.addLayer({ ...jl, id: 'journey-drive', filter: ['==', ['get', 'mode'], 'CAR'], paint: { 'line-color': t.journeyDrive || t.ink, 'line-width': jWidth(4.5, 7), 'line-opacity': jOpacity } });
+  map.addLayer({ ...jl, id: 'journey-walk', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(3.5, 5), 'line-opacity': jOpacity, 'line-dasharray': [0.2, 2] } });
   map.addLayer({ id: 'journey-stops', type: 'circle', source: 'journey-points', paint: { 'circle-radius': ['case', ['==', ['get', 'kind'], 'transfer'], 7, 5.5], 'circle-color': t.surface, 'circle-stroke-color': ['case', ['==', ['get', 'kind'], 'transfer'], t.ink, ['get', 'color']], 'circle-stroke-width': 3 } });
   map.addLayer({ id: 'journey-stop-labels', type: 'symbol', source: 'journey-points', minzoom: 10.5, layout: { 'text-field': ['get', 'name'], 'text-font': state.glyphFont, 'text-size': 12.5, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': t.ink, 'text-halo-color': t.halo, 'text-halo-width': 1.8 } });
 
@@ -731,14 +733,17 @@ function journeyFeatures(itinerary) {
     if (!Array.isArray(coords) || coords.length < 2) coords = [[leg.from?.lon, leg.from?.lat], [leg.to?.lon, leg.to?.lat]];
     coords = coords.filter(c => Number.isFinite(c?.[0]) && Number.isFinite(c?.[1]));
     if (coords.length < 2) return null;
-    const color = leg.mode === 'WALK' ? theme().ink : legInfo(leg).color;
+    const color = isTransit(leg) ? legInfo(leg).color : theme().ink;
     const casing = luminance(color) > 0.55 ? theme().brightCasing : theme().surface;
-    return { type: 'Feature', properties: { mode: leg.mode === 'WALK' ? 'WALK' : 'TRANSIT', color, casing, stroke: luminance(color) > 0.55 ? theme().brightCasing : color, legIndex, approx: legShapeMissing(leg) ? 1 : 0, dim: focus != null && focus !== legIndex ? 1 : 0, focus: focus === legIndex ? 1 : 0 }, geometry: { type: 'LineString', coordinates: coords } };
+    return { type: 'Feature', properties: { mode: leg.mode, color, casing, stroke: luminance(color) > 0.55 ? theme().brightCasing : color, legIndex, approx: legShapeMissing(leg) ? 1 : 0, dim: focus != null && focus !== legIndex ? 1 : 0, focus: focus === legIndex ? 1 : 0 }, geometry: { type: 'LineString', coordinates: coords } };
   }).filter(Boolean);
   return { type: 'FeatureCollection', features };
 }
 
+/* Boarding, exit, transfer, and parking points for the journey on the map. */
+
 /* Boarding, exit, and transfer stops for the journey on the map. */
+
 
 
 function renderJourney() {
@@ -753,7 +758,9 @@ function cameraPadding() {
     const sheet = currentSheetHeight();
     return { top: 48 + (window.visualViewport ? 0 : 0), bottom: Math.min(sheet + 24, window.innerHeight * 0.7), left: 32, right: 64 };
   }
-  return { top: 64, bottom: 64, left: 64, right: 96 };
+  // The desktop panel floats over the map, so keep journeys clear of it.
+  const right = $('#panel')?.getBoundingClientRect().right || 0;
+  return { top: 64, bottom: 64, left: Math.round(right + 48), right: 96 };
 }
 
 function fitCoordinates(coords, maxZoom = 14) {
@@ -797,7 +804,7 @@ function setupMapInteractions() {
     if (state.mapPick) { endMapPick(e.lngLat); return; }
     if (state.journey && ['results', 'navigate'].includes(currentView().name)) {
       const box = isMobile() ? 12 : 6;
-      const legHit = map.queryRenderedFeatures([[e.point.x - box, e.point.y - box], [e.point.x + box, e.point.y + box]], { layers: ['journey-transit', 'journey-approx', 'journey-walk'].filter(id => map.getLayer(id)) })[0];
+      const legHit = map.queryRenderedFeatures([[e.point.x - box, e.point.y - box], [e.point.x + box, e.point.y + box]], { layers: ['journey-transit', 'journey-approx', 'journey-walk', 'journey-drive'].filter(id => map.getLayer(id)) })[0];
       if (legHit && currentView().name === 'results') { focusLeg(Number(legHit.properties.legIndex), { scroll: true }); return; }
       if (legHit) return;
     }
@@ -1113,16 +1120,17 @@ function alertsHtml(alerts, max = 2) {
 function viewHome() {
   const parts = [];
   const introDone = store.get(STORAGE.intro, null);
-  if (!state.userLocation) {
-    parts.push(`<div class="welcome">${introDone ? '' : '<p>Live times, maps, and door-to-door trips for BART, Muni, VTA, AC Transit, and Caltrain.</p>'}
-      <div class="inline-actions"><button class="text-button" data-action="locate">Use my location</button><button class="text-button" data-action="plan">Plan a trip</button></div></div>`);
-  } else {
-    parts.push(`<div class="welcome"><div class="inline-actions"><button class="text-button" data-action="plan">Plan a trip</button></div></div>`);
-  }
-
   const places = savedPlaces();
-  if (places.length) {
-    parts.push(`<section class="section"><h2 class="label">Your places</h2><ul class="rows">${places.map(p => placeOptionRow(p, 'search-place', 'saved')).join('')}</ul></section>`);
+  const home = places.find(p => p.label === 'Home'), work = places.find(p => p.label === 'Work');
+  const quick = [`<button type="button" class="quick" data-action="plan">${MODE_ICONS.directions}<span>Directions</span></button>`];
+  if (home) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Home">${MODE_ICONS.home}<span>Home</span></button>`);
+  if (work) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Work">${MODE_ICONS.work}<span>Work</span></button>`);
+  if (!state.userLocation) quick.push(`<button type="button" class="quick" data-action="locate"><svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" stroke="none" d="M10 2.5 16.5 16 10 12.8 3.5 16Z" transform="rotate(45 10 10)"/></svg><span>Near me</span></button>`);
+  parts.push(`${introDone ? '' : '<p class="welcome-line">Door-to-door transit directions and live times for BART, Muni, Caltrain, VTA, and AC Transit.</p>'}<div class="quick-row">${quick.join('')}</div>`);
+
+  const others = places.filter(p => p.label !== 'Home' && p.label !== 'Work');
+  if (others.length) {
+    parts.push(`<section class="section"><h2 class="label">Your places</h2><ul class="rows">${others.map(p => placeOptionRow(p, 'search-place', 'saved')).join('')}</ul></section>`);
   }
 
   if (state.userLocation) {
@@ -1144,6 +1152,7 @@ function viewHome() {
 }
 
 /* Stations lead the list only when the query names one; otherwise addresses and places do. */
+
 function stationsLead(q, stops) {
   const needle = normalizeSearch(q);
   return needle.length >= 2 && stops.some(({ a, s }) => (s.k || stopCategory(a.id, s.id) !== 'bus' || idx.children.has(stopKey(a.id, s.id))) && normalizeSearch(s.n).startsWith(needle));
@@ -1472,13 +1481,16 @@ function viewPlan() {
   const hasFrom = Boolean(plan.from || plan.draft.from.trim());
   const hasTo = Boolean(plan.to || plan.draft.to.trim());
   const coverage = planCoverageIssue();
+  const driveOk = driveSupported();
+  const access = driveOk ? plan.access : 'WALK';
   let submit;
   if (status && !status.available) submit = '';
   else if (coverage) submit = `<p class="plan-coverage" role="status">${esc(coverage.text)}</p>`;
   else if (hasFrom && hasTo) submit = `<button type="submit" class="button primary block plan-submit" ${plan.loading ? 'aria-busy="true" disabled' : ''}>${plan.loading ? 'Finding routes' : 'Find routes'}</button>`;
-  else submit = `<p class="caption" style="margin-top:12px">${hasFrom ? 'Enter a destination to see routes.' : 'Enter a starting point to see routes.'}</p>`;
+  else submit = `<p class="caption plan-hint">${hasFrom ? 'Enter a destination to see routes.' : 'Enter a starting point to see routes.'}</p>`;
+  const modeButton = (key, icon, label) => `<button type="button" class="seg-option mode-option" data-action="first-mile" data-first-mile="${key}" aria-pressed="${access === key}" ${key === 'CAR_PARKING' && !driveOk ? 'aria-disabled="true" aria-describedby="driveNote"' : ''}>${icon}<span>${label}</span></button>`;
   return `${backHeader()}
-    <div class="hero" style="padding-bottom:8px"><h1 class="title-2">Plan a trip</h1></div>
+    <div class="hero" style="padding-bottom:8px"><h1 class="title-2">Directions</h1></div>
     <div id="planNotice">${planNoticeHtml()}</div>
     <form class="plan-form${plan.focus ? ' suggesting' : ''}" data-plan-form novalidate>
       <div class="plan-fields">
@@ -1489,13 +1501,16 @@ function viewPlan() {
       <div id="planSuggest" class="plan-suggest" role="listbox" aria-label="Suggestions"></div>
       <div class="plan-body">
         ${coverage ? '' : `<div class="plan-options">
-          <select id="planTimeMode" aria-label="When">
+          <div class="segmented mode-switch" role="group" aria-label="Getting to transit">${modeButton('WALK', MODE_ICONS.walk, 'Walk')}${modeButton('CAR_PARKING', MODE_ICONS.car, 'Drive')}</div>
+          <label class="time-select"><span class="visually-hidden">When</span><select id="planTimeMode">
             <option value="now" ${plan.timeMode === 'now' ? 'selected' : ''}>Leave now</option>
             <option value="depart" ${plan.timeMode === 'depart' ? 'selected' : ''}>Depart at</option>
             <option value="arrive" ${plan.timeMode === 'arrive' ? 'selected' : ''}>Arrive by</option>
-          </select>
+          </select></label>
           ${plan.timeMode !== 'now' ? `<input type="datetime-local" id="planDateTime" aria-label="Date and time" class="${plan.errorField === 'time' ? 'invalid' : ''}" value="${esc(plan.dateTime || localInputValue(new Date()))}" />` : ''}
-        </div>`}
+        </div>
+        ${plan.driveNote && !driveOk ? '<p class="caption plan-hint" id="driveNote" role="status">Driving to a station is not available yet. Rove plans walking connections to transit today.</p>' : ''}
+        ${access === 'CAR_PARKING' ? '<p class="caption plan-hint">Rove drives you to a park-and-ride lot, then plans transit from there. Parking availability is not known.</p>' : ''}`}
         ${submit}
         ${plan.loading ? '<ul class="itineraries skeleton-list" aria-hidden="true">' + '<li><div class="itinerary"><span class="sk sk-line"></span><span class="sk sk-bar"></span><span class="sk sk-line short"></span></div></li>'.repeat(3) + '</ul>' : ''}
         ${plan.error ? `<p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>` : ''}
@@ -1503,7 +1518,10 @@ function viewPlan() {
     </form>`;
 }
 
+/* Driving to a park-and-ride lot needs the server to say it can route it (/api/v2/status). */
+
 /* Fills the suggestion list for the focused trip field without re-rendering the inputs. */
+
 
 
 function localInputValue(date) {
@@ -1548,6 +1566,8 @@ async function submitPlan() {
     });
     const requestTime = plan.timeMode === 'now' ? new Date() : new Date(pacificIso(plan.dateTime));
     if (plan.timeMode !== 'now') params.set('time', pacificIso(plan.dateTime));
+    const access = plan.access === 'CAR_PARKING' && driveSupported() ? 'CAR_PARKING' : 'WALK';
+    if (access !== 'WALK') params.set('access', access);
     if (plan.timeMode === 'arrive') params.set('arriveBy', 'true');
     render();
     const response = await fetch(`/api/v2/plan?${params}`, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(35000) : undefined });
@@ -1559,7 +1579,7 @@ async function submitPlan() {
     }
     const itineraries = (body?.itineraries || []).map(normalizeItinerary).filter(it => it.legs.length);
     if (!itineraries.length) throw new PlanError(noRouteMessage(body));
-    plan.results = { itineraries, request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive' }, scheduledOnly: body.routing?.realtime !== 'partial' };
+    plan.results = { itineraries, request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
     plan.sort = 'fastest';
     plan.expanded = sortedItineraryIndexes()[0];
     plan.loading = false;
@@ -1608,34 +1628,56 @@ function legInfo(leg) {
 
 
 function journeyBar(it) {
-  const total = Math.max(1, (new Date(it.endTime) - new Date(it.startTime)) / 1000);
-  return `<div class="journey-bar" aria-hidden="true">${(it.legs || []).map(leg => {
-    const dur = Math.max(30, (legEnd(leg) - legStart(leg)) / 1000);
-    const pct = Math.max(4, dur / total * 100);
-    if (leg.mode === 'WALK') return `<span class="seg walk" style="flex:${pct}"></span>`;
-    const li = legInfo(leg);
-    const showBadge = !leg.staySeated;
-    return `<span class="seg${leg.canceled ? ' canceled' : ''}" style="flex:${pct};background:${esc(li.color)}">${showBadge ? `<span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>` : ''}</span>`;
-  }).join('')}</div>`;
+  const parts = [];
+  for (const leg of it.legs || []) {
+    if (isTransit(leg)) {
+      if (leg.staySeated) continue;
+      const li = legInfo(leg);
+      parts.push(`<span class="js-item${leg.canceled ? ' canceled' : ''}">${modeIcon(leg)}<span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span></span>`);
+    } else {
+      const min = legMinutes(leg);
+      // Short walks between two rides are implied by the transfer; the first and last walks always show.
+      const at = it.legs.indexOf(leg);
+      if (leg.mode === 'WALK' && min < 4 && at > 0 && at < it.legs.length - 1) continue;
+      parts.push(`<span class="js-item js-${leg.mode === 'CAR' ? 'drive' : 'walk'}">${modeIcon(leg)}<span>${min}</span></span>`);
+    }
+  }
+  return `<div class="journey-strip" aria-hidden="true">${parts.join('<span class="js-sep"></span>')}</div>`;
 }
 
 
+
 function itinerarySummary(it) {
-  const transitLegs = (it.legs || []).filter(l => l.mode !== 'WALK');
+  const legs = it.legs || [];
+  const transitLegs = legs.filter(isTransit);
   if (!transitLegs.length) return esc(`Walk the whole way · ${distanceLabel(it.walkMeters || 0)}`);
   const first = transitLegs[0];
   const transfers = Number.isFinite(it.transfers) ? it.transfers : Math.max(0, transitLegs.filter(l => !l.staySeated).length - 1);
   const leaveIn = Math.round((new Date(it.startTime) - Date.now()) / 60000);
   const leave = leaveIn <= 0 ? 'Leave now' : leaveIn < 60 ? `Leave in ${leaveIn} min` : `Leave at ${clock(new Date(it.startTime))}`;
-  const board = first.from?.name ? ` · Board at ${first.from.name} ${clock(legStart(first))}` : '';
-  const walkSec = Number.isFinite(it.walkSeconds) ? it.walkSeconds : null;
-  const walk = Number.isFinite(it.walkMeters) && it.walkMeters > 0 ? ` · ${walkSec ? `${durationLabel(walkSec)} walk, ` : 'Walk '}${distanceLabel(it.walkMeters)}` : '';
-  let text = `${it.usesRealtime ? ICONS.live : ''}${esc(leave)}${esc(board)}`;
-  text += `<br>${esc(transfers === 0 ? 'No transfers' : plural(transfers, 'transfer'))}${esc(walk)}`;
-  if (it.hasCancellation) text += ' · <span class="status-canceled">Includes a canceled trip</span>';
-  if ((it.legs || []).some(l => l.alerts?.length)) text += ` · <span class="status-late">${ICONS.alert}Service alert</span>`;
-  return text;
+  const firstIdx = legs.indexOf(first);
+  const lastIdx = legs.indexOf(transitLegs.at(-1));
+  const sumMin = list => Math.round(list.reduce((s, l) => s + (l.durationSeconds ?? (legEnd(l) - legStart(l)) / 1000), 0) / 60);
+  const before = legs.slice(0, firstIdx), after = legs.slice(lastIdx + 1);
+  const drive = sumMin(before.filter(l => l.mode === 'CAR'));
+  const walkBefore = sumMin(before.filter(l => l.mode === 'WALK'));
+  const walkAfter = sumMin(after.filter(l => l.mode === 'WALK'));
+  const wait = Number.isFinite(it.waitingSeconds) ? Math.round(it.waitingSeconds / 60) : null;
+  const line1 = `${leave} · ${first.from?.name || 'first stop'} at ${clock(legStart(first))}`;
+  const facts = [];
+  if (drive) facts.push(`${drive} min drive`);
+  if (walkBefore) facts.push(`${walkBefore} min walk to start`);
+  facts.push(transfers === 0 ? 'No transfers' : plural(transfers, 'transfer'));
+  if (wait && wait >= 2) facts.push(`${wait} min waiting`);
+  if (walkAfter) facts.push(`${walkAfter} min walk at end`);
+  let html = `<span class="it-line">${it.usesRealtime ? ICONS.live : ''}${esc(line1)}</span><span class="it-line">${esc(facts.join(' · '))}</span>`;
+  const flags = [];
+  if (it.hasCancellation) flags.push('<span class="status-canceled">Includes a canceled trip</span>');
+  if (legs.some(l => l.alerts?.length)) flags.push(`<span class="status-late">${ICONS.alert}Service alert</span>`);
+  if (flags.length) html += `<span class="it-line">${flags.join(' · ')}</span>`;
+  return html;
 }
+
 
 
 
@@ -1646,28 +1688,30 @@ function viewResults() {
   const order = sortedItineraryIndexes();
   const fastestIndex = sortedItineraryIndexes('fastest')[0];
   const sortButton = (key, label) => `<button type="button" class="seg-option" data-action="it-sort" data-sort="${key}" aria-pressed="${(plan.sort || 'fastest') === key}">${label}</button>`;
+  const firstMile = plan.results?.request?.access === 'CAR_PARKING' ? 'Drive to transit' : 'Walk to transit';
   return `${backHeader()}
     <h1 class="visually-hidden">Routes from ${esc(plan.from?.name)} to ${esc(plan.to?.name)}</h1>
     <div class="trip-card">
       <div class="trip-ends"><p><span class="marker"><i></i></span><span>${esc(plan.from?.name)}</span></p><p><span class="marker to"><i></i></span><span>${esc(plan.to?.name)}</span></p></div>
       <button type="button" class="text-button" data-action="back">Edit</button>
     </div>
-    <p class="caption results-when">${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Times are from published schedules' : ''}</p>
+    <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
     ${areaNoteHtml()}
     ${its.length > 1 ? `<div class="segmented" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
     <ul class="itineraries">${order.map(i => {
       const it = its[i];
       const open = plan.expanded === i;
       return `<li><button class="itinerary" data-action="it-toggle" data-index="${i}" aria-expanded="${open}">
-        <div class="it-top"><span class="it-times">${esc(clock(new Date(it.startTime)))} to ${esc(clock(new Date(it.endTime)))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}</span></div>
+        <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
         <div class="it-meta">${itinerarySummary(it)}</div></button>
-        ${open ? `${itineraryTimeline(it)}<div class="action-bar" style="padding-bottom:16px"><button class="button primary" data-action="nav-start" data-index="${i}">Start</button></div>` : ''}</li>`;
+        ${open ? `${itineraryTimeline(it)}<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start</button></div>` : ''}</li>`;
     }).join('')}</ul>
     <p class="note">${plan.results?.scheduledOnly ? 'These routes use published schedules. Check live departures at your stop before you leave.' : 'Live times are shown where agencies provide them. Other times are scheduled.'}</p>`;
 }
 
 /* True when the leg's line on the map is a straight join of its end stops, not the real route. */
+
 
 
 
@@ -1678,10 +1722,14 @@ function itineraryTimeline(it) {
   const legLink = (i, text) => `<button type="button" class="leg-link" data-action="leg-focus" data-leg="${i}" aria-pressed="${focus === i}">${esc(text)}</button>`;
   legs.forEach((leg, i) => {
     const focused = focus === i ? ' leg-focused' : '';
+    if (leg.mode === 'CAR') {
+      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail drive"><span class="glyph">${MODE_ICONS.car}</span></span><span class="body">${legLink(i, `Drive${Number.isFinite(leg.distanceMeters) ? ` ${distanceLabel(leg.distanceMeters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))} to ${esc(parkingLabel(leg, legs))}</span>${stepsListHtml(leg, 'Driving directions')}</span></li>`);
+      return;
+    }
     if (leg.mode === 'WALK') {
       const meters = Number.isFinite(leg.distanceMeters) ? leg.distanceMeters : null;
       const isLast = i === legs.length - 1;
-      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"></span><span class="body">${legLink(i, `Walk${meters ? ` ${distanceLabel(meters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? ` to ${esc(state.plan.to?.name || 'your destination')}` : ` to ${esc(leg.to?.name || 'the stop')}`}</span></span></li>`);
+      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"><span class="glyph">${MODE_ICONS.walk}</span></span><span class="body">${legLink(i, `Walk${meters ? ` ${distanceLabel(meters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? ` to ${esc(state.plan.to?.name || 'your destination')}` : ` to ${esc(leg.to?.name || 'the stop')}`}</span>${stepsListHtml(leg, 'Walking directions')}</span></li>`);
       return;
     }
     const li = legInfo(leg);
@@ -1691,22 +1739,22 @@ function itineraryTimeline(it) {
     if (!leg.staySeated) {
       items.push(`<li class="${focused}" data-leg="${i}" style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body">
         ${legLink(i, leg.from?.name || 'Board')}
-        <span class="row-meta leg-line"><span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? `<span>To ${esc(displayName(leg.headsign))}</span>` : ''}</span>
+        <span class="row-meta leg-line">${modeIcon(leg)}<span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? `<span>To ${esc(displayName(leg.headsign))}</span>` : ''}</span>
         <span class="row-meta">${leg.from?.platform ? `Platform ${esc(leg.from.platform)} · ` : ''}${stopsCount ? `${plural(stopsCount, 'stop')} · ` : ''}${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))} · ${timing}</span>
         ${shapeNote}${legAlertsHtml(leg)}</span></li>`);
     } else {
       items.push(`<li class="${focused}" data-leg="${i}" style="--leg-color:${esc(li.color)}"><span class="t"></span><span class="rail"></span><span class="body"><span class="row-meta leg-line">Stay on board. It continues as <span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? ` to ${esc(displayName(leg.headsign))}` : ''}</span>${shapeNote}</span></li>`);
     }
     const next = legs[i + 1];
-    if (next && next.mode !== 'WALK' && next.staySeated) return;
-    if (!next || next.mode === 'WALK') {
+    if (isTransit(next) && next.staySeated) return;
+    if (!isTransit(next)) {
       items.push(`<li style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legEnd(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body"><strong>${esc(leg.to?.name || 'Get off')}</strong><span class="row-meta">Get off</span></span></li>`);
     } else {
       const wait = Math.round((legStart(next) - legEnd(leg)) / 60000);
       items.push(`<li style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legEnd(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body"><strong>${esc(leg.to?.name || 'Transfer')}</strong><span class="row-meta ${wait < 3 ? 'status-late' : ''}">Change here · ${wait <= 0 ? 'Tight connection' : `${plural(wait, 'minute')} to connect${wait < 3 ? ', tight' : ''}`}</span></span></li>`);
     }
   });
-  items.push(`<li><span class="t">${esc(clock(new Date(it.endTime)))}</span><span class="rail" style="--leg-color:var(--ink)"><span class="node" style="background:var(--ink)"></span></span><span class="body"><strong>Arrive at ${esc(state.plan.to?.name || 'your destination')}</strong></span></li>`);
+  items.push(`<li><span class="t">${esc(clock(new Date(it.endTime)))}</span><span class="rail end" style="--leg-color:var(--ink)"><span class="node"></span></span><span class="body"><strong>Arrive at ${esc(state.plan.to?.name || 'your destination')}</strong></span></li>`);
   return `<ol class="timeline">${items.join('')}</ol>`;
 }
 
@@ -1715,9 +1763,14 @@ function itineraryTimeline(it) {
 /* ---------- Step-by-step navigation ---------- */
 
 
+
 function buildSteps(it) {
   const steps = [];
   for (const leg of it.legs || []) {
+    if (leg.mode === 'CAR') {
+      steps.push({ type: 'drive', leg, title: `Drive to ${parkingLabel(leg, it.legs)}`, big: durationLabel((legEnd(leg) - legStart(leg)) / 1000), meta: Number.isFinite(leg.distanceMeters) ? distanceLabel(leg.distanceMeters) : '' });
+      continue;
+    }
     if (leg.mode === 'WALK') {
       const last = leg === it.legs[it.legs.length - 1];
       steps.push({ type: 'walk', leg, title: last ? `Walk to ${state.plan.to?.name || 'your destination'}` : `Walk to ${leg.to?.name || 'the stop'}`, big: durationLabel((legEnd(leg) - legStart(leg)) / 1000), meta: Number.isFinite(leg.distanceMeters) ? distanceLabel(leg.distanceMeters) : '' });
@@ -1737,6 +1790,7 @@ function buildSteps(it) {
   steps.push({ type: 'arrive', title: `You have arrived at ${state.plan.to?.name || 'your destination'}.` });
   return steps;
 }
+
 
 
 async function startNavigation(index) {
@@ -1786,14 +1840,18 @@ function viewNavigate() {
     meta = step.leg.canceled ? 'This trip is canceled. Plan again for another option.' : `Departs ${clock(step.departs)}${step.leg.realtime ? '' : ' · Scheduled'}`;
   }
   const color = step.li?.color || 'var(--ink)';
+  const glyph = step.leg ? modeIcon(step.leg) : '';
+  const turns = (step.type === 'walk' || step.type === 'drive') && step.leg.steps?.length > 1
+    ? `<ol class="turns-now">${step.leg.steps.map(s => `<li><span>${esc(stepText(s))}</span>${s.distanceMeters ? `<span class="caption">${esc(distanceLabel(s.distanceMeters))}</span>` : ''}</li>`).join('')}</ol>` : '';
   const list = nav.steps.slice(0, total).map((s, i) => `<li class="${i < nav.i ? 'done' : ''}" ${i === nav.i ? 'aria-current="step" style="color:var(--ink);font-weight:600"' : ''}>${i < nav.i ? ICONS.check : ICONS.circle}<span>${esc(s.title)}</span></li>`).join('');
   return `${head}
     <div class="step-card" style="--leg-color:${esc(color)}">
-      <p class="label">Step ${nav.i + 1} of ${total}</p>
+      <p class="label step-label">${glyph}<span>Step ${nav.i + 1} of ${total}</span></p>
       <h2>${esc(step.title)}</h2>
       <div class="big${step.leg?.canceled ? ' status-canceled' : ''}">${esc(big)}</div>
       ${meta ? `<p class="caption" style="margin:6px 0 0">${esc(meta)}</p>` : ''}
       ${step.leg ? legAlertsHtml(step.leg) : ''}
+      ${turns}
     </div>
     <div class="action-bar">
       ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
@@ -1803,6 +1861,7 @@ function viewNavigate() {
 }
 
 /* ---------- Event handling ---------- */
+
 
 function clearSearchField() {
   state.searchQuery = '';
@@ -1851,6 +1910,8 @@ function handleAction(el) {
     case 'intro': showIntro(0); break;
     case 'locate': locate(); break;
     case 'plan': openPlan({}); break;
+    case 'first-mile': setFirstMile(el.dataset.firstMile); break;
+    case 'go-saved': { const p = savedPlaces().find(x => x.label === el.dataset.label); if (p) openPlan({ to: { ...p }, from: currentLocationPlace() || (plan.from && placeKey(plan.from) !== placeKey(p) ? plan.from : null) }); break; }
     case 'plan-to': openPlan({ to: placeFromStop(el.dataset.agency, el.dataset.stop), from: currentLocationPlace() || (plan.from?.stop !== el.dataset.stop ? plan.from : null) }); break;
     case 'plan-from': openPlan({ from: placeFromStop(el.dataset.agency, el.dataset.stop), to: plan.to && plan.to.stop !== el.dataset.stop ? plan.to : null }); break;
     case 'plan-swap': {
@@ -2239,16 +2300,26 @@ async function fetchPlanStatus(force = false) {
   if (!force && st && Date.now() - st.checkedAt < 60000) return st;
   let next;
   try {
-    const response = await fetch('/api/v2/plan/status', { cache: 'no-store' });
-    if (response.status === 404) next = { available: false, reason: 'missing' };
-    else {
+    // /api/v2/status describes the whole service (routing, first-mile options, address search).
+    // Older servers only have /api/v2/plan/status.
+    let response = await fetch('/api/v2/status', { cache: 'no-store' });
+    if (response.ok) {
       const body = await response.json().catch(() => ({}));
-      next = { available: response.ok && body.available !== false, reason: response.ok ? null : body.code || 'ROUTING_UNAVAILABLE' };
+      const routing = body.routing || {};
+      next = { available: routing.available !== false, reason: routing.available === false ? routing.code || 'ROUTING_UNAVAILABLE' : null, access: Array.isArray(routing.access) ? routing.access : ['WALK'], walkSteps: Boolean(routing.walkSteps) };
+      if (body.search && body.search.addresses === false) geocodeBackend = 'missing';
+    } else {
+      response = await fetch('/api/v2/plan/status', { cache: 'no-store' });
+      if (response.status === 404) next = { available: false, reason: 'missing' };
+      else {
+        const body = await response.json().catch(() => ({}));
+        next = { available: response.ok && body.available !== false, reason: response.ok ? null : body.code || 'ROUTING_UNAVAILABLE', access: ['WALK'] };
+      }
     }
   } catch {
     next = { available: false, reason: 'network' };
   }
-  const changed = !st || st.available !== next.available;
+  const changed = !st || st.available !== next.available || String(st.access) !== String(next.access);
   state.planStatus = { ...next, checkedAt: Date.now() };
   if (changed && currentView().name === 'plan') {
     if (state.plan.focus) { const el = $('#planNotice'); if (el) el.innerHTML = planNoticeHtml(); }
@@ -2260,7 +2331,7 @@ async function fetchPlanStatus(force = false) {
 function planNoticeHtml() {
   const status = state.planStatus;
   if (!status || status.available) return '';
-  const text = status.reason === 'missing' ? 'Trip planning is not available on this server.' : 'Trip planning is offline right now. You can still choose places, then check again in a few minutes.';
+  const text = status.reason === 'missing' ? 'Trip planning is not available right now.' : 'Trip planning is offline right now. You can still choose places, then check again in a few minutes.';
   return `<div class="plan-notice" role="status"><p>${esc(text)}</p>${status.reason === 'missing' ? '' : '<button type="button" class="text-button" data-action="plan-recheck">Check again</button>'}</div>`;
 }
 
@@ -2270,9 +2341,9 @@ function normalizeItinerary(it) {
     const transit = Boolean(leg.transit);
     const startTime = leg.start?.estimated || leg.start?.scheduled;
     const endTime = leg.end?.estimated || leg.end?.scheduled;
-    const end = p => p ? { name: displayName(p.stop?.station?.name || p.name || ''), lat: p.lat, lon: p.lon, platform: p.stop?.platform || null, stopName: p.name } : null;
+    const end = p => p ? { name: displayName(p.stop?.station?.name || p.name || ''), lat: p.lat, lon: p.lon, platform: p.stop?.platform || null, stopName: p.name, parking: p.parking?.name || null } : null;
     return {
-      mode: transit ? 'TRANSIT' : 'WALK',
+      mode: transit ? 'TRANSIT' : (leg.mode === 'CAR' ? 'CAR' : 'WALK'),
       transitMode: leg.mode,
       agencyId: leg.agency?.id || null,
       routeId: leg.route?.id || null,
@@ -2295,6 +2366,8 @@ function normalizeItinerary(it) {
       distanceMeters: leg.distanceMeters ?? null,
       durationSeconds: leg.durationSeconds ?? null,
       geometry: leg.geometry,
+      // Turn-by-turn steps, only when the server provides them (OTP legs.steps).
+      steps: Array.isArray(leg.steps) ? leg.steps.filter(s => s && (s.relativeDirection || s.streetName)) : [],
       alerts: (leg.alerts || []).filter(a => a.header || a.description)
     };
   });
@@ -2305,12 +2378,16 @@ function normalizeItinerary(it) {
     durationSeconds: it.durationSeconds,
     walkMeters: it.walkMeters,
     walkSeconds: it.walkSeconds,
+    waitingSeconds: it.waitingSeconds ?? null,
     transfers: it.transfers,
     usesRealtime: Boolean(it.usesRealtime),
     hasCancellation: Boolean(it.hasCancellation),
     legs
   };
 }
+
+/* "Turn left onto Hollenbeck Avenue". Built only from the planner's own step fields. */
+
 
 function planErrorMessage(status, body) {
   const field = body?.field || '';
@@ -2324,7 +2401,7 @@ function planErrorMessage(status, body) {
     return { which: null, text: 'Rove could not plan this trip. Check the places and time, then try again.' };
   }
   if (status === 503) return { which: null, text: 'Trip planning is offline right now. Please try again in a few minutes.', offline: true };
-  if (status === 404) return { which: null, text: 'Trip planning is not available on this server.', offline: true };
+  if (status === 404) return { which: null, text: 'Trip planning is not available right now.', offline: true };
   return { which: null, text: 'Trip planning ran into a problem. Please try again.' };
 }
 
@@ -2344,8 +2421,8 @@ function onNavPosition(pos) {
   if (!step?.leg || step.type === 'arrive') return;
   const target = [step.leg.to?.lon, step.leg.to?.lat];
   const accuracy = Math.min(pos.coords.accuracy || 50, 100);
-  const radius = step.type === 'walk' ? 35 + accuracy : 120 + accuracy;
-  if ((step.type === 'walk' || step.type === 'ride') && distanceMeters(here, target) < radius) {
+  const radius = step.type === 'walk' ? 35 + accuracy : step.type === 'drive' ? 80 + accuracy : 120 + accuracy;
+  if ((step.type === 'walk' || step.type === 'drive' || step.type === 'ride') && distanceMeters(here, target) < radius) {
     nav.i = Math.min(nav.i + 1, nav.steps.length - 1);
     render(); focusStep();
   } else if (step.type === 'wait' && Date.now() > step.departs.getTime() && distanceMeters(here, [step.leg.from?.lon, step.leg.from?.lat]) > 300) {
@@ -2404,7 +2481,8 @@ function endMapPick(lngLat) {
 
 
 const GEOCODER = {
-  backend: '/api/v2/places/autocomplete',
+  backend: '/api/v2/places/search',
+  backendReverse: '/api/v2/places/reverse',
   autocomplete: 'https://api.stadiamaps.com/geocoding/v1/autocomplete',
   search: 'https://api.stadiamaps.com/geocoding/v1/search',
   reverse: 'https://api.stadiamaps.com/geocoding/v1/reverse',
@@ -2412,7 +2490,8 @@ const GEOCODER = {
   photonReverse: 'https://photon.komoot.io/reverse',
   attribution: {
     stadia: 'Address search by Stadia Maps, using OpenStreetMap, OpenAddresses, and Who’s On First',
-    photon: 'Address search by Photon from Komoot, using OpenStreetMap data'
+    photon: 'Address search by Photon from Komoot, using OpenStreetMap data',
+    rove: 'Address data © OpenStreetMap contributors'
   }
 };
 
@@ -2421,7 +2500,15 @@ const GEOCODER = {
  * public Photon geocoder for the rest of the session, so address search keeps working. */
 let geocodeProvider = 'stadia';
 let geocodeSource = 'stadia';
-const geocodeAttribution = () => GEOCODER.attribution[geocodeSource === 'photon' ? 'photon' : 'stadia'];
+const geocodeAttribution = () => GEOCODER.attribution[geocodeSource] || GEOCODER.attribution.stadia;
+
+/* A result from Rove's /api/v2/places/search (docs/API_CONTRACT.md). */
+const ROVE_KIND_LAYER = { address: 'address', poi: 'venue', street: 'street', area: 'locality', station: 'station', stop: 'stop' };
+function normalizeRovePlace(r) {
+  if (!r || !Number.isFinite(r.lat) || !Number.isFinite(r.lon) || !r.name) return null;
+  const detail = r.approximate && r.note ? r.note : [r.category && r.kind !== 'address' && r.kind !== 'area' ? r.category : null, r.address].filter(Boolean).join(' · ');
+  return { kind: 'place', id: r.id || `${r.lat},${r.lon}`, name: r.name, detail, layer: ROVE_KIND_LAYER[r.kind] || 'venue', lat: r.lat, lon: r.lon, approximate: Boolean(r.approximate) };
+}
 
 function normalizePhotonFeature(f) {
   const p = f.properties || {};
@@ -2479,16 +2566,23 @@ async function geocode(query, { signal, mode = 'autocomplete', size = 6 } = {}) 
   const cacheKey = `${mode}|${q.toLowerCase()}`;
   if (geocodeCache.has(cacheKey)) return geocodeCache.get(cacheKey);
   const { center } = geocodeBias();
-  if (geocodeBackend !== 'missing' && mode === 'autocomplete') {
+  // Rove's own place index (addresses, businesses, landmarks, stations; OpenStreetMap and GTFS)
+  // comes first. When the server has no address index, Stadia and Photon take over.
+  if (geocodeBackend !== 'missing') {
     try {
-      const r = await fetch(`${GEOCODER.backend}?q=${encodeURIComponent(q)}&lat=${center[1].toFixed(2)}&lon=${center[0].toFixed(2)}`, { signal });
-      if (r.status === 404) geocodeBackend = 'missing';
+      const params = new URLSearchParams({ q, limit: String(Math.max(size, 6)), near: `${center[1].toFixed(2)},${center[0].toFixed(2)}` });
+      const r = await fetch(`${GEOCODER.backend}?${params}`, { signal });
+      if ([404, 501, 503].includes(r.status)) geocodeBackend = 'missing';
       else if (r.ok) {
-        geocodeBackend = 'available';
         const body = await r.json();
-        const results = (body.results || []).filter(x => inServiceArea(x)).map(x => ({ kind: 'place', id: x.id, name: x.name, detail: x.detail || '', layer: x.layer || 'place', lat: x.lat, lon: x.lon }));
-        geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
-        return geocodeCache.get(cacheKey);
+        if (body.addressSearch !== 'available') geocodeBackend = 'missing';
+        else {
+          geocodeBackend = 'available';
+          const results = dedupePlaces((body.results || []).map(normalizeRovePlace).filter(p => p && inServiceArea(p)));
+          geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
+          geocodeSource = 'rove';
+          return geocodeCache.get(cacheKey);
+        }
       }
     } catch (error) {
       if (error.name === 'AbortError') throw error;
@@ -2532,6 +2626,10 @@ async function reverseGeocode(lat, lon) {
   const signal = AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined;
   const near = place => (place && distanceMeters([lon, lat], [place.lon, place.lat]) < 120 ? place : null);
   try {
+    if (geocodeBackend !== 'missing') {
+      const response = await fetch(`${GEOCODER.backendReverse}?${new URLSearchParams({ lat: lat.toFixed(6), lon: lon.toFixed(6) })}`, { signal }).catch(() => null);
+      if (response?.ok) return near(normalizeRovePlace((await response.json()).result));
+    }
     if (geocodeProvider === 'stadia') {
       const params = new URLSearchParams({ 'point.lat': lat.toFixed(6), 'point.lon': lon.toFixed(6), size: '1', layers: 'address,venue,street', lang: 'en' });
       const response = await fetch(`${GEOCODER.reverse}?${params}`, { signal }).catch(() => null);
@@ -2635,7 +2733,13 @@ function autocompleteSectionHtml(action) {
   else if (a.status === 'error') body = '<li><p class="empty">Address search is unavailable right now. You can still choose a stop, your location, or a point on the map.</p></li>';
   else if (a.status === 'limited') body = '<li><p class="empty">Address search is busy. Please wait a moment and try again.</p></li>';
   else if (!a.results.length) body = `<li><p class="empty">No addresses or places match “${esc(a.query)}” in the Bay Area.</p></li>`;
-  else body = a.results.map(p => placeOptionRow(p, action, 'place')).join('');
+  else {
+    // Stations already listed under "Stops and stations" are not repeated here.
+    const listed = a.query.length >= 2 ? searchNetwork(a.query, { routes: false, stopLimit: 8 }).stops : [];
+    const shown = a.results.filter(p => !(['station', 'stop'].includes(p.layer) && listed.some(({ s }) => distanceMeters(s.p, [p.lon, p.lat]) < 300)));
+    if (!shown.length) return '';
+    body = shown.map(p => placeOptionRow(p, action, 'place')).join('');
+  }
   return `<section class="section suggest-section"><h2 class="label">Addresses and places</h2><ul class="rows" aria-busy="${a.status === 'loading'}">${body}</ul><p class="attribution-note">${esc(geocodeAttribution())}</p></section>`;
 }
 
@@ -2810,11 +2914,12 @@ function sortedItineraryIndexes(sort = state.plan.sort) {
 }
 
 function legShapeMissing(leg) {
-  if (leg.mode === 'WALK') return false;
+  if (!isTransit(leg)) return false;
   const c = leg.geometry?.coordinates;
   if (!Array.isArray(c) || c.length < 2) return true;
   return c.length === 2 && (leg.intermediateStops?.length || 0) > 0;
 }
+
 
 function focusLeg(i, { scroll = false } = {}) {
   const it = state.journey;
@@ -2835,21 +2940,23 @@ function journeyPointFeatures(itinerary) {
   if (!itinerary) return { type: 'FeatureCollection', features: [] };
   const legs = itinerary.legs || [];
   const out = [];
-  const add = (p, kind, color, legIndex) => {
+  const add = (p, kind, color, legIndex, name) => {
     if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
     const near = out.find(f => distanceMeters(f.geometry.coordinates, [p.lon, p.lat]) < 40);
-    if (near) { near.properties.kind = 'transfer'; return; }
-    out.push({ type: 'Feature', properties: { kind, color, name: p.name || '', legIndex }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } });
+    if (near) { if (near.properties.kind !== 'parking') near.properties.kind = 'transfer'; return; }
+    out.push({ type: 'Feature', properties: { kind, color, name: name || p.name || '', legIndex }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } });
   };
   legs.forEach((leg, i) => {
-    if (leg.mode === 'WALK') return;
+    if (leg.mode === 'CAR') { add(leg.to, 'parking', theme().ink, i, 'Park and ride'); return; }
+    if (!isTransit(leg)) return;
     const color = legInfo(leg).color;
     if (!leg.staySeated) add(leg.from, 'board', color, i);
     const next = legs[i + 1];
-    if (!(next && next.mode !== 'WALK' && next.staySeated)) add(leg.to, 'alight', color, i);
+    if (!(isTransit(next) && next.staySeated)) add(leg.to, 'alight', color, i);
   });
   return { type: 'FeatureCollection', features: out };
 }
+
 
 function setPlanFocus(which) {
   const plan = state.plan;
@@ -2904,6 +3011,85 @@ function planCoverageIssue() {
   if (outFrom) return { field: 'from', text: `This starting point is outside the Bay Area. ${note}` };
   if (outTo) return { field: 'to', text: `This destination is outside the Bay Area. ${note}` };
   return null;
+}
+
+const MODE_ICONS = {
+  walk: '<svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10.6" cy="3.6" r="1.6" fill="currentColor" stroke="none"/><path d="M9.6 7.2 7.4 9.4v3M9.6 7.2l2.2 2.6 2.4.9M9.6 7.2l-.8 5.2 2.8 2.6 1.1 3.3M8.8 12.4l-2 2.8-2.2 2.4"/></svg>',
+  car: '<svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.2 9.2 5.6 5.4c.2-.6.8-1 1.4-1h6c.6 0 1.2.4 1.4 1l1.4 3.8"/><rect x="2.8" y="9.2" width="14.4" height="5.4" rx="1.4"/><path d="M5 14.6v1.6M15 14.6v1.6"/><circle cx="6.2" cy="11.9" r=".9" fill="currentColor" stroke="none"/><circle cx="13.8" cy="11.9" r=".9" fill="currentColor" stroke="none"/></svg>',
+  bus: '<svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="2.8" width="12" height="12.6" rx="2"/><path d="M4 9.2h12M4 6h12M6.2 15.4v1.8M13.8 15.4v1.8"/><circle cx="7" cy="12.4" r=".9" fill="currentColor" stroke="none"/><circle cx="13" cy="12.4" r=".9" fill="currentColor" stroke="none"/></svg>',
+  train: '<svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 12.6V6.4C5 4 7.2 2.6 10 2.6s5 1.4 5 3.8v6.2a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2Z"/><path d="M5 8.4h10M10 2.8v5.6M7.4 14.6l-2.2 2.8M12.6 14.6l2.2 2.8"/><circle cx="7.6" cy="11.4" r=".9" fill="currentColor" stroke="none"/><circle cx="12.4" cy="11.4" r=".9" fill="currentColor" stroke="none"/></svg>',
+  tram: '<svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 2.6h6M10 2.6v2.2"/><rect x="5" y="4.8" width="10" height="10" rx="2.2"/><path d="M5 9.6h10M7.6 14.8l-1.8 2.6M12.4 14.8l1.8 2.6"/><circle cx="7.8" cy="12.2" r=".8" fill="currentColor" stroke="none"/><circle cx="12.2" cy="12.2" r=".8" fill="currentColor" stroke="none"/></svg>',
+  ferry: '<svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.4 12.4h13.2l-1.8 3.4H5.2Z"/><path d="M5.6 12.4V8.6h8.8v3.8M8 8.6V6h4v2.6"/><path d="M2.6 17.6c1.2 0 1.2-.7 2.4-.7s1.2.7 2.4.7 1.2-.7 2.4-.7 1.2.7 2.4.7 1.2-.7 2.4-.7 1.2.7 2.4.7"/></svg>',
+  parking: '<svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="3.4" y="3.4" width="13.2" height="13.2" rx="2.6"/><path d="M8.2 14V6.2h2.6a2.3 2.3 0 0 1 0 4.6H8.2"/></svg>',
+  directions: '<svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.4 17.6 10 10 17.6 2.4 10Z"/><path d="M8 12.2V9.6h4M10.6 7.6 12.6 9.6l-2 2"/></svg>',
+  home: '<svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.4 9.2 10 3.6l6.6 5.6M5.2 7.8v8.4h3.6v-4.6h2.4v4.6h3.6V7.8"/></svg>',
+  work: '<svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.8" y="6.4" width="14.4" height="10" rx="1.8"/><path d="M7.4 6.4V5a1.4 1.4 0 0 1 1.4-1.4h2.4A1.4 1.4 0 0 1 12.6 5v1.4M2.8 10.6h14.4"/></svg>'
+};
+
+function modeIcon(leg) {
+  if (leg.mode === 'WALK') return MODE_ICONS.walk;
+  if (leg.mode === 'CAR') return MODE_ICONS.car;
+  const m = leg.transitMode;
+  if (m === 'BUS' || m === 'TROLLEYBUS' || m === 'COACH') return MODE_ICONS.bus;
+  if (m === 'TRAM' || m === 'CABLE_CAR' || m === 'FUNICULAR') return MODE_ICONS.tram;
+  if (m === 'FERRY') return MODE_ICONS.ferry;
+  return MODE_ICONS.train;
+}
+
+/* Where a drive leg ends, in words. OSM parking names are often generic ("P+R"), so those
+ * are described by the station the rider walks to next. */
+function parkingLabel(leg, legs) {
+  const name = leg.to?.parking || '';
+  const next = legs ? legs[legs.indexOf(leg) + 1] : null;
+  const station = next?.mode === 'WALK' ? next.to?.name : null;
+  if (name && !/^(p\s*\+\s*r|p\s*&\s*r|park\s*(and|&|n)\s*ride|parking|parking lot)$/i.test(name.trim())) return /parking|garage|\blot\b/i.test(name) ? name : `${name} parking`;
+  if (station) return `the park-and-ride lot at ${station}`;
+  return leg.to?.name || 'the park-and-ride lot';
+}
+
+const legMinutes = leg => Math.max(1, Math.round(((leg.durationSeconds ?? (legEnd(leg) - legStart(leg)) / 1000)) / 60));
+
+const isTransit = leg => leg?.mode === 'TRANSIT';
+
+/* Converts a /api/v2/plan itinerary (docs/API_CONTRACT.md) into the shape the views render. */
+
+const STEP_VERBS = {
+  LEFT: 'Turn left', RIGHT: 'Turn right', SLIGHTLY_LEFT: 'Bear left', SLIGHTLY_RIGHT: 'Bear right',
+  HARD_LEFT: 'Turn sharp left', HARD_RIGHT: 'Turn sharp right', CONTINUE: 'Continue', UTURN_LEFT: 'Make a U-turn', UTURN_RIGHT: 'Make a U-turn',
+  CIRCLE_CLOCKWISE: 'At the roundabout, take the exit', CIRCLE_COUNTERCLOCKWISE: 'At the roundabout, take the exit'
+};
+
+function stepText(s) {
+  const street = s.streetName && !/^(path|bike path|footpath|sidewalk|service road|steps|parking aisle|open area|corridor|footbridge|underpass|crosswalk|elevator|ramp|link|road|track|alley|bridleway)$/i.test(s.streetName) ? s.streetName : null;
+  const where = street ? ` onto ${street}` : '';
+  switch (s.relativeDirection) {
+    case 'DEPART': return `Head ${String(s.absoluteDirection || '').toLowerCase().replace('_', ' ') || 'out'}${street ? ` on ${street}` : ''}`;
+    case 'ELEVATOR': return 'Take the elevator';
+    case 'ENTER_STATION': return 'Enter the station';
+    case 'EXIT_STATION': return 'Exit the station';
+    case 'FOLLOW_SIGNS': return 'Follow the signs';
+    case 'ENTER_OR_EXIT_STATION': return 'Enter or exit the station';
+    default: return `${STEP_VERBS[s.relativeDirection] || 'Continue'}${where}`;
+  }
+}
+
+function stepsListHtml(leg, label) {
+  if (!leg.steps || leg.steps.length < 2) return '';
+  return `<details class="turns"><summary>${esc(label)}<span class="caption">${plural(leg.steps.length, 'step')}</span></summary><ol>${leg.steps.map(s => `<li><span>${esc(stepText(s))}</span>${s.distanceMeters ? `<span class="caption">${esc(distanceLabel(s.distanceMeters))}</span>` : ''}</li>`).join('')}</ol></details>`;
+}
+
+/* The compact sequence on each route option: walk 4 › Local 655 › Yellow › walk 1. */
+
+function driveSupported() {
+  return Boolean(state.planStatus?.available && state.planStatus?.access?.includes('CAR_PARKING'));
+}
+
+function setFirstMile(key) {
+  const plan = state.plan;
+  if (key === 'CAR_PARKING' && !driveSupported()) { plan.driveNote = true; render(); return; }
+  plan.access = key; plan.driveNote = false;
+  store.set('rove-first-mile-v1', key);
+  render();
 }
 
 /* @@INSERT */

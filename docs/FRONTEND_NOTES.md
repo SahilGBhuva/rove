@@ -119,3 +119,36 @@ Journeys planned through the interface with real routing (Saturday evening sched
 An address in New York (1600 Broadway) and one in Los Angeles (200 N Spring St) return no results, with "No Bay Area results for ..." (real Stadia, Bay Area rectangle). Also tested: autocomplete loading, empty, and error states; typed text resolved on Find routes; Enter to pick; swap; Your location; Choose on map; saved places; screen widths from 320 to 1440 with no overflow and no buttons under 44 px. The Phase 2 and Phase 3 suites still pass.
 
 Not tested here: a physical iPhone, live BART and 511 feeds through the interface, and realtime-adjusted routing (the backend routes on schedules).
+
+## Phase 5: door-to-door directions and visual refinement
+
+Changes:
+
+- **Address search through Rove's own index.** `/api/v2/places/search` and `/api/v2/places/reverse` (backend `fb4d30c`) come first; Stadia and Photon are used only when the server has no address index. Stations already listed under "Stops and stations" are not repeated under "Addresses and places".
+- **Capabilities from `/api/v2/status`.** Routing availability, address search, and the ways of reaching transit the planner supports.
+- **Walk or Drive to transit.** A Walk and Drive selector in Directions. Drive is enabled only when the server advertises `CAR_PARKING`; until then it is shown as unavailable and explains why when tapped. No drive route, time, or parking claim is ever made up. When available, Rove drives the rider to a park-and-ride lot, says that parking availability is not known, and plans transit from there.
+- **Walking and driving directions.** When legs carry `steps`, the timeline offers "Walking directions" or "Driving directions", and step-by-step navigation lists the turns.
+- **Route options redesigned.** Duration first, then departure and arrival, then a compact sequence of mode icons and line badges (walk minutes, drive minutes, each line), then the departure stop and time, then walk to start, transfers, waiting, and walk at the end, and the live or scheduled state.
+- **Map.** Drive legs are a solid gray line; walk legs stay dotted blue; park-and-ride lots are marked.
+- **Desktop.** The sidebar now floats over a full-bleed map and is only as tall as its content.
+- **Home.** A Directions button (and Home and Work when saved) replaces the "Plan a trip" link.
+- **Wording.** "Trip planning is not available right now" replaces the server-specific message.
+
+### Phase 5 testing
+
+| What | Source | Status |
+|---|---|---|
+| Routing | **Real.** Backend `fb4d30c` with a real OTP 2.8.1 graph built here from the backend's checksum-verified inputs | Verified |
+| Address search | **Real.** Backend `fb4d30c` place search over an index built here with the backend's own `build_places.py` from the same OSM extract. It has fewer addresses (137,087) than the backend's own index (880,197), because the extract is clipped. | Verified with that index |
+| Walking steps and drive to transit | **Real OTP output** through `contract-shim.mjs`, a test-only prototype of requests 12 and 13 built from the backend's own `lib/routing/otp.mjs`. Not backend code and not committed. | Verified as a prototype; needs the backend change |
+| Live arrivals and vehicles | Feeds unreachable from the test environment | Not tested |
+
+Journeys planned through the interface (Saturday evening, "Leave now"), at 390 x 844 and 1440 x 900:
+
+1. Sunnyvale Station to SFO: Caltrain to Millbrae, BART Yellow to SFO.
+2. University of California (Berkeley) to the Ferry Building: AC Transit 18 and BART Yellow, or AC Transit 6 and NL.
+3. Stanford to San Jose Diridon: walk to Palo Alto, Caltrain to Diridon.
+4. 1002 Hollenbeck Avenue, Sunnyvale (a residential address) to the Ferry Building: a 1.6-mile walk with 10 real turns, Caltrain, Muni N.
+5. The same address to SFO with Drive: drive 1.8 miles to the Sunnyvale Caltrain park-and-ride lot, then Caltrain and BART.
+
+Every screen was inspected in light and dark mode. No horizontal overflow, no controls overlapping the panel, and no buttons under 36 px tall on either size (primary buttons are 44 px or taller).
