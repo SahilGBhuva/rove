@@ -7,6 +7,35 @@ The browser never talks to 511, BART, or OpenTripPlanner directly, and no respon
 Times: realtime values are Unix seconds. Planner values are ISO 8601 with a Pacific offset (`2026-10-20T08:15:00-07:00`).
 Agency ids everywhere: `bart`, `muni`, `caltrain`, `vta`, `act`.
 
+## Integration quick start (frontend)
+
+All data is for the San Francisco Bay Area only (BART, Muni, Caltrain, VTA, AC Transit).
+
+1. On load, call `GET /api/v2/status`. It says whether address search and routing are available and, per agency, whether live arrivals are verified. Hide or label features from it; never show a control that cannot work.
+2. Search box: `GET /api/v2/places/search?q=…&near=<map center>`. Debounce about 150 ms. Each result has `lat`, `lon`, `name`.
+3. "Current location": browser geolocation, then `GET /api/v2/places/reverse?lat&lon` for a label.
+4. Plan: either `POST /api/journeys` (the frontend contract from the work-frontend branch) or `GET /api/v2/plan`. Both run the same planner.
+5. Stop and station screens: `GET /api/v2/arrivals?agency&stop`. Map vehicles: `GET /api/v2/realtime` (or the existing `/api/realtime`).
+
+Serving and origins:
+
+- `npm start` serves the frontend from the repository: `index.html`, `app.js`, `styles.css`, and anything under `public/`. Put new frontend files (scripts, stylesheets, icons, a web manifest) under `public/`; other paths return 404 by design.
+- A separate local dev server (for example Vite on port 5173) can call the API directly: loopback origins (`http://localhost:*`, `http://127.0.0.1:*`) get CORS headers. Other origins are added only through `ROVE_CORS_ORIGINS`.
+- Every response is JSON with `Cache-Control: no-store`. The browser never calls 511, BART or OpenTripPlanner itself.
+
+### `GET /api/v2/status`
+
+```json
+{ "region": "San Francisco Bay Area",
+  "agencies": [ { "id": "bart", "name": "BART", "arrivals": "verified", "vehicles": "not-published" },
+                { "id": "muni", "name": "Muni", "arrivals": "verified", "vehicles": "live" } ],
+  "search": { "stations": true, "addresses": true, "counts": { "address": 880197, "poi": 95057, "street": 79392, "area": 885 } },
+  "routing": { "available": true, "feeds": ["bart","muni","caltrain","vta","act"], "serviceTimeRange": { "start": 1791961200, "end": 1802937600 } },
+  "realtime": { "feed511": true, "bartDirect": true } }
+```
+
+`arrivals` is `verified` only while the live feed passes the 99% matching gate; otherwise `unverified`. `vehicles` is `live`, `none`, `not-configured` (no 511 key) or `not-published` (BART publishes no vehicle positions).
+
 ## Journey planning
 
 ### `GET /api/v2/plan`
@@ -66,6 +95,27 @@ Display rules:
 - When `itineraries` is empty, show `errors[0].message`; codes are `NO_TRANSIT_CONNECTION`, `NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW`, `NO_STOPS_IN_RANGE`, `LOCATION_NOT_FOUND`, `OUTSIDE_BOUNDS`, `OUTSIDE_SERVICE_PERIOD`, `WALKING_BETTER_THAN_TRANSIT`.
 
 Errors: `400 {error, field, code:"BAD_REQUEST"}` for invalid input (highlight `field`); `503 {code:"ROUTING_UNAVAILABLE"|"ROUTING_TIMEOUT"}` when the engine is not running; `502` for engine failures. Never fabricate a trip on error.
+
+### `POST /api/journeys`
+
+The frontend's contract (`docs/FRONTEND_ROUTING_API_CONTRACT.md` on work-frontend), implemented as specified.
+
+Request: `{ "from": { "name", "lat", "lon" }, "to": { … }, "dateTime": "2026-10-23T17:30:00-07:00", "arriveBy": false, "modes": ["TRANSIT", "WALK"] }`. `dateTime` defaults to now; `modes` may also list specific transit modes (`SUBWAY`, `BUS`, `RAIL`, `TRAM`, `CABLE_CAR`, `FERRY`). Body limit 16 KB.
+
+Response `200`: `{ generatedAt, routing, request, itineraries: [{ id, startTime, endTime, durationSeconds, walkMeters, walkSeconds, waitingSeconds, transfers, agencies, hasCancellation, legs: [{ mode: "TRANSIT" | "WALK", vehicleMode, agencyId, agencyName, routeId, routeName, routeLongName, routeColor, routeTextColor, tripId, headsign, from: { name, lat, lon, stopId, agencyId, stationId, platform }, to, startTime, endTime, durationSeconds, distanceMeters, intermediateStops, geometry, realtime, delaySeconds, canceled, staySeated, alerts }] }] }`.
+
+- `id` is stable for the same trip (built from the boarded trips and times), so it can key list items and saved trips.
+- `realtime` is true only when the planner itself applied live data to that leg. Planning is schedule-based today, so expect `false` and label times as scheduled.
+
+Errors use `{ "error": { "code", "message", "field"? } }`:
+
+| Status | `code` | Meaning |
+|---|---|---|
+| 400 | `BAD_REQUEST` | Invalid body; `field` is `from`, `to`, `dateTime`, `modes` or `body` |
+| 404 | `NO_PATH`, `WALKING_BETTER`, `NO_STOPS_NEARBY`, `LOCATION_NOT_ROUTABLE`, `OUTSIDE_SERVICE_AREA`, `OUTSIDE_SCHEDULE` | No itinerary; `message` is ready to show |
+| 413 | `BAD_REQUEST` | Body over 16 KB |
+| 503 | `ROUTING_UNAVAILABLE`, `ROUTING_TIMEOUT` | The planner is not running |
+| 502 | `ROUTING_UPSTREAM_ERROR`, `ROUTING_QUERY_ERROR` | The planner failed |
 
 ### `GET /api/v2/plan/status`
 

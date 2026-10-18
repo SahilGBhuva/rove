@@ -91,6 +91,8 @@ Door-to-door trips planned from the search results (Tuesday, October 20, 8:30 am
 - Oracle Park to Levi's Stadium: Caltrain Limited 08:48 to Mountain View, VTA Orange Line to Great America (107 min).
 - Coit Tower to SFO: walk 1.7 km, BART Yellow-S from Montgomery 09:02 to SFO (79 min).
 
+Frontend journey contract (`POST /api/journeys`, October 18): 1355 Market St to Chase Center at 5:30 pm returned walk 250 m, Muni 9 at 17:37, walk 79 m, Muni 22 at 17:50, walk 689 m, with every contract field present and no leg marked realtime. With it, `npm run verify-places` runs 23 checks, all passing.
+
 All 22 checks passed. Defects found and fixed while testing: San Francisco places were labeled with neighborhood names because San Francisco's boundary is a city-county; chain stores in one city were merged into a single result; "Powell St BART" found nothing because "BART" is not part of the station name; landmark relations (the Ferry Building, lakes, stadiums) were missing until multipolygon places were added; airport codes such as SFO now match through alternate names.
 
 Known limits: OSM address coverage is uneven between cities; when a house number is not mapped, search returns the street with `approximate: true` and says so. Walks to large areas (an airport, a campus) end at the area's representative point, not a specific terminal or building.

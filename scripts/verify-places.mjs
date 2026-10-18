@@ -83,8 +83,34 @@ for (const [from, to] of TRIPS) {
   console.log(`${problems.length ? '✗' : '✓'} trip ${from} → ${to}${summary ? `\n    ${summary}` : ''}${problems.length ? `\n    ${problems.join('; ')}` : ''}`);
 }
 
+// The frontend's POST /api/journeys contract, on the same real searches.
+{
+  const a = top['1355 Market St'], b = top['Chase Center'];
+  const problems = [];
+  let summary = null;
+  if (!a || !b) problems.push('search did not resolve both places');
+  else {
+    const r = await fetch(`${base}/api/journeys`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60_000),
+      body: JSON.stringify({ from: { name: a.name, lat: a.lat, lon: a.lon }, to: { name: b.name, lat: b.lat, lon: b.lon }, dateTime: process.env.ROVE_PLAN_TIME || '2026-10-20T17:30:00-07:00', arriveBy: false, modes: ['TRANSIT', 'WALK'] }) });
+    const body = await r.json();
+    const it = body.itineraries?.[0];
+    if (r.status !== 200 || !it) problems.push(`HTTP ${r.status}${body.error ? ` ${body.error.code}` : ''}`);
+    else {
+      for (const k of ['id', 'startTime', 'endTime', 'durationSeconds', 'walkMeters', 'transfers', 'legs']) if (it[k] === undefined) problems.push(`missing ${k}`);
+      const t = it.legs.find(l => l.mode === 'TRANSIT');
+      if (!t) problems.push('no TRANSIT leg');
+      else for (const k of ['agencyId', 'routeId', 'routeName', 'routeColor', 'from', 'to', 'startTime', 'endTime', 'geometry']) if (t[k] == null) problems.push(`transit leg missing ${k}`);
+      if (it.legs.some(l => l.realtime)) problems.push('realtime flagged without live routing data');
+      summary = it.legs.map(l => l.mode === 'TRANSIT' ? `${l.agencyName} ${l.routeName} ${l.startTime.slice(11, 16)}` : `walk ${l.distanceMeters} m`).join(' | ');
+    }
+  }
+  if (problems.length) failures++;
+  tripResults.push({ from: '1355 Market St', to: 'Chase Center', endpoint: 'POST /api/journeys', ok: !problems.length, problems, summary });
+  console.log(`${problems.length ? '✗' : '✓'} POST /api/journeys 1355 Market St → Chase Center${summary ? `\n    ${summary}` : ''}${problems.length ? `\n    ${problems.join('; ')}` : ''}`);
+}
+
 fs.mkdirSync(path.join(root, 'data/reports'), { recursive: true });
 fs.writeFileSync(path.join(root, 'data/reports/places-verification.json'), JSON.stringify({ verifiedAt: new Date().toISOString(), searchResults, tripResults }, null, 2) + '\n');
-const total = SEARCHES.length + TRIPS.length;
+const total = SEARCHES.length + TRIPS.length + 1;
 if (failures) { console.error(`${failures}/${total} checks failed`); process.exit(1); }
 console.log(`All ${total} search and door-to-door checks passed`);
