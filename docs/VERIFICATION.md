@@ -66,6 +66,35 @@ Defect found and fixed: OTP returned a 61-minute walk-only option ahead of a 29-
 
 Not yet verified: realtime-adjusted routing (routing is schedule-based), and trips outside the morning peak.
 
+## Place search and door-to-door planning: verified (October 18, 2026)
+
+Index: `scripts/places/build_places.py` over the same checksum-verified Geofabrik extract, clipped to the Rove area. It holds 880,197 addresses, 95,057 named places (businesses, landmarks, parks, campuses, airports), 79,392 streets and 885 cities and neighborhoods. Cities come from `addr:city`, then from the 104 municipal boundaries in OSM (including the San Francisco city-county), then from the nearest named place. Index size 232 MB; typical query time 1 to 10 ms.
+
+`npm run verify-places` against the running server (search through `/api/v2/places/search`, trips through `/api/v2/plan` from the searched coordinates). The expected positions are the places' publicly known coordinates; each top result had to land within the stated tolerance.
+
+| Search | Top result | Tolerance |
+|---|---|---|
+| Ferry Building | San Francisco Ferry Building | 300 m |
+| SFO | San Francisco International Airport | 2.5 km (airport area) |
+| Oakland airport | Oakland International Airport | 3 km |
+| Salesforce Tower, Oracle Park, Chase Center, Coit Tower, Pier 39 | the landmark itself | 200 to 300 m |
+| Stanford University, Levi's Stadium, Lake Merritt | the campus, stadium, and Lake Merritt BART station | 0.4 to 1.5 km |
+| 1355 Market St | 1355 Market Street (address) | 150 m |
+| 2150 Shattuck Ave Berkeley | 2150 Shattuck Avenue (address) | 150 m |
+| 1600 Amphitheatre Pkwy, 1 Infinite Loop Cupertino | the addresses | 300 m |
+| Powell St BART, San Jose Diridon, 4th and King | the stations | 300 to 400 m |
+
+Door-to-door trips planned from the search results (Tuesday, October 20, 8:30 am):
+
+- 1355 Market St to 2150 Shattuck Ave: walk 375 m, BART Red-N Civic Center 08:44 to Downtown Berkeley, walk 48 m (38 min).
+- Ferry Building to Stanford University: Muni N to 4th and King, Caltrain 09:25 to Palo Alto, walk 1.9 km (106 min).
+- Oracle Park to Levi's Stadium: Caltrain Limited 08:48 to Mountain View, VTA Orange Line to Great America (107 min).
+- Coit Tower to SFO: walk 1.7 km, BART Yellow-S from Montgomery 09:02 to SFO (79 min).
+
+All 22 checks passed. Defects found and fixed while testing: San Francisco places were labeled with neighborhood names because San Francisco's boundary is a city-county; chain stores in one city were merged into a single result; "Powell St BART" found nothing because "BART" is not part of the station name; landmark relations (the Ferry Building, lakes, stadiums) were missing until multipolygon places were added; airport codes such as SFO now match through alternate names.
+
+Known limits: OSM address coverage is uneven between cities; when a house number is not mapped, search returns the street with `approximate: true` and says so. Walks to large areas (an airport, a campus) end at the area's representative point, not a specific terminal or building.
+
 ## VTA, Caltrain, Muni and AC Transit realtime: pending
 
 These come only from 511, which requires the 511 key held on Sahil's Mac. Run `npm run configure-511`, `npm start`, then `npm run verify-realtime`; the report includes diagnostic samples for any unmatched trips or stops.

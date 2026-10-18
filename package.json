@@ -14,7 +14,9 @@
     "refresh-data": "./scripts/refresh-data.sh",
     "otp:setup": "./scripts/otp/setup-otp.sh",
     "otp:build": "./scripts/otp/build-graph.sh",
-    "otp:start": "./scripts/otp/start-otp.sh"
+    "otp:start": "./scripts/otp/start-otp.sh",
+    "places:build": "python3 scripts/places/build_places.py data/osm/norcal-latest.osm.pbf data/places/bay-area-places.sqlite",
+    "verify-places": "node scripts/verify-places.mjs"
   },
   "dependencies": {
     "gtfs-realtime-bindings": "^1.1.1"
@@ -23,6 +25,6 @@
     "graphql": "^16.9.0"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.5"
   }
 }

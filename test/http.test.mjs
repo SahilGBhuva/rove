@@ -93,3 +93,28 @@ test('HTTP: arrivals endpoint distinguishes live, unverified and bad requests', 
     assert.equal((await get('/api/v2/arrivals?agency=nope&stop=1')).status, 400);
   });
 });
+
+test('HTTP: place search merges stations and map places; reverse lookup and missing index are reported', async () => {
+  const { PlaceIndex } = await import('../lib/places.mjs');
+  const { fixtureDb, ROWS } = await import('./helpers-places.mjs');
+  const { index } = await PlaceIndex.open(fixtureDb(ROWS));
+  const realtime = new RealtimeService({ indexes: fixtureIndexes(), apiKey: undefined, bartDirect: false });
+  const otp = new OtpClient({ fetchImpl: async () => { throw new TypeError('fetch failed'); } });
+  for (const [places, expectAvailable] of [[index, true], [null, false]]) {
+    const server = http.createServer(createHandler({ root, realtime, otp, stops: new StopSearch(network), places, placesUnavailableReason: 'place index not found', log: { error() {} } }));
+    await new Promise(r => server.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    try {
+      const s = await (await fetch(`${base}/api/v2/places/search?q=powell%20st%20bart`)).json();
+      assert.equal(s.results[0].kind, 'station');
+      assert.equal(s.results[0].agency, 'bart');
+      assert.equal(s.addressSearch, expectAvailable ? 'available' : 'unavailable');
+      const a = await (await fetch(`${base}/api/v2/places/search?q=1355%20market%20st`)).json();
+      if (expectAvailable) assert.equal(a.results[0].name, '1355 Market Street');
+      else assert.equal(a.reason, 'place index not found');
+      const rev = await fetch(`${base}/api/v2/places/reverse?lat=37.77697&lon=-122.4166`);
+      assert.equal(rev.status, expectAvailable ? 200 : 503);
+      assert.equal((await fetch(`${base}/api/v2/places/reverse?lat=x`)).status, 400);
+    } finally { server.close(); }
+  }
+});

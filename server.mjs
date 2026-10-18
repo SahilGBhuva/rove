@@ -8,6 +8,7 @@ import { loadStaticIndexes } from './lib/gtfs/static-index.mjs';
 import { RealtimeService } from './lib/realtime/service.mjs';
 import { OtpClient } from './lib/routing/otp.mjs';
 import { StopSearch } from './lib/stops-search.mjs';
+import { PlaceIndex } from './lib/places.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 4173);
@@ -21,11 +22,15 @@ for (const e of errors) console.warn(`Static index unavailable: ${e}`);
 const network = JSON.parse(fs.readFileSync(path.join(root, 'public/data/network.json'), 'utf8'));
 const realtime = new RealtimeService({ indexes, apiKey, bartDirect, matchLogFile: path.join(root, 'data/reports/match-rates.jsonl') });
 const otp = new OtpClient();
-const handler = createHandler({ root, realtime, otp, stops: new StopSearch(network) });
+const placesFile = process.env.ROVE_PLACES_DB || path.join(root, 'data/places/bay-area-places.sqlite');
+const { index: places, reason: placesReason } = await PlaceIndex.open(placesFile);
+if (!places) console.warn(`Address search unavailable: ${placesReason}`);
+const handler = createHandler({ root, realtime, otp, stops: new StopSearch(network), places, placesUnavailableReason: placesReason });
 
 http.createServer(handler).listen(port, () => {
   console.log(`Rove running at http://localhost:${port}`);
   console.log(`  static index: ${indexes.size}/${Object.keys(AGENCIES).length} agencies in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   console.log(`  511 realtime: ${apiKey ? 'configured' : 'not configured'} · BART direct realtime: ${bartDirect ? 'on' : 'off'}`);
+  console.log(`  address search: ${places ? Object.entries(places.meta.counts || {}).map(([k, v]) => `${v.toLocaleString()} ${k}`).join(', ') : 'unavailable'}`);
   console.log(`  routing: OpenTripPlanner at ${otp.url.replace(/\/\/[^/@]*@/, '//')}`);
 });

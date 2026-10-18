@@ -73,6 +73,32 @@ Errors: `400 {error, field, code:"BAD_REQUEST"}` for invalid input (highlight `f
 
 ## Places
 
+### `GET /api/v2/places/search?q=1355%20market%20st&limit=8&near=37.78,-122.41`
+
+The single search box: transit stations (from the agencies' GTFS) plus addresses, businesses, landmarks, streets, cities and neighborhoods (from OpenStreetMap, about 880,000 addresses and 95,000 named places across the Bay Area).
+
+- `near=lat,lon` (optional): bias toward the map center or the rider's location. Send it; chains such as coffee shops otherwise come back in arbitrary order.
+- An agency name in the query ("Powell St BART", "Diridon Caltrain") narrows stations to that agency.
+
+```json
+{ "query": "1355 market st", "addressSearch": "available",
+  "results": [
+    { "kind": "address", "id": "osm:123", "name": "1355 Market Street", "address": "San Francisco, CA", "city": "San Francisco", "category": null, "lat": 37.776955, "lon": -122.416637, "source": "openstreetmap" },
+    { "kind": "station", "id": "bart:CIVC", "name": "Civic Center / UN Plaza", "category": "BART station", "agency": "bart", "stopIds": ["M40-1","M40-2","CIVC"], "lat": 37.779413, "lon": -122.413836, "source": "gtfs" }
+  ] }
+```
+
+- `kind` is `station`, `stop`, `address`, `poi`, `street` or `area` (city or neighborhood). Show `name` as the title and `address` or `category` as the subtitle.
+- `approximate: true` with a `note` means the house number is not in the map data and the result is the street. Show the note.
+- When the address index is not installed, `addressSearch` is `"unavailable"` with a `reason`, and only stations are returned.
+- To plan, pass the chosen result's `lat`/`lon` and `name` to `/api/v2/plan` as `fromLat`/`fromLon`/`fromName` (or `to...`).
+
+### `GET /api/v2/places/reverse?lat=37.7769&lon=-122.4166`
+
+The closest address or named place within about 250 m, for "Current location" labels and map taps: `{ "result": { ...place, "distanceMeters": 6 } }`, or `{ "result": null }`. `503` when the index is not installed.
+
+## Stops
+
 ### `GET /api/v2/stops/search?q=powell&limit=10&agencies=bart,muni`
 
 Returns `{query, results:[{agency, agencyName, id, name, station, stopIds:[...], lat, lon}]}`. Platforms that share a parent station collapse into one station result. Queries shorter than two characters return no results.

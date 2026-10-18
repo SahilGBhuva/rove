@@ -20,6 +20,7 @@ data/reports/
 data/otp/
 data/osm/
 data/live/
+data/places/
 
 # Logs and local tooling
 *.log
