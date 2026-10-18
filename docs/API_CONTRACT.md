@@ -197,7 +197,7 @@ Returns `{query, results:[{agency, agencyName, id, name, station, stopIds:[...],
 { "agency":"muni", "stop":{...search result shape...},
   "status":"live",                      // live | no-predictions | unverified | unknown-agency
   "reasons":[],                         // present when unverified: why predictions are withheld
-  "arrivals":[{"tripId":"...","routeId":"38R","routeName":"38R","headsign":"Ocean Beach","stopId":"15550","time":1792281000,"delay":60,"uncertainty":null,"source":"511","scheduled":true,"note":null}],
+  "arrivals":[{"tripId":"...","routeId":"38R","routeName":"38R","headsign":"Ocean Beach","stopId":"15550","platform":null,"platformChange":false,"time":1792281000,"delay":60,"uncertainty":null,"source":"511","scheduled":true,"note":null}],
   "canceled":[{"tripId":"...","routeId":"14","routeName":"14","headsign":"...","stopId":"15550","reason":"trip-canceled"}],
   "stale": false, "feed": {"headerTimestamp":..., "fetchedAt":..., "stale":false, "cache":"fresh", "error":null}, "generatedAt": 1792280000000 }
 ```
@@ -206,6 +206,7 @@ Returns `{query, results:[{agency, agencyName, id, name, station, stopIds:[...],
 - `no-predictions` means the agency is verified but nothing is predicted for this stop in the next three hours.
 - `canceled` lists canceled trips and skipped stops for this stop. Show them as canceled; they never appear in `arrivals`.
 - For a station id (BART `POWL`), predictions for all of its platforms are included.
+- `platform` is the GTFS `platform_code` of the stop the live feed itself named (by stop id or stop code), for example `"2"` for BART `M50-2`. It is `null` when the schedule gives that stop no platform code (Muni, AC Transit and Caltrain publish none; VTA publishes bay numbers at some transit centers) or when the stop was inferred from the trip's stop sequence rather than named by the feed. It is never derived from stop id patterns. `platformChange: true` means the feed moved the train to a different platform of a station the trip serves.
 - `scheduled: false` marks a real prediction for a trip that is not in the published schedule: BART's Antioch line (Pittsburg Center and Antioch stations) and BART added trips. These have `routeId: null` and a `note`; show them as "BART" with the note rather than guessing a line.
 - When `stale` is true, label the data with its age (`feed.headerTimestamp`).
 

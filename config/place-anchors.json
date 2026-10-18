@@ -1,0 +1,14 @@
+{
+  "about": "Curated points for places whose OpenStreetMap outline gives a misleading point. Keyed by the OSM reference stored in the index (r = relation, w = way, n = node). The point replaces the computed one at build time (scripts/places/build_places.py) and at search time (lib/places.mjs), so an index built before an anchor was added is still correct. Each point is the location of a named OSM feature, given in source.",
+  "anchors": {
+    "r2814221": {
+      "name": "University of California, Berkeley",
+      "lat": 37.872073,
+      "lon": -122.257829,
+      "city": "Berkeley",
+      "address": "Berkeley",
+      "source": "The Campanile (Sather Tower), OSM way 24024507",
+      "reason": "The campus relation includes the hill lands east of the main campus, so its representative point fell in the Berkeley Hills inside Oakland."
+    }
+  }
+}

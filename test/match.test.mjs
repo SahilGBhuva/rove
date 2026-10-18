@@ -41,12 +41,14 @@ test('VTA: realtime stop ids that are public stop codes resolve through the uniq
   assert.equal(u.routeId, 'Blue');
   assert.deepEqual(u.stopTimes.map(s => [s.stopId, s.stopMatch]), [['4737', 'code'], ['4738', 'code']]);
   assert.equal(r.quality.vta.stopMethods.code, 2);
+  assert.deepEqual(u.stopTimes.map(s => s.platform), [null, '2'], 'platform_code of the stop the feed named, when the schedule has one');
 });
 
 test('VTA: an unknown stop id falls back to the exact (trip_id, stop_sequence) key', () => {
   const r = run511([tripUpdate('v', { tripId: 'SC:4042835', stops: [{ stopId: 'SC:XYZ', seq: 3, t: NOW_S + 60 }] })]);
   assert.equal(r.updates[0].stopTimes[0].stopId, '4738');
   assert.equal(r.updates[0].stopTimes[0].stopMatch, 'sequence');
+  assert.equal(r.updates[0].stopTimes[0].platform, null, 'a stop inferred from the sequence never carries a platform');
 });
 
 test('VTA: a stop id and stop code naming different stops is a conflict, never a guess', () => {
@@ -100,6 +102,9 @@ test('BART: a different platform of a station the trip serves is a platform chan
   assert.equal(r.quality.bart.stopConflicts, 1);
   const board = arrivalsForStop({ updates: r.updates, quality: { bart: { arrivalsVerified: true } }, agencyId: 'bart', stopId: 'LAKE', includeChildStops: ['A10-1', 'A10-2'], now: NOW_S });
   assert.equal(board.arrivals[0]?.stopId, 'A10-2');
+  assert.equal(board.arrivals[0]?.platform, '2', 'the platform comes from the stop the feed reported');
+  assert.equal(board.arrivals[0]?.platformChange, true);
+  assert.equal(moved.stopTimes[1].platform, null, 'a stop with no platform_code in the schedule has no platform');
 });
 
 test('service date: a trip whose service does not run on start_date is not matched', () => {

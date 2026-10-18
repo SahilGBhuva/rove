@@ -28,6 +28,8 @@ from shapely.strtree import STRtree
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WORDS = json.load(open(os.path.join(ROOT, 'config', 'place-normalization.json')))['words']
+# Curated points for places whose OSM outline gives a misleading point; lib/places.mjs applies the same file.
+ANCHORS = json.load(open(os.path.join(ROOT, 'config', 'place-anchors.json')))['anchors']
 
 POI_KEYS = ('amenity', 'shop', 'tourism', 'leisure', 'office', 'healthcare', 'historic', 'craft', 'aeroway', 'building', 'man_made', 'natural', 'sport', 'club')
 SKIP_POI_VALUES = {('amenity', 'parking_space'), ('amenity', 'bench'), ('amenity', 'waste_basket'), ('amenity', 'bicycle_parking'),
@@ -238,6 +240,10 @@ def main():
                 else:
                     line = ', '.join(x for x in (line, city) if x)
                 r = (kind, name, line, city, lat, lon, rank, ref, cat, hn, st, alt)
+        a = ANCHORS.get(r[7])
+        if a:
+            kind, name, line, city, lat, lon, rank, ref, cat, hn, st, alt = r
+            r = (kind, name, a.get('address', line), a.get('city', city), a['lat'], a['lon'], rank, ref, cat, hn, st, alt)
         fixed.append(r)
     rows = fixed
 

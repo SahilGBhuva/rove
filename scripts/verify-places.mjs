@@ -22,6 +22,8 @@ const SEARCHES = [
   { q: 'Coit Tower', at: [37.8024, -122.4058], within: 200 },
   { q: 'Pier 39', at: [37.8087, -122.4098], within: 300 },
   { q: 'Stanford University', at: [37.4275, -122.1697], within: 1500 },
+  { q: 'UC Berkeley', at: [37.8719, -122.2585], within: 500 },
+  { q: 'University of California, Berkeley', at: [37.8719, -122.2585], within: 500 },
   { q: 'Levi\'s Stadium', at: [37.4033, -121.9694], within: 400 },
   { q: 'Lake Merritt', at: [37.8019, -122.2585], within: 1200 },
   { q: '1355 Market St', at: [37.7767, -122.4166], within: 150, kind: 'address' },
@@ -36,6 +38,7 @@ const SEARCHES = [
 const TRIPS = [
   ['1355 Market St', '2150 Shattuck Ave Berkeley'],
   ['Ferry Building', 'Stanford University'],
+  ['UC Berkeley', 'Ferry Building'],
   ['Oracle Park', 'Levi\'s Stadium'],
   ['Coit Tower', 'SFO']
 ];

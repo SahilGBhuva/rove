@@ -41,7 +41,7 @@ export function fixtureIndexes() {
     stops: [
       { stop_id: '4736', stop_code: '64736', stop_name: 'Santa Teresa', stop_lat: '37.23', stop_lon: '-121.79' },
       { stop_id: '4737', stop_code: '64737', stop_name: 'Cottle', stop_lat: '37.24', stop_lon: '-121.80' },
-      { stop_id: '4738', stop_code: '64738', stop_name: 'Snell', stop_lat: '37.25', stop_lon: '-121.82' },
+      { stop_id: '4738', stop_code: '64738', stop_name: 'Snell', platform_code: '2', stop_lat: '37.25', stop_lon: '-121.82' },
       { stop_id: '64739', stop_code: '4736', stop_name: 'Ambiguous pole', stop_lat: '37.26', stop_lon: '-121.83' },
       { stop_id: '9001', stop_code: '69001', stop_name: 'El Camino & Castro', stop_lat: '37.39', stop_lon: '-122.08' }
     ],
@@ -53,8 +53,8 @@ export function fixtureIndexes() {
     trips: [{ trip_id: '1965118', route_id: '1', service_id: 'BWKDY', direction_id: '1', trip_headsign: 'SFO / Millbrae' }, { trip_id: '1965200', route_id: '7', service_id: 'BWKDY', direction_id: '1', trip_headsign: 'Millbrae' }],
     stops: [
       { stop_id: 'LAKE', stop_name: 'Lake Merritt', location_type: '1', stop_lat: '37.797', stop_lon: '-122.265' },
-      { stop_id: 'A10-1', stop_name: 'Lake Merritt', parent_station: 'LAKE', stop_lat: '37.797', stop_lon: '-122.265' },
-      { stop_id: 'A10-2', stop_name: 'Lake Merritt', parent_station: 'LAKE', stop_lat: '37.797', stop_lon: '-122.265' },
+      { stop_id: 'A10-1', stop_name: 'Lake Merritt', parent_station: 'LAKE', platform_code: '1', stop_lat: '37.797', stop_lon: '-122.265' },
+      { stop_id: 'A10-2', stop_name: 'Lake Merritt', parent_station: 'LAKE', platform_code: '2', stop_lat: '37.797', stop_lon: '-122.265' },
       { stop_id: 'M30-1', stop_name: 'Powell Street', parent_station: 'POWL', stop_lat: '37.784', stop_lon: '-122.407' },
       { stop_id: 'POWL', stop_name: 'Powell Street', location_type: '1', stop_lat: '37.784', stop_lon: '-122.407' },
       { stop_id: 'PCTR', stop_name: 'Pittsburg Center', location_type: '1', stop_lat: '38.0168', stop_lon: '-121.8891' },

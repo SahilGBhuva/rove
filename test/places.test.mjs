@@ -49,6 +49,16 @@ test('reverse lookup returns the closest address', () => {
   assert.ok(r.distanceMeters < 10);
 });
 
+test('a curated anchor moves a misplaced campus to its center', () => {
+  const r = index.search('uc berkeley')[0];
+  assert.equal(r.name, 'University of California, Berkeley');
+  assert.equal(r.city, 'Berkeley');
+  assert.equal(r.address, 'Berkeley');
+  assert.deepEqual([r.lat, r.lon], [37.872073, -122.257829]);
+  // The stored hill point no longer names a tap there.
+  assert.notEqual(index.reverse(37.8755, -122.239069)?.name, 'University of California, Berkeley');
+});
+
 test('a missing index reports why instead of failing', async () => {
   const r = await PlaceIndex.open('/nonexistent/places.sqlite');
   assert.equal(r.index, null);
