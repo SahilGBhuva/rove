@@ -888,3 +888,49 @@ body.theme-dark { --you: #ff765d; }
 @media (hover:hover) { .rows li > button:hover, .result:hover, .place-row:hover, .itinerary:hover { transform: none; } }
 @media (max-width: 767px) { .home-heading { padding-top: 5px; } .home-heading h1 { font-size: 30px; } }
 @media (prefers-reduced-motion: reduce) { .panel-body.view-enter > * { animation: none !important; } }
+
+/* Rove floating / cool-neutral edition. Clear, airy, unmistakably map-first. */
+:root {
+  --ink: #101a29;
+  --ink-2: #45546a;
+  --ink-3: #69788c;
+  --rule: #e0e8f1;
+  --surface: #ffffff;
+  --paper: #f4f8fc;
+  --fill: #edf3f9;
+  --fill-strong: #dfeaf5;
+  --you: #146cda;
+  --panel-w: 366px;
+  --pad: 22px;
+}
+body.theme-dark { --ink: #f5f8fd; --ink-2: #b7c6d8; --ink-3: #8ea0b6; --rule: #2b3a4e; --surface: #131c2a; --paper: #0c1420; --fill: #1d2b3d; --fill-strong: #293b51; --you: #67aaff; }
+@media (min-width: 768px) {
+  .panel {
+    top: 18px; left: 18px; bottom: auto;
+    width: var(--panel-w); max-height: calc(100dvh - 36px);
+    border: 1px solid rgba(207,220,235,.85);
+    border-radius: 21px;
+    box-shadow: 0 2px 5px rgba(14,37,65,.05), 0 16px 38px rgba(14,37,65,.13), 0 36px 80px rgba(14,37,65,.07);
+    overflow: hidden;
+  }
+  body.theme-dark .panel { border-color: #34445b; box-shadow: 0 18px 54px rgba(0,0,0,.38); }
+  .map-area { inset: 0; }
+  .maplibregl-ctrl-bottom-left { left: 0; }
+  .menu { left: 150px; top: 78px; }
+  .intro { left: calc(var(--panel-w) + 40px); }
+}
+.brand-row { height: 70px; }
+.wordmark { font-size: 23px; letter-spacing: -.065em; }
+.wordmark-mark { color: var(--you); }
+.home-heading { padding-top: 12px; padding-bottom: 19px; }
+.home-eyebrow { color: var(--you); font-size: 10px; letter-spacing: .14em; }
+.home-heading h1 { font-size: 34px; letter-spacing: -.06em; }
+.home-heading p { color: var(--ink-2); }
+.search-field { background: var(--fill); border-color: transparent; border-radius: 11px; }
+.search-field:focus-within { background: var(--surface); box-shadow: 0 0 0 2px var(--you); border-color: transparent; }
+.quick { border-radius: 10px; }
+.quick:first-child { background: var(--ink); color: #fff; }
+body.theme-dark .quick:first-child { background: #e8f1ff; color: #122037; }
+.panel-body > .section > .label { border-top-color: var(--rule); }
+.home-footer-links .text-button { color: var(--ink-2); }
+@media (max-width: 767px) { .panel { border-color: var(--rule); } }
