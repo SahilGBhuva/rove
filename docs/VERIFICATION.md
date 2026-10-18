@@ -25,7 +25,7 @@ All 16 departures agree on line, platform and destination, and every time agrees
 
 Findings:
 
-- Antioch-line trips (Pittsburg Center and Antioch, trip ids 600-699) appear in every capture with exact static stop ids (`E20-1`, `E30-2`). They are now returned at those stations as unscheduled predictions with no route.
+- Antioch-line trips (Pittsburg Center and Antioch) appear in every capture with exact static stop ids (`E20-1`, `E30-2`) and no schedule match. They are returned at those stations as unscheduled predictions with no route. They were first recognized by their 600-range trip ids; a later capture showed 700-range ids for the same service (see below), so they are now recognized by their stations instead.
 - BART publishes added trips (one at 23:10 between Pittsburg/Bay Point and North Concord). They are treated the same way.
 - BART's alerts feed was empty (header only) at all three captures, although bart.gov showed a planned-work advisory for Sunday, October 18. Advisories published only on the website do not reach GTFS-RT, so Rove cannot show them from this feed.
 
@@ -97,6 +97,55 @@ All 22 checks passed. Defects found and fixed while testing: San Francisco place
 
 Known limits: OSM address coverage is uneven between cities; when a house number is not mapped, search returns the street with `approximate: true` and says so. Walks to large areas (an airport, a campus) end at the area's representative point, not a specific terminal or building.
 
-## VTA, Caltrain, Muni and AC Transit realtime: pending
+## 511 realtime (Muni, VTA, Caltrain, AC Transit): verified (October 18, 2026)
 
-These come only from 511, which requires the 511 key held on Sahil's Mac. Run `npm run configure-511`, `npm start`, then `npm run verify-realtime`; the report includes diagnostic samples for any unmatched trips or stops.
+Sahil ran `npm run verify-realtime` on the Mac with the 511 key from `.env` (the key never left the Mac). Report: `data/reports/realtime-verification.json`, 03:22 UTC on October 18 (8:22 pm Pacific, Saturday).
+
+| Agency | Trip updates | Trips matched | Stops matched | Vehicles matched | Arrivals |
+|---|---:|---:|---:|---:|---|
+| Muni | 810 | 100% | 100% (22,017 exact) | 100% (330) | verified |
+| VTA | 204 | 100% | 100% (4,685 by public stop code) | 100% (117) | verified |
+| Caltrain | 11 | 100% | 100% (142 exact) | 100% (7) | verified |
+| AC Transit | 349 | 100% | 100% (8,406 exact) | 100% (188) | verified |
+| BART (direct feed) | 57 | 88.7% | 100% (627 exact) | not published | withheld by the gate |
+
+Zero stop conflicts for every agency. Notes:
+
+- VTA: 511 publishes VTA stops by their public stop code, so every VTA stop matched through `stop_code`, not `stop_id`. Its 196 sequence mismatches are harmless because the stop, not the sequence, is authoritative. 27 canceled trips were reported as canceled, never as arrivals.
+- Caltrain: 511 route ids are service names ("Local Weekend"); routes are resolved through the matched trip (`77120`), never through the name.
+- 511 also carried 231 trip updates and 642 vehicles for operators Rove does not cover; they are counted as unassigned and ignored.
+
+### BART: defect found and fixed
+
+At the same time, BART's trip match was 88.7%, below the 99% gate, so Rove correctly withheld BART arrivals. The unmatched trips (700, 701, 702, 703, 705, 707 and more) served only Pittsburg Center and Antioch platforms (`E20-*`, `E30-*`): the Antioch line, now numbered in the 700s. The matcher recognized Antioch trips by a 600-range trip id, which BART had changed.
+
+Fix: a trip with no schedule match is treated as Antioch service when every stop it predicts is at Pittsburg Center or Antioch, whatever its id. A trip that is not in the schedule and predicts any other station is still an unknown trip and keeps counting against the gate. Rerunning the matcher on the four saved BART captures (October 17, 22:58, 23:03 and 23:10 UTC, and October 18, 03:57 UTC) gives 100% trip and stop matching with zero conflicts in each. This has not yet been rechecked against a fresh live run; `npm run verify-all` on the Mac does that.
+
+## Launch scenarios (October 20, 2026 schedules)
+
+`npm run verify-scenarios` against the API (`/api/v2/places/search`, then `/api/v2/plan`). These are schedule-based: real GTFS schedules and OpenStreetMap streets through OpenTripPlanner, not live data. Run in the cloud workspace for a Tuesday.
+
+| Scenario | Result |
+|---|---|
+| 1105 Lily Avenue, Sunnyvale → SFO, walking | Leave 08:16; walk 1.6 km to Lawrence, Caltrain 08:39 to Millbrae, BART Red-N 09:31 to SFO; arrive 09:52 (96 min) |
+| Same, park-and-ride | Leave 08:22; drive 3.9 km to the Sunnyvale Caltrain lot (OSM capacity 439, availability unknown), Caltrain Express 08:32, BART at Millbrae; arrive 09:32 (70 min) |
+| Same, drop-off | Leave 08:20; drive 3.9 km to Sunnyvale station, same trains; arrive 09:32 (72 min) |
+| UC Berkeley → Ferry Building | AC Transit 52 to Downtown Berkeley, BART Red-S to Montgomery, walk 1 km (83 min) |
+| Stanford → San Jose Diridon | Walk 1.9 km, Caltrain 10:44 from Palo Alto (57 min) |
+| Oakland City Hall → Palo Alto City Hall | BART Yellow-S, Muni 45 to 4th and King, Caltrain Limited 08:48 (96 min) |
+| Walk, board, transfer, walk: Haight and Ashbury → Chase Center | Walk 167 m, Muni 7, transfer to Muni 22, walk 689 m (48 min) |
+| Outside the Bay Area (to Los Angeles) | Refused: 400 on `toLat` |
+| A date beyond the published schedules | Refused: 400 |
+| Milpitas → Fremont at 2:30 am | "No transit connection was found near the requested time"; no invented trip |
+
+Every itinerary passed the structural checks: durations equal end minus start, legs in time order, geometry on every leg, route, trip and stop ids on every transit leg, and turn-by-turn steps on every walk or drive over 80 m whose distances add up to the leg. Sample directions: "Head east on Lily Avenue (95 m); Turn left onto Timberpine Avenue (560 m)".
+
+A park-and-ride trip from south San Jose to San Francisco used a 12-minute drive, confirming the 20-minute cap on driving to transit.
+
+Live arrivals (scenario 7) were skipped in the cloud workspace because it cannot reach 511 or BART; they are counted as skipped, not passed. Running `npm run verify-all` on the Mac covers them.
+
+## Walking and driving: limits
+
+- Walking directions come from OpenStreetMap. Unnamed ways are described as "the path" or "the sidewalk".
+- Drive times use speed limits, not live traffic. Parking availability is never known; lot capacity is shown only where OSM maps it. Drop-off ends at the nearest drivable street, not a designated zone.
+- Sunnyvale has partial OSM address coverage (about 15,000 addresses). Unmapped house numbers fall back to the street, labeled approximate.

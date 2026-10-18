@@ -30,9 +30,13 @@ Serving and origins:
   "agencies": [ { "id": "bart", "name": "BART", "arrivals": "verified", "vehicles": "not-published" },
                 { "id": "muni", "name": "Muni", "arrivals": "verified", "vehicles": "live" } ],
   "search": { "stations": true, "addresses": true, "counts": { "address": 880197, "poi": 95057, "street": 79392, "area": 885 } },
-  "routing": { "available": true, "feeds": ["bart","muni","caltrain","vta","act"], "serviceTimeRange": { "start": 1791961200, "end": 1802937600 } },
+  "routing": { "available": true, "access": ["WALK","CAR_PARKING","CAR_DROP_OFF"], "walkSteps": true, "driveTraffic": false, "maxDriveMinutes": 20,
+               "bounds": { "minLat": 36.9, "maxLat": 38.2, "minLon": -122.75, "maxLon": -121.4 },
+               "feeds": ["bart","muni","caltrain","vta","act"], "serviceTimeRange": { "start": 1791961200, "end": 1802937600 } },
   "realtime": { "feed511": true, "bartDirect": true } }
 ```
+
+`routing.access` lists the first-mile options the planner accepts (`[]` while routing is down); `walkSteps` says walking legs carry turn-by-turn steps; `driveTraffic: false` means drive times come from speed limits, not live traffic; `maxDriveMinutes` is the cap on the drive to a station; `bounds` is the service area every coordinate must fall inside.
 
 `arrivals` is `verified` only while the live feed passes the 99% matching gate; otherwise `unverified`. `vehicles` is `live`, `none`, `not-configured` (no 511 key) or `not-published` (BART publishes no vehicle positions).
 
@@ -48,6 +52,7 @@ Serving and origins:
 | `arriveBy` | no | `true` makes `time` the latest arrival. |
 | `modes` | no | Comma list of `BUS,RAIL,SUBWAY,TRAM,CABLE_CAR,FERRY,FUNICULAR,TROLLEYBUS`. Omit for all. |
 | `limit` | no | 1 to 6 itineraries. Default 5. |
+| `access` | no | How the trip reaches transit: `walk` (default), `park-and-ride` or `drop-off`. The OTP names `WALK`, `CAR_PARKING` and `CAR_DROP_OFF` (any case, also `car_parking`, `park_and_ride`, `drop_off`) are accepted. Anything else is a `400` with `field: "access"`. |
 
 Use `/api/v2/stops/search` (below) or the map to get coordinates. Stop pickers should send the station's `lat`/`lon`.
 
@@ -88,6 +93,37 @@ Use `/api/v2/stops/search` (below) or the map to get coordinates. Stop pickers s
 
 Walking legs have `transit: false` and `agency`, `route`, `trip` set to `null`. `geometry` is GeoJSON and can be added to a MapLibre source as is.
 
+Every itinerary also has `access` (`walk`, `park-and-ride` or `drop-off`) and `drivingMeters` (0 for walking trips). The time to leave home is `start`.
+
+#### Walking and driving legs (`WALK`, `CAR`)
+
+Non-transit legs carry turn-by-turn `steps` built from OpenTripPlanner's street graph (OpenStreetMap):
+
+```json
+"steps": [
+  { "instruction": "Head east on Lily Avenue", "distanceMeters": 95, "relativeDirection": "DEPART", "absoluteDirection": "EAST",
+    "streetName": "Lily Avenue", "unnamed": false, "stayOn": false, "area": false, "exit": null, "lat": 37.3621, "lon": -122.0007 },
+  { "instruction": "Turn left onto Timberpine Avenue", "distanceMeters": 560, ... },
+  { "instruction": "Take the escalator", "distanceMeters": 12, "relativeDirection": "CONTINUE", "streetName": "escalator", "unnamed": true, ... }
+]
+```
+
+- `instruction` is ready-to-show American English. `lat`/`lon` is where the step begins (use it to place a maneuver marker).
+- `unnamed: true` means OSM has no name for the way (a sidewalk, path, crosswalk or escalator); the instruction already says "the path" or "the sidewalk".
+- `stayOn: true` means the rider continues on the same street; `area: true` means the step crosses an open area such as a plaza; `exit` is the roundabout exit number or `null`.
+- Step distances add up to the leg distance to within rounding.
+
+Park-and-ride and drop-off itineraries start with a `CAR` leg that also has `steps`, plus:
+
+```json
+"driving": { "traffic": "not-included", "source": "OpenStreetMap roads and speed limits" }
+```
+
+- Park-and-ride: the `CAR` leg ends at an OpenStreetMap parking lot, given as `to.parking = { id, name, lat, lon, capacity, availability: "unknown" }`. `capacity` is the mapped number of spaces or `null`. Availability is never known; say so.
+- Drop-off: the `CAR` leg ends at the nearest drivable street to the station, not a designated drop-off zone, followed by a short walk.
+- The drive to transit is capped at 20 minutes, so Rove never proposes a long drive to a distant station.
+- Drive times assume no traffic. `routing.notes` repeats these limits in plain sentences; show them with the itinerary.
+
 Display rules:
 
 - Show `start.scheduled`/`end.scheduled`. Show `estimated` and `delaySeconds` only when non-null; today routing is schedule-based (`routing.realtime: "scheduled"`), so label times as scheduled.
@@ -100,9 +136,9 @@ Errors: `400 {error, field, code:"BAD_REQUEST"}` for invalid input (highlight `f
 
 The frontend's contract (`docs/FRONTEND_ROUTING_API_CONTRACT.md` on work-frontend), implemented as specified.
 
-Request: `{ "from": { "name", "lat", "lon" }, "to": { … }, "dateTime": "2026-10-23T17:30:00-07:00", "arriveBy": false, "modes": ["TRANSIT", "WALK"] }`. `dateTime` defaults to now; `modes` may also list specific transit modes (`SUBWAY`, `BUS`, `RAIL`, `TRAM`, `CABLE_CAR`, `FERRY`). Body limit 16 KB.
+Request: `{ "from": { "name", "lat", "lon" }, "to": { … }, "dateTime": "2026-10-23T17:30:00-07:00", "arriveBy": false, "modes": ["TRANSIT", "WALK"], "access": "walk" }`. `access` takes the same values as on `/api/v2/plan`. `dateTime` defaults to now; `modes` may also list specific transit modes (`SUBWAY`, `BUS`, `RAIL`, `TRAM`, `CABLE_CAR`, `FERRY`). Body limit 16 KB.
 
-Response `200`: `{ generatedAt, routing, request, itineraries: [{ id, startTime, endTime, durationSeconds, walkMeters, walkSeconds, waitingSeconds, transfers, agencies, hasCancellation, legs: [{ mode: "TRANSIT" | "WALK", vehicleMode, agencyId, agencyName, routeId, routeName, routeLongName, routeColor, routeTextColor, tripId, headsign, from: { name, lat, lon, stopId, agencyId, stationId, platform }, to, startTime, endTime, durationSeconds, distanceMeters, intermediateStops, geometry, realtime, delaySeconds, canceled, staySeated, alerts }] }] }`.
+Response `200`: `{ generatedAt, routing, request, itineraries: [{ id, startTime, endTime, leaveAt, durationSeconds, walkMeters, walkSeconds, waitingSeconds, transfers, access, drivingMeters, agencies, hasCancellation, legs: [{ mode: "TRANSIT" | "WALK" | "CAR", vehicleMode, agencyId, agencyName, routeId, routeName, routeLongName, routeColor, routeTextColor, tripId, headsign, from: { name, lat, lon, stopId, agencyId, stationId, platform, parking }, to, startTime, endTime, durationSeconds, distanceMeters, intermediateStops, geometry, steps, driving?, realtime, delaySeconds, canceled, staySeated, alerts }] }] }`. `steps`, `parking` and `driving` are as described under `/api/v2/plan`.
 
 - `id` is stable for the same trip (built from the boarded trips and times), so it can key list items and saved trips.
 - `realtime` is true only when the planner itself applied live data to that leg. Planning is schedule-based today, so expect `false` and label times as scheduled.
@@ -119,7 +155,7 @@ Errors use `{ "error": { "code", "message", "field"? } }`:
 
 ### `GET /api/v2/plan/status`
 
-`200 {available:true, engine, feeds:["bart","muni",...], serviceTimeRange:{start,end}}` or `503 {available:false, error, code}`. Use it to enable or disable the Plan button.
+`200 {available:true, engine, access, walkSteps, maxDriveMinutes, bounds, feeds:["bart","muni",...], serviceTimeRange:{start,end}}` or `503 {available:false, bounds, error, code}`. Use it to enable or disable the Plan button.
 
 ## Places
 
@@ -178,7 +214,7 @@ Returns `{query, results:[{agency, agencyName, id, name, station, stopIds:[...],
 Full matched snapshot: `{generatedAt, configured:{feed511, bartDirect}, feeds, errors, requestBudget, quality, vehicles, updates, alerts}`.
 
 - `vehicles[]`: `{agency, source, id, label, tripId, tripMatch, routeId, routeName, headsign, directionId, lat, lon, bearing, speed, timestamp, stopId, status}`. `routeId` is a static route id or `null`; draw only vehicles with a non-null `routeId` on a route. BART publishes no vehicle positions, so there are never BART vehicles.
-- `updates[]`: `{agency, source, tripId, tripMatch, routeId, routeName, headsign, directionId, serviceDate, tripStatus, delay, stopTimes:[{stopId, stopMatch, sequence, relationship, arrival, departure, delay}]}`. `tripMatch` is `matched`, `documented-exception` (BART Antioch 600-range), `added`, `unknown-trip`, or `service-date-mismatch`.
+- `updates[]`: `{agency, source, tripId, tripMatch, routeId, routeName, headsign, directionId, serviceDate, tripStatus, delay, stopTimes:[{stopId, stopMatch, sequence, relationship, arrival, departure, delay}]}`. `tripMatch` is `matched`, `documented-exception` (BART Antioch line, recognized by its Pittsburg Center and Antioch stops), `added`, `unknown-trip`, or `service-date-mismatch`.
 - `alerts[]`: `{id, source, agencies:[...], header, description, url, cause, effect, activePeriods, entities}`. BART alerts come from BART directly; route and stop ids in BART alert entities are BART static ids.
 - `quality[agency]`: `{tripMatchPct, stopMatchPct, vehicleMatchPct, arrivalsVerified, gateReasons, ...counts}`.
 
@@ -195,3 +231,24 @@ Shape unchanged so the current frontend keeps working, with three behavior chang
 3. BART trip updates and alerts come from BART's own feed (`tripId` is unprefixed; alert entities use `agencyId: "BA"` and `BA:` route/stop ids). The response adds `quality` per agency.
 
 New frontend work should use the v2 endpoints.
+
+## Frontend compatibility (checked against `claude-frontend` at bd56758, October 2026)
+
+Read only; the frontend branch was not changed. Every endpoint it calls exists and returns the fields it reads:
+
+| Frontend call | Backend | Status |
+|---|---|---|
+| `GET /api/v2/status` reading `routing.access`, `routing.walkSteps` | as above | Supported |
+| `GET /api/v2/plan/status` | as above, now with `bounds` (request 9) | Supported |
+| `GET /api/v2/plan?…&access=CAR_PARKING` | OTP mode names are accepted as aliases | Supported |
+| Walking steps with `stayOn` and `area` (request 12) | added to every step | Supported |
+| Cap the drive to a station (request 13) | 20 minutes, in `otp/router-config.json` (`accessEgress.maxDurationForMode` for `CAR_TO_PARK` and `CAR_PICKUP`) | Supported |
+| `GET /api/v2/places/search`, `/api/v2/places/reverse` | as above | Supported |
+| `GET /api/v2/arrivals`, `/api/v2/realtime`, `/api/realtime` | as above | Supported |
+| `POST /api/journeys` | implemented, though the frontend withdrew its proposal and uses `GET /api/v2/plan` | Supported (optional) |
+
+Remaining differences:
+
+- Landmark ranking (request 14): "uc berkeley", "stanford" and "stanford university" return the campus first. The bare word "berkeley" returns the Berkeley City Club first and the University of California second, because the index has no popularity signal. Riders get the campus with any second word.
+- Realtime in routing (request 10): planning is schedule-based. Live arrivals are shown on stop boards, not folded into itineraries. This is a follow-up that needs verification against live feeds before it is enabled.
+- The frontend falls back to Stadia and then Photon for geocoding when `/api/v2/places/search` is unavailable. Those calls go from the browser to third parties, outside this backend; with the backend running, Rove's own index answers.

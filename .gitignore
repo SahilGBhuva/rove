@@ -21,6 +21,7 @@ data/otp/
 data/osm/
 data/live/
 data/places/
+data/logs/
 
 # Logs and local tooling
 *.log

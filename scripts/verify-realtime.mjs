@@ -24,3 +24,11 @@ fs.writeFileSync(path.join(root, 'data/reports/realtime-verification.json'), JSO
 const rows = Object.entries(agencies).map(([id, a]) => `${id.padEnd(9)} trips ${String(a.tripUpdates).padStart(5)}  trip ${String(a.tripMatchPct ?? '-').padStart(5)}%  stop ${String(a.stopMatchPct ?? '-').padStart(5)}%  vehicles ${String(a.vehicles).padStart(4)}  arrivals ${a.arrivalsVerified ? 'VERIFIED' : 'hidden: ' + a.gateReasons.join('; ')}`);
 console.log(rows.join('\n'));
 for (const e of q.errors || []) console.log(`feed error: ${e.feed}: ${e.message}`);
+
+// Exit status: 0 every agency with live data passes the arrival gate; 1 an agency with enough data fails it;
+// 3 no live data was reachable (nothing to verify, which is not a pass).
+const withData = Object.entries(agencies).filter(([, a]) => a.tripUpdates > 0);
+if (!withData.length) { console.log('No live trip updates were reachable; nothing was verified.'); process.exit(3); }
+const failing = withData.filter(([, a]) => !a.arrivalsVerified && !a.gateReasons.some(r => r.startsWith('too few')));
+for (const [id] of withData.filter(([, a]) => a.arrivalsVerified)) console.log(`verified: ${id}`);
+if (failing.length) { console.error(`below the arrival gate: ${failing.map(([id]) => id).join(', ')}`); process.exit(1); }

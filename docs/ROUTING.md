@@ -23,14 +23,19 @@ npm run otp:build     # builds data/otp/graph/graph.obj (about 6 minutes in two 
 
 ## Running
 
-Two terminals:
+One step, from the saved graph (no rebuild): `npm run rove`. See [LOCAL_STARTUP.md](LOCAL_STARTUP.md).
 
-```bash
-npm run otp:start     # OTP on 127.0.0.1:8080 (localhost only)
-npm start             # Rove on http://localhost:4173
-```
+The two-terminal form still works: `npm run otp:start`, then `npm start`.
 
-Check it: `curl -s localhost:4173/api/v2/plan/status` should report `available: true` and five feeds. Then `npm run verify-routing` plans seven real multi-agency trips for the next weekday morning and writes `data/reports/routing-verification.json`.
+Check it: `curl -s localhost:4173/api/v2/plan/status` should report `available: true` and five feeds. Then `npm run verify-routing` plans eleven real multi-agency trips for the next weekday morning and writes `data/reports/routing-verification.json`.
+
+## Walking and driving to transit
+
+- Walking legs follow OSM streets and paths and carry turn-by-turn steps (`steps` on each leg).
+- Park-and-ride (`access=park-and-ride`): OTP drives on OSM roads to a park-and-ride lot that OpenTripPlanner imported from OpenStreetMap, then walks to the platform. Lot capacity is shown only when mapped. Availability is never known.
+- Drop-off (`access=drop-off`): OTP drives to the nearest drivable street at the station, then walks. It is not a designated drop-off zone.
+- Drive times use OSM speed limits with no live traffic. The drive is capped at 20 minutes (`routingDefaults.accessEgress.maxDurationForMode` in `otp/router-config.json`, read when OTP loads the graph, so no rebuild is needed).
+- Not supported: driving the whole trip, live traffic, parking availability or prices, and station entrances beyond what OSM maps.
 
 ## After a GTFS refresh
 

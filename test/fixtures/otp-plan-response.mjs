@@ -10,6 +10,7 @@ export const OTP_RESPONSE = {
           start: '2026-10-20T09:02:00-07:00', end: '2026-10-20T09:24:00-07:00', duration: 1320, walkTime: 420, waitingTime: 60, walkDistance: 512.4, numberOfTransfers: 0,
           legs: [
             { mode: 'WALK', transitLeg: false, realTime: false, realtimeState: null, duration: 240, distance: 300.2, headsign: null, serviceDate: null, interlineWithPreviousLeg: false,
+              steps: [{ distance: 120.4, relativeDirection: 'DEPART', absoluteDirection: 'SOUTH', streetName: 'Powell Street', bogusName: false, stayOn: false, area: false, exit: null, lat: 37.7849, lon: -122.4073 }, { distance: 179.8, relativeDirection: 'CONTINUE', absoluteDirection: 'SOUTH', streetName: 'Powell Street', bogusName: false, stayOn: true, area: false, exit: null, lat: 37.7847, lon: -122.4075 }],
               start: { scheduledTime: '2026-10-20T09:02:00-07:00', estimated: null }, end: { scheduledTime: '2026-10-20T09:06:00-07:00', estimated: null },
               from: { name: 'Origin', lat: 37.7849, lon: -122.4073, stop: null }, to: { name: 'Powell Street', lat: 37.7845, lon: -122.4078, stop: { gtfsId: 'bart:M30-1', code: '903301', platformCode: '1', parentStation: { gtfsId: 'bart:POWL', name: 'Powell Street' } } },
               route: null, agency: null, trip: null, legGeometry: { points: '_p~iF~ps|U_ulLnnqC' }, intermediateStops: null, alerts: [] },

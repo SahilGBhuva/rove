@@ -63,10 +63,10 @@ test('VTA: a stop the trip does not serve is rejected', () => {
   assert.match(r.updates[0].stopTimes[0].conflict, /not served/);
 });
 
-test('BART direct: trip ids join exactly; Antioch 600-range ids are a documented exception, not a failure', () => {
+test('BART direct: trip ids join exactly; Antioch-line trips are a documented exception, not a failure', () => {
   const bart = matcher().match([{ source: 'bart', agency: AGENCIES.bart, updates: updatesOf([
     tripUpdate('b1', { tripId: '1965118', stops: [{ stopId: 'A10-1', seq: 0, t: NOW_S + 60 }, { stopId: 'M30-1', seq: 1, t: NOW_S + 900 }] }),
-    tripUpdate('b2', { tripId: '612', stops: [{ stopId: 'PCTR', seq: 1, t: NOW_S + 60 }] }),
+    tripUpdate('b2', { tripId: '612', stops: [{ stopId: 'E20-1', seq: 1, t: NOW_S + 60 }] }),
     tripUpdate('b3', { tripId: '1999999', stops: [{ stopId: 'A10-1', seq: 0, t: NOW_S + 60 }] })
   ]) }]);
   const [ok, antioch, unknown] = bart.updates;
@@ -169,18 +169,33 @@ test('entities without a recognisable operator prefix are counted as unassigned'
   assert.equal(r.updates.length, 0);
 });
 
+test('BART Antioch line: trips are recognized by their stations, whatever the trip number (live ids ran 698 to 711)', () => {
+  const r = matcher().match([{ source: 'bart', agency: AGENCIES.bart, updates: updatesOf([
+    tripUpdate('a', { tripId: '703', stops: [{ stopId: 'E30-2', seq: 0, t: NOW_S + 60 }, { stopId: 'E20-2', seq: 0, t: NOW_S + 780 }] }),
+    tripUpdate('b', { tripId: '698', stops: [{ stopId: 'E20-1', seq: 0, t: NOW_S + 60 }] }),
+    tripUpdate('c', { tripId: '615', stops: [{ stopId: 'A10-1', seq: 0, t: NOW_S + 60 }] }),
+    tripUpdate('d', { tripId: '704', stops: [{ stopId: 'E20-1', seq: 0, t: NOW_S + 60 }, { stopId: 'A10-1', seq: 1, t: NOW_S + 900 }] })
+  ]) }]);
+  const by = id => r.updates.find(u => u.rawTripId === id).tripMatch;
+  assert.equal(by('703'), 'documented-exception');
+  assert.equal(by('698'), 'documented-exception');
+  assert.equal(by('615'), 'unknown-trip', 'a 600-range number alone no longer excuses a trip outside the Antioch line');
+  assert.equal(by('704'), 'unknown-trip', 'a trip that also serves another station is not an Antioch-line trip');
+});
+
 test('BART Antioch line: real predictions at real stops are shown without inventing a route', () => {
   const r = matcher().match([{ source: 'bart', agency: AGENCIES.bart, updates: updatesOf([
     ...Array.from({ length: 25 }, (_, i) => tripUpdate(`b${i}`, { tripId: '1965118', stops: [{ stopId: 'A10-1', seq: 0, t: NOW_S + 60 + i }] })),
-    tripUpdate('antioch', { tripId: '668', stops: [{ stopId: 'A10-2', seq: 0, t: NOW_S + 300 }, { stopId: 'NOT-A-STOP', seq: 1, t: NOW_S + 400 }] })
+    tripUpdate('antioch', { tripId: '668', stops: [{ stopId: 'E20-1', seq: 0, t: NOW_S + 300 }] })
   ]) }]);
   const ex = r.updates.find(u => u.rawTripId === '668');
-  assert.deepEqual(ex.stopTimes.map(s => s.stopId), ['A10-2', null]);
+  assert.deepEqual(ex.stopTimes.map(s => s.stopId), ['E20-1']);
   assert.equal(r.quality.bart.stopTimes, 25, 'exception stops do not count toward the quality gate');
-  const board = arrivalsForStop({ updates: r.updates, quality: r.quality, agencyId: 'bart', stopId: 'LAKE', includeChildStops: ['A10-1', 'A10-2'], now: NOW_S });
+  const board = arrivalsForStop({ updates: r.updates, quality: r.quality, agencyId: 'bart', stopId: 'PCTR', includeChildStops: ['E20-1', 'E20-2'], now: NOW_S });
   const antioch = board.arrivals.find(a => a.tripId === '668');
   assert.equal(antioch.routeId, null);
   assert.equal(antioch.scheduled, false);
   assert.match(antioch.note, /Antioch/);
-  assert.equal(board.arrivals.find(a => a.tripId === '1965118').scheduled, true);
+  const lake = arrivalsForStop({ updates: r.updates, quality: r.quality, agencyId: 'bart', stopId: 'LAKE', includeChildStops: ['A10-1', 'A10-2'], now: NOW_S });
+  assert.equal(lake.arrivals.find(a => a.tripId === '1965118').scheduled, true);
 });

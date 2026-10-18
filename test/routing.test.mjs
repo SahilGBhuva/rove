@@ -88,6 +88,10 @@ test('OTP itineraries normalise into the Rove contract with real times, legs, st
   const [walk, ride, walk2] = it.legs;
   assert.equal(walk.transit, false);
   assert.equal(walk.to.stop.station.id, 'POWL');
+  assert.equal(walk.steps.length, 2);
+  assert.equal(walk.steps[0].instruction, 'Head south on Powell Street');
+  assert.deepEqual([walk.steps[1].stayOn, walk.steps[1].area, walk.steps[1].exit], [true, false, null]);
+  assert.equal(walk.steps[1].instruction, 'Continue on Powell Street');
   assert.equal(ride.agency.id, 'bart');
   assert.equal(ride.route.id, '2');
   assert.equal(ride.route.color, '#FFFF33');
@@ -146,4 +150,29 @@ test('itineraries are ordered by arrival (or by latest departure for arrive-by),
   const later = { start: '2026-10-20T08:30:00-07:00', end: '2026-10-20T08:59:00-07:00', legs: [] };
   assert.deepEqual(sortItineraries([walk, later, bus]).map(n => n.end.slice(11, 16)), ['08:49', '08:59', '09:16']);
   assert.deepEqual(sortItineraries([walk, bus, later], true).map(n => n.start.slice(11, 16)), ['08:30', '08:20', '08:15']);
+});
+
+test('walking instructions read naturally for named streets and generic paths', async () => {
+  const { stepInstruction } = await import('../lib/routing/otp.mjs');
+  assert.equal(stepInstruction({ relativeDirection: 'DEPART', absoluteDirection: 'EAST', streetName: 'Lily Avenue' }), 'Head east on Lily Avenue');
+  assert.equal(stepInstruction({ relativeDirection: 'LEFT', streetName: 'Toyon Avenue' }), 'Turn left onto Toyon Avenue');
+  assert.equal(stepInstruction({ relativeDirection: 'SLIGHTLY_RIGHT', streetName: 'path', bogusName: true }), 'Bear right onto the path');
+  assert.equal(stepInstruction({ relativeDirection: 'LEFT', streetName: 'escalator', bogusName: false }), 'Take the escalator');
+  assert.equal(stepInstruction({ relativeDirection: 'CONTINUE', streetName: 'Market Street', stayOn: true }), 'Continue on Market Street');
+  assert.equal(stepInstruction({ relativeDirection: 'CIRCLE_COUNTERCLOCKWISE', exit: '2', streetName: 'Hope Street' }), 'At the roundabout, take exit 2 onto Hope Street');
+  assert.equal(stepInstruction({ relativeDirection: 'ELEVATOR' }), 'Take the elevator');
+});
+
+test('access modes map to OTP modes, and drop-off carries WALK as OTP 2.8 requires', () => {
+  const base = parsePlanParams(params(sfToOakland), NOW);
+  assert.deepEqual(buildPlanVariables(base).modes.transit.access, ['WALK']);
+  assert.deepEqual(buildPlanVariables({ ...base, access: 'park-and-ride' }).modes.transit.access, ['CAR_PARKING']);
+  assert.deepEqual(buildPlanVariables({ ...base, access: 'drop-off' }).modes.transit.access, ['CAR_DROP_OFF', 'WALK']);
+  assert.equal(parsePlanParams(params({ ...sfToOakland, access: 'park-and-ride' }), NOW).access, 'park-and-ride');
+  assert.throws(() => parsePlanParams(params({ ...sfToOakland, access: 'helicopter' }), NOW), /access must be one of/);
+  for (const access of ['walk', 'park-and-ride', 'drop-off']) {
+    const op = parse(PLAN_QUERY).definitions[0];
+    const coerced = getVariableValues(schema, op.variableDefinitions, buildPlanVariables({ ...base, access }));
+    assert.deepEqual(coerced.errors?.map(e => e.message) || [], [], access);
+  }
 });

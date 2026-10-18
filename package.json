@@ -16,7 +16,11 @@
     "otp:build": "./scripts/otp/build-graph.sh",
     "otp:start": "./scripts/otp/start-otp.sh",
     "places:build": "python3 scripts/places/build_places.py data/osm/norcal-latest.osm.pbf data/places/bay-area-places.sqlite",
-    "verify-places": "node scripts/verify-places.mjs"
+    "verify-places": "node scripts/verify-places.mjs",
+    "rove": "./scripts/start-rove.sh",
+    "otp:stop": "./scripts/otp/stop-otp.sh",
+    "verify-all": "./scripts/verify-all.sh",
+    "verify-scenarios": "node scripts/verify-scenarios.mjs"
   },
   "dependencies": {
     "gtfs-realtime-bindings": "^1.1.1"

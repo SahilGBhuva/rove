@@ -56,7 +56,12 @@ export function fixtureIndexes() {
       { stop_id: 'A10-1', stop_name: 'Lake Merritt', parent_station: 'LAKE', stop_lat: '37.797', stop_lon: '-122.265' },
       { stop_id: 'A10-2', stop_name: 'Lake Merritt', parent_station: 'LAKE', stop_lat: '37.797', stop_lon: '-122.265' },
       { stop_id: 'M30-1', stop_name: 'Powell Street', parent_station: 'POWL', stop_lat: '37.784', stop_lon: '-122.407' },
-      { stop_id: 'POWL', stop_name: 'Powell Street', location_type: '1', stop_lat: '37.784', stop_lon: '-122.407' }
+      { stop_id: 'POWL', stop_name: 'Powell Street', location_type: '1', stop_lat: '37.784', stop_lon: '-122.407' },
+      { stop_id: 'PCTR', stop_name: 'Pittsburg Center', location_type: '1', stop_lat: '38.0168', stop_lon: '-121.8891' },
+      { stop_id: 'E20-1', stop_name: 'Pittsburg Center', parent_station: 'PCTR', stop_lat: '38.0168', stop_lon: '-121.8891' },
+      { stop_id: 'E20-2', stop_name: 'Pittsburg Center', parent_station: 'PCTR', stop_lat: '38.0168', stop_lon: '-121.8891' },
+      { stop_id: 'ANTC', stop_name: 'Antioch', location_type: '1', stop_lat: '37.9954', stop_lon: '-121.7803' },
+      { stop_id: 'E30-2', stop_name: 'Antioch', parent_station: 'ANTC', stop_lat: '37.9954', stop_lon: '-121.7803' }
     ],
     calendar: [calendarRow('BWKDY')],
     stopTimes: [...stopTimes('1965118', ['A10-1', 'M30-1'], 0), ...stopTimes('1965200', ['M30-1'], 0)]

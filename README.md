@@ -5,12 +5,12 @@ Rove is a map-first Bay Area transit application using the complete static GTFS 
 ## Run locally
 
 ```bash
-cd /Users/Sahil/Documents/Codex/2026-10-17/files-pasted-by-the-user-build/rove
+cd ~/rove-claude
 npm install
-npm start
+npm run rove      # starts OpenTripPlanner from the saved graph, then Rove
 ```
 
-Open `http://localhost:4173`.
+Open the address it prints (normally `http://localhost:4173`). Details, port conflicts and checks: [docs/LOCAL_STARTUP.md](docs/LOCAL_STARTUP.md). Hosting: [docs/HOSTING.md](docs/HOSTING.md). API: [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
 
 ## Map and data
 

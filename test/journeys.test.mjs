@@ -116,3 +116,25 @@ test('HTTP: /api/v2/status reports subsystems honestly when routing and address 
     assert.ok(s.agencies.every(a => a.arrivals === 'unverified'), 'nothing is verified without live data');
   });
 });
+
+test('HTTP: status advertises first-mile options in the form the frontend reads, and plan accepts OTP mode names', async () => {
+  const health = { data: { feeds: [{ feedId: 'bart' }], serviceTimeRange: { start: 1, end: 2 } } };
+  let sent = null;
+  await serve(async (url, init) => { const q = JSON.parse(init.body); if (q.query.includes('RoveHealth')) return new Response(JSON.stringify(health)); sent = q.variables; return new Response(JSON.stringify(OTP_RESPONSE)); }, async base => {
+    const s = await (await fetch(`${base}/api/v2/status`)).json();
+    assert.deepEqual(s.routing.access, ['WALK', 'CAR_PARKING', 'CAR_DROP_OFF']);
+    assert.equal(s.routing.walkSteps, true);
+    assert.deepEqual(s.routing.bounds, { minLat: 36.9, maxLat: 38.2, minLon: -122.75, maxLon: -121.4 });
+    assert.equal((await (await fetch(`${base}/api/v2/plan/status`)).json()).bounds.maxLat, 38.2);
+    assert.deepEqual((await (await fetch(`${base}/api/v2/plan/status`)).json()).access, ['WALK', 'CAR_PARKING', 'CAR_DROP_OFF']);
+    const r = await fetch(`${base}/api/v2/plan?fromLat=37.362&fromLon=-122.0007&toLat=37.6213&toLon=-122.379&access=CAR_PARKING`);
+    assert.equal(r.status, 200);
+    assert.deepEqual(sent.modes.transit.access, ['CAR_PARKING']);
+    await fetch(`${base}/api/v2/plan?fromLat=37.362&fromLon=-122.0007&toLat=37.6213&toLon=-122.379&access=CAR_DROP_OFF`);
+    assert.deepEqual(sent.modes.transit.access, ['CAR_DROP_OFF', 'WALK']);
+  });
+  await serve(async () => { throw new TypeError('fetch failed'); }, async base => {
+    const s = await (await fetch(`${base}/api/v2/status`)).json();
+    assert.deepEqual(s.routing.access, [], 'no first-mile options are offered while routing is down');
+  });
+});
