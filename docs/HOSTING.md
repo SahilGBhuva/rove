@@ -40,12 +40,12 @@ Researched in October 2026. Prices and limits change; recheck them before buying
 | Risk | The Mac must stay awake, plugged in and online during the demo | A new deployment four days before the demo |
 | Reachable from | The Mac's browser at `http://localhost:4173` (another device on the same Wi-Fi only if the server is started with a LAN address, see below) | Any browser, over HTTPS |
 
-Not yet verified on the Mac itself: no session has run `npm run rove` there, because the tools available to Claude cannot run commands on the Mac host (the Mac's Linux sandbox has only 3 GB of memory). Java 21 must be installed (`java -version`). Run the checks in `LOCAL_STARTUP.md` once before the demo day.
+Verified on the Mac on October 18, 2026: OpenTripPlanner started there from the saved graph (Java 21.0.12, graph loaded in 6 seconds, ready in 12), and `npm run verify-all` passed every check, including live arrivals for all five agencies. See `VERIFICATION.md`.
 
 Demo-day checklist (Mac):
 
 1. Plug in the Mac, turn off sleep for the session (`caffeinate -dims` in a spare Terminal window), close memory-heavy apps.
-2. `cd ~/rove-claude && npm run rove`. Wait for "Rove: http://localhost:…" (OTP takes 30 to 90 seconds).
+2. `cd ~/rove-claude && ROVE_FRONTEND_DIR=~/rove-frontend npm run rove` (until the branches are merged; after the merge, `npm run rove`). Wait for "Rove: http://localhost:…" and check the `frontend:` line (OTP takes 30 to 90 seconds when it is not already running).
 3. In a second window: `ROVE_URL=http://localhost:<port> npm run verify-all`. Every line should be PASS. Live realtime should PASS on the Mac; SKIPPED means 511 or BART was unreachable.
 4. Open the address in the browser and run the demo trips once.
 

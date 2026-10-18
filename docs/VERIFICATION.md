@@ -209,3 +209,21 @@ UC Berkeley's location: OSM's campus outline includes the Berkeley Hills, so its
 Walking and driving wording: a survey of every instruction from 30 real trips found "onto the link" (OSM's word for a highway ramp) 30 times; it now says "the ramp". Open areas are "across", underpasses and corridors "through".
 
 Drive cap: the scenario checks now fail any drive longer than 20 minutes. A park-and-ride trip from Santa Teresa (south San Jose) to Salesforce Tower drove 15.6 km to Tamien Caltrain and passed.
+
+## On the Mac (October 18, 2026)
+
+OpenTripPlanner on the Mac itself (paths under `/Users/Sahil/rove-claude`, Java 21.0.12, 8 processors): started by `npm run rove` from the saved graph with no rebuild; graph loaded in 6 seconds, server ready in 12.
+
+`ROVE_URL=http://localhost:4174 npm run verify-all`, run by Sahil at 19:28 UTC with the check scripts from `76bfe8b`. The server answering on port 4174 was a combined preview started earlier (backend `8e293e9` with frontend `ba21fce`), so the checks exercised that server, not the `76bfe8b` server changes (live-state reasons, search ranking), which were verified in the cloud workspace.
+
+| Check | Result |
+|---|---|
+| Fixture tests, syntax, secret scan | 83 of 83, 35 of 35, passed |
+| Live realtime matching | All five agencies verified: BART 70 trip updates, Muni 1,232, Caltrain 12, VTA 328, AC Transit 500; 100% trip and stop matching, no conflicts, no feed errors |
+| Schedule-based routing | 11 of 11 |
+| Place search and door-to-door | 20 searches and 6 trips, all passed |
+| Launch scenarios | 11 of 11 schedule checks; 5 of 5 live arrival boards with real predictions (for example Powell Street: Red-N in 0 min, Green-S in 2 min) |
+
+Seen in the Mac's browser on the same server: live BART arrivals at Powell Street with platforms from the feed (Green-N, platform 2, 69 seconds late).
+
+Combined site in the cloud workspace with the final code: backend `76bfe8b` plus `ROVE_FRONTEND_DIR`, serving frontend `ba21fce` (its `app.js` byte-identical to the Mac's). All six trips through the interface passed, with no page errors; drop-off now reads "the drop-off point near Sunnyvale Station", and park-and-ride shows "439 spaces mapped. Space availability is not known."

@@ -13,13 +13,13 @@ import { OTP_RESPONSE } from './fixtures/otp-plan-response.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const network = JSON.parse(fs.readFileSync(path.join(root, 'public/data/network.json'), 'utf8'));
 
-async function withServer({ otpFetch, updates = manyMuniUpdates(30) } = {}, fn) {
+async function withServer({ otpFetch, updates = manyMuniUpdates(30), frontendRoot } = {}, fn) {
   const realtime = new RealtimeService({
     indexes: fixtureIndexes(), apiKey: 'test-key-never-real',
     loaders: { updates: async () => feed(updates), vehicles: async () => feed([]), alerts: async () => feed([]), bartUpdates: async () => feed([]), bartAlerts: async () => feed([]) }
   });
   const otp = new OtpClient({ url: 'http://otp.test/otp/gtfs/v1', fetchImpl: otpFetch || (async () => { throw new TypeError('fetch failed'); }) });
-  const server = http.createServer(createHandler({ root, realtime, otp, stops: new StopSearch(network), log: { error() {} } }));
+  const server = http.createServer(createHandler({ root, frontendRoot, realtime, otp, stops: new StopSearch(network), log: { error() {} } }));
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
   try { await fn(async p => { const r = await fetch(base + p); return { status: r.status, text: await r.text() }; }); }
@@ -117,4 +117,19 @@ test('HTTP: place search merges stations and map places; reverse lookup and miss
       assert.equal((await fetch(`${base}/api/v2/places/reverse?lat=x`)).status, 400);
     } finally { server.close(); }
   }
+});
+
+test('HTTP: a separate frontend checkout serves the page files, while data and secrets stay with the backend', async () => {
+  const fe = fs.mkdtempSync(path.join((await import('node:os')).tmpdir(), 'rove-fe-'));
+  fs.writeFileSync(path.join(fe, 'index.html'), '<!doctype html><title>frontend checkout</title>');
+  fs.writeFileSync(path.join(fe, 'app.js'), '// frontend app');
+  fs.writeFileSync(path.join(fe, '.env'), 'SECRET=never');
+  fs.mkdirSync(path.join(fe, 'public/data'), { recursive: true });
+  fs.writeFileSync(path.join(fe, 'public/data/network.json'), '{"stale":true}');
+  await withServer({ frontendRoot: fe }, async get => {
+    assert.match((await get('/')).text, /frontend checkout/);
+    assert.equal((await get('/app.js')).text, '// frontend app');
+    assert.notEqual((await get('/public/data/network.json')).text, '{"stale":true}', 'network data comes from the backend');
+    for (const p of ['/.env', '/server.mjs', '/public/../.env', '/public/%2e%2e/.env']) assert.equal((await get(p)).status, 404, p);
+  });
 });

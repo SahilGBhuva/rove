@@ -11,6 +11,15 @@ cd ~/rove-claude
 npm run rove
 ```
 
+To run the full website with the current frontend branch (before the branches are merged), point the server at the frontend checkout. The page files (`index.html`, `app.js`, `styles.css`, `public/fonts/`) then come from `~/rove-frontend`; `public/data/` and everything else stay with this backend:
+
+```bash
+cd ~/rove-claude
+ROVE_FRONTEND_DIR=~/rove-frontend npm run rove
+```
+
+The startup output says which frontend it serves (`frontend: /Users/…/rove-frontend`).
+
 `scripts/start-rove.sh`:
 
 1. Checks Node and dependencies.
