@@ -152,3 +152,13 @@ Journeys planned through the interface (Saturday evening, "Leave now"), at 390 x
 5. The same address to SFO with Drive: drive 1.8 miles to the Sunnyvale Caltrain park-and-ride lot, then Caltrain and BART.
 
 Every screen was inspected in light and dark mode. No horizontal overflow, no controls overlapping the panel, and no buttons under 36 px tall on either size (primary buttons are 44 px or taller).
+
+## Integration preparation (after Phase 5)
+
+- Checked the frontend against the backend contract at `fb4d30c`; see the compatibility table in `FRONTEND_ROUTING_API_CONTRACT.md`.
+- Walking and driving steps accept either `distanceMeters` or OTP's `distance`.
+- A Drop-off option appears when `/api/v2/status` lists `CAR_DROP_OFF` (tested only with a mocked status response; no drop-off route has been seen from the real planner).
+- Fixed: the map layer picker's Standard, Satellite and Dark buttons had lost their layout since Phase 3 (a sort-control style applied to every segmented control). The sort control now has its own class, and its labels no longer wrap on phones.
+- Fixed: stop names in Nearby and similar lists now start at the same position, whatever the number of line badges.
+
+Tests on the final code: real-data journeys (`qa5`, real backend and OTP; steps and Drive through the test-only prototype), the Phase 2 and Phase 3 suites on the fallback server, a visual review of every main screen at 390 x 844 and 1440 x 900, and the drop-off UI test above. No page errors, no horizontal overflow, no overlapping controls.

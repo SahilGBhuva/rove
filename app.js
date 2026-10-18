@@ -118,7 +118,7 @@ const state = {
   stack: [{ name: 'home' }],
   searchQuery: '',
   detent: 'half',
-  plan: { from: null, to: null, draft: { from: '', to: '' }, access: store.get('rove-first-mile-v1', 'WALK') === 'CAR_PARKING' ? 'CAR_PARKING' : 'WALK', driveNote: false, timeMode: 'now', dateTime: '', results: null, error: null, loading: false, expanded: 0, focus: null, query: '', sort: 'fastest' },
+  plan: { from: null, to: null, draft: { from: '', to: '' }, access: ['CAR_PARKING', 'CAR_DROP_OFF'].includes(store.get('rove-first-mile-v1', 'WALK')) ? store.get('rove-first-mile-v1', 'WALK') : 'WALK', driveNote: false, timeMode: 'now', dateTime: '', results: null, error: null, loading: false, expanded: 0, focus: null, query: '', sort: 'fastest' },
   focusLeg: null,
   nav: null,
   wakeLock: null,
@@ -1481,8 +1481,9 @@ function viewPlan() {
   const hasFrom = Boolean(plan.from || plan.draft.from.trim());
   const hasTo = Boolean(plan.to || plan.draft.to.trim());
   const coverage = planCoverageIssue();
-  const driveOk = driveSupported();
-  const access = driveOk ? plan.access : 'WALK';
+  const driveOk = driveSupported('CAR_PARKING');
+  const dropOk = driveSupported('CAR_DROP_OFF');
+  const access = driveSupported(plan.access) ? plan.access : 'WALK';
   let submit;
   if (status && !status.available) submit = '';
   else if (coverage) submit = `<p class="plan-coverage" role="status">${esc(coverage.text)}</p>`;
@@ -1501,7 +1502,7 @@ function viewPlan() {
       <div id="planSuggest" class="plan-suggest" role="listbox" aria-label="Suggestions"></div>
       <div class="plan-body">
         ${coverage ? '' : `<div class="plan-options">
-          <div class="segmented mode-switch" role="group" aria-label="Getting to transit">${modeButton('WALK', MODE_ICONS.walk, 'Walk')}${modeButton('CAR_PARKING', MODE_ICONS.car, 'Drive')}</div>
+          <div class="segmented mode-switch${dropOk ? ' three' : ''}" role="group" aria-label="Getting to transit">${modeButton('WALK', MODE_ICONS.walk, 'Walk')}${modeButton('CAR_PARKING', MODE_ICONS.car, 'Drive')}${dropOk ? modeButton('CAR_DROP_OFF', MODE_ICONS.car, 'Drop-off') : ''}</div>
           <label class="time-select"><span class="visually-hidden">When</span><select id="planTimeMode">
             <option value="now" ${plan.timeMode === 'now' ? 'selected' : ''}>Leave now</option>
             <option value="depart" ${plan.timeMode === 'depart' ? 'selected' : ''}>Depart at</option>
@@ -1510,7 +1511,8 @@ function viewPlan() {
           ${plan.timeMode !== 'now' ? `<input type="datetime-local" id="planDateTime" aria-label="Date and time" class="${plan.errorField === 'time' ? 'invalid' : ''}" value="${esc(plan.dateTime || localInputValue(new Date()))}" />` : ''}
         </div>
         ${plan.driveNote && !driveOk ? '<p class="caption plan-hint" id="driveNote" role="status">Driving to a station is not available yet. Rove plans walking connections to transit today.</p>' : ''}
-        ${access === 'CAR_PARKING' ? '<p class="caption plan-hint">Rove drives you to a park-and-ride lot, then plans transit from there. Parking availability is not known.</p>' : ''}`}
+        ${access === 'CAR_PARKING' ? '<p class="caption plan-hint">Rove drives you to a park-and-ride lot, then plans transit from there. Parking availability is not known.</p>' : ''}
+        ${access === 'CAR_DROP_OFF' ? '<p class="caption plan-hint">Someone drives you to the station and drops you off, then Rove plans transit from there.</p>' : ''}`}
         ${submit}
         ${plan.loading ? '<ul class="itineraries skeleton-list" aria-hidden="true">' + '<li><div class="itinerary"><span class="sk sk-line"></span><span class="sk sk-bar"></span><span class="sk sk-line short"></span></div></li>'.repeat(3) + '</ul>' : ''}
         ${plan.error ? `<p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>` : ''}
@@ -1566,7 +1568,7 @@ async function submitPlan() {
     });
     const requestTime = plan.timeMode === 'now' ? new Date() : new Date(pacificIso(plan.dateTime));
     if (plan.timeMode !== 'now') params.set('time', pacificIso(plan.dateTime));
-    const access = plan.access === 'CAR_PARKING' && driveSupported() ? 'CAR_PARKING' : 'WALK';
+    const access = plan.access !== 'WALK' && driveSupported(plan.access) ? plan.access : 'WALK';
     if (access !== 'WALK') params.set('access', access);
     if (plan.timeMode === 'arrive') params.set('arriveBy', 'true');
     render();
@@ -1688,7 +1690,7 @@ function viewResults() {
   const order = sortedItineraryIndexes();
   const fastestIndex = sortedItineraryIndexes('fastest')[0];
   const sortButton = (key, label) => `<button type="button" class="seg-option" data-action="it-sort" data-sort="${key}" aria-pressed="${(plan.sort || 'fastest') === key}">${label}</button>`;
-  const firstMile = plan.results?.request?.access === 'CAR_PARKING' ? 'Drive to transit' : 'Walk to transit';
+  const firstMile = { CAR_PARKING: 'Drive to transit', CAR_DROP_OFF: 'Drop-off at transit' }[plan.results?.request?.access] || 'Walk to transit';
   return `${backHeader()}
     <h1 class="visually-hidden">Routes from ${esc(plan.from?.name)} to ${esc(plan.to?.name)}</h1>
     <div class="trip-card">
@@ -1697,7 +1699,7 @@ function viewResults() {
     </div>
     <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
     ${areaNoteHtml()}
-    ${its.length > 1 ? `<div class="segmented" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
+    ${its.length > 1 ? `<div class="segmented sort-switch" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
     <ul class="itineraries">${order.map(i => {
       const it = its[i];
       const open = plan.expanded === i;
@@ -2367,7 +2369,7 @@ function normalizeItinerary(it) {
       durationSeconds: leg.durationSeconds ?? null,
       geometry: leg.geometry,
       // Turn-by-turn steps, only when the server provides them (OTP legs.steps).
-      steps: Array.isArray(leg.steps) ? leg.steps.filter(s => s && (s.relativeDirection || s.streetName)) : [],
+      steps: Array.isArray(leg.steps) ? leg.steps.filter(s => s && (s.relativeDirection || s.streetName)).map(s => ({ ...s, distanceMeters: s.distanceMeters ?? (Number.isFinite(s.distance) ? Math.round(s.distance) : null) })) : [],
       alerts: (leg.alerts || []).filter(a => a.header || a.description)
     };
   });
@@ -3080,13 +3082,13 @@ function stepsListHtml(leg, label) {
 
 /* The compact sequence on each route option: walk 4 › Local 655 › Yellow › walk 1. */
 
-function driveSupported() {
-  return Boolean(state.planStatus?.available && state.planStatus?.access?.includes('CAR_PARKING'));
+function driveSupported(mode = 'CAR_PARKING') {
+  return Boolean(state.planStatus?.available && state.planStatus?.access?.includes(mode));
 }
 
 function setFirstMile(key) {
   const plan = state.plan;
-  if (key === 'CAR_PARKING' && !driveSupported()) { plan.driveNote = true; render(); return; }
+  if (key !== 'WALK' && !driveSupported(key)) { plan.driveNote = true; render(); return; }
   plan.access = key; plan.driveNote = false;
   store.set('rove-first-mile-v1', key);
   render();

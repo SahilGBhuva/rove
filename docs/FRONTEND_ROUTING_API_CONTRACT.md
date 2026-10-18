@@ -47,7 +47,23 @@ Rove covers the San Francisco Bay Area only. `SERVICE_AREA` in `app.js` matches 
 - Arrivals with status `unverified` show "Live arrivals are unavailable right now" instead of an empty board. `canceled` entries are listed separately as "Canceled" or "Not stopping here". `stale` arrivals show their age and "Live times may be out of date."
 - Vehicles are drawn only when `routeId` is not null. BART never has vehicles.
 
-## Why the local site says "Trip planning is not available right now"
+## Compatibility with the backend at `fb4d30c` (checked October 18, 2026)
+
+`fb4d30c` is the latest commit on `claude-development`. The backend working copy also has uncommitted realtime-matching changes, which were not read as part of the contract.
+
+| Backend feature | Frontend status |
+|---|---|
+| `GET /api/v2/status` | Used. Routing availability, address search, and `routing.access` decide what the planner offers. |
+| `GET /api/v2/places/search`, `/reverse` | Used first, with `near`. Kinds `address`, `poi`, `street`, `area`, `station`, `stop` all render; `approximate` results show their note. |
+| `GET /api/v2/plan` | Used. Response shape matches; tested end to end against real OTP. Errors 400, 404, 502, 503 handled without inventing trips. |
+| `GET /api/v2/arrivals` with `scheduled: false` | Handled: shown as "BART · Live" with a note, no line guessed. |
+| `POST /api/journeys` | Not used. `GET /api/v2/plan` covers the same planner. |
+| Walk and drive `steps` | Not in `fb4d30c`. The frontend accepts `distanceMeters` or OTP's `distance`, and shows directions only when steps are present. |
+| `access=CAR_PARKING` (Drive) | Not in `fb4d30c`. Drive appears but stays unavailable until `/api/v2/status` lists it. |
+| `access=CAR_DROP_OFF` (Drop-off) | Not in `fb4d30c`. A Drop-off option appears only when `/api/v2/status` lists it. Note: OTP 2.8.1's `planConnection` refused `CAR_DROP_OFF` as an access mode on the real graph ("CAR_PICKUP needs to be combined with WALK mode for the same leg"), so the backend will need a different query to support it. |
+| One-command startup | Not in `fb4d30c`. The manual steps are below. |
+
+ "Trip planning is not available right now"
 
 `npm start` in the frontend working copy runs that branch's own `server.mjs`, which predates the v2 API and only serves `/api/realtime`. `/api/v2/status` and `/api/v2/plan/status` return 404 there, so the planner correctly reports that trip planning is unavailable. Nothing is wrong with the frontend; it is running without the backend.
 

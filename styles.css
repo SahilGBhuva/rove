@@ -469,7 +469,7 @@ body.map-picking .map { cursor: crosshair; }
 .trip-card .text-button { padding: 0 12px; }
 .results-when { margin: 8px var(--pad) 0; }
 
-.segmented { display: flex; gap: 4px; margin: 12px var(--pad) 4px; padding: 3px; border-radius: 8px; background: var(--fill); }
+.sort-switch { display: flex; gap: 4px; margin: 12px var(--pad) 4px; padding: 3px; border-radius: 8px; background: var(--fill); }
 .seg-option { flex: 1; min-height: 44px; border-radius: 6px; font-size: 14px; font-weight: 600; color: var(--ink-2); padding: 0 6px; }
 .seg-option[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
 .it-times .tag { display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 4px; font-size: 12.5px; font-weight: 650; background: var(--ink); color: var(--surface); vertical-align: 2px; }
@@ -541,7 +541,7 @@ body.theme-dark { --shadow-panel: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(
 
 /* Route options */
 .trip-card { border-radius: var(--radius); }
-.segmented:not(.mode-switch) { border-radius: var(--radius); }
+.sort-switch { border-radius: var(--radius); }
 .itinerary { padding: 16px var(--pad) 14px; transition: background .15s; }
 .it-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .it-duration { display: inline-flex; align-items: baseline; gap: 8px; font-size: 21px; line-height: 26px; font-weight: 700; letter-spacing: -.01em; }
@@ -598,3 +598,10 @@ body.theme-dark { --shadow-panel: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(
 .segmented.mode-switch { margin: 0; }
 .timeline li { grid-template-columns: 72px 18px 1fr; }
 .timeline .t { white-space: nowrap; font-size: 13.5px; }
+
+/* Final polish */
+.sort-switch .seg-option { white-space: nowrap; font-size: 13.5px; padding: 0 4px; }
+.layers-popover .segmented { margin: 0; }
+.row > .badges { width: 92px; max-width: 92px; }
+@media (max-width: 359px) { .row > .badges { width: 76px; max-width: 76px; } }
+.segmented.mode-switch.three { grid-template-columns: repeat(3, 1fr); flex-basis: 100%; }
