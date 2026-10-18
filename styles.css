@@ -835,3 +835,27 @@ body.map-satellite .maplibregl-ctrl-attrib { background: rgba(255, 255, 255, .9)
 .home-footer-links .text-button:hover { color: var(--ink); text-decoration: underline; }
 @media (max-width: 767px) { .panel-top { padding-bottom: 10px; } .quick-row { padding-bottom: 10px; } }
 @media (prefers-reduced-motion: reduce) { .quick { transition: none; } .quick:hover { transform: none; } }
+
+/* Motion v4 — expressive, directional, and lightweight. */
+:root { --rove-spring: cubic-bezier(.16, 1, .3, 1); --rove-swift: cubic-bezier(.22, 1, .36, 1); }
+@keyframes rove-view-enter { from { opacity: 0; transform: translate3d(0, 18px, 0) scale(.985); filter: blur(2px); } 70% { filter: blur(0); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); } }
+.panel-body.view-enter > * { animation: rove-view-enter 540ms var(--rove-spring) both; }
+.panel-body.view-enter > *:nth-child(2) { animation-delay: 45ms; }
+.panel-body.view-enter > *:nth-child(3) { animation-delay: 90ms; }
+.panel-body.view-enter > *:nth-child(4) { animation-delay: 125ms; }
+.panel-body.view-enter > *:nth-child(n+5) { animation-delay: 155ms; }
+@keyframes rove-header-in { from { opacity: 0; transform: translate3d(0,-12px,0); } to { opacity: 1; transform: translate3d(0,0,0); } }
+@media (min-width: 768px) { .panel { animation: rove-header-in 580ms var(--rove-spring) both; } }
+.search-field { transition: background 230ms ease, border-color 230ms ease, box-shadow 350ms var(--rove-spring), transform 350ms var(--rove-spring); }
+.search-field:focus-within { transform: translateY(-2px); }
+.quick { transition: transform 380ms var(--rove-spring), box-shadow 380ms var(--rove-spring), background 180ms ease, opacity 180ms ease; }
+@media (hover:hover) { .quick:hover { transform: translateY(-3px) scale(1.025); box-shadow: 0 8px 20px rgba(17,18,20,.14); } .quick:first-child:hover { box-shadow: 0 9px 22px rgba(17,18,20,.2); } }
+.quick:active, .button:active { transform: scale(.955); transition-duration: 100ms; }
+.rows li > button, .result, .place-row, .itinerary { transition: background 200ms ease, transform 330ms var(--rove-spring), box-shadow 330ms var(--rove-spring); }
+@media (hover:hover) { .rows li > button:hover, .result:hover, .place-row:hover { transform: translateX(3px); } .itinerary:hover { transform: translateY(-2px); } }
+.layers-popover { animation: rove-pop 360ms var(--rove-spring) both; }
+@keyframes rove-pop { from { opacity: 0; transform: translate3d(0,12px,0) scale(.955); } to { opacity: 1; transform: translate3d(0,0,0) scale(1); } }
+.intro.intro-in { animation: rove-pop 480ms var(--rove-spring) both; }
+.control-group button { transition: background 180ms ease, transform 300ms var(--rove-spring); }
+@media (hover:hover) { .control-group button:hover { transform: scale(1.09); } }
+@media (prefers-reduced-motion:reduce) { .panel, .panel-body.view-enter > *, .layers-popover, .intro.intro-in { animation: none !important; } .search-field, .quick, .rows li > button, .result, .place-row, .itinerary, .control-group button { transition: none !important; } .search-field:focus-within, .quick:hover, .quick:active, .button:active, .rows li > button:hover, .result:hover, .place-row:hover, .itinerary:hover, .control-group button:hover { transform: none !important; } }
