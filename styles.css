@@ -934,3 +934,11 @@ body.theme-dark .quick:first-child { background: #e8f1ff; color: #122037; }
 .panel-body > .section > .label { border-top-color: var(--rule); }
 .home-footer-links .text-button { color: var(--ink-2); }
 @media (max-width: 767px) { .panel { border-color: var(--rule); } }
+
+/* Tablet and narrow-window alignment: center the floating panel over the map.
+   Wide desktop retains the intentional left-anchored navigation position. */
+@media (min-width: 768px) and (max-width: 1100px) {
+  .panel { left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 36px)); max-height: calc(100dvh - 36px); }
+  .menu { left: auto; right: max(18px, calc((100vw - 440px) / 2)); }
+  .intro { left: 50%; transform: translateX(-50%); width: min(380px, calc(100vw - 36px)); }
+}
