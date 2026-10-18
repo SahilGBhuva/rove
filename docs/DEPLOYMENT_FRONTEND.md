@@ -22,16 +22,17 @@ Three static files at the repository root (`index.html`, `app.js`, `styles.css`)
 | `tiles.openfreemap.org` | Basemap style, vector tiles, and label fonts | Free service without an SLA. Confirm usage terms before a public launch. |
 | `services.arcgisonline.com` | Satellite imagery (Satellite mode only) | Esri terms must be reviewed before public use. |
 | `api.stadiamaps.com` | Address autocomplete, search, and reverse geocoding | See "Address search licensing" below. Not needed once the backend proxy exists. |
+| `photon.komoot.io` | Backup address search | Komoot's public Photon service, free with fair use and no availability guarantee. Fine for a demo; for a public launch rely on Stadia or a backend proxy. Results are OpenStreetMap data (ODbL), attributed under the suggestions. |
 
 ## Address search licensing (Stadia Maps)
 
 - **Why Stadia.** Its Pelias geocoder is built for type-ahead, returns addresses, venues, and neighborhoods, and supports browser use without exposing a key. Public OSM Nominatim forbids client-side autocomplete, so it is not used.
 - **Account and domain.** Before a preview or launch, create a Stadia account, add the preview and production domains under domain-based authentication, and confirm requests from those origins succeed. Without that, address search shows "Address search is unavailable right now" and riders can still use stops, their location, and the map.
-- **Plan.** Stadia's free tier is for non-commercial use. A commercial Rove launch needs a paid plan. Address search now covers the whole United States, so expect traffic from outside the Bay Area too. Check the current quota against expected traffic, since every typed query after 3 characters can make one request (debounced, cached per session).
+- **Plan.** Stadia's free tier is for non-commercial use. A commercial Rove launch needs a paid plan. Check the current quota against expected traffic, since every typed query after 3 characters can make one request (debounced, cached per session).
 - **Storage.** Stadia allows temporary caching on all plans; storing results permanently requires a paid plan with that right. Rove keeps up to 8 recent places and the rider's saved places in that rider's own browser (`rove-recent-places-v1`, `rove-saved-places-v1`). Confirm this counts as temporary storage under the chosen plan, or move to the backend proxy and a plan that allows storage.
 - **Attribution.** Shown under every list of address suggestions and in Data sources.
 
-A Content-Security-Policy for the preview would need `script-src 'self' cdn.jsdelivr.net; style-src 'self' cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org https://services.arcgisonline.com; connect-src 'self' https://tiles.openfreemap.org https://services.arcgisonline.com https://api.stadiamaps.com; worker-src blob:; font-src 'self'`. The inline `style` attributes used for route colors need `'unsafe-inline'` in `style-src`.
+A Content-Security-Policy for the preview would need `script-src 'self' cdn.jsdelivr.net; style-src 'self' cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org https://services.arcgisonline.com; connect-src 'self' https://tiles.openfreemap.org https://services.arcgisonline.com https://api.stadiamaps.com https://photon.komoot.io; worker-src blob:; font-src 'self'`. The inline `style` attributes used for route colors need `'unsafe-inline'` in `style-src`.
 
 ## Browser features used
 

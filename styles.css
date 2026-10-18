@@ -483,3 +483,6 @@ body.map-picking .map { cursor: crosshair; }
 .shape-note { margin-top: 6px; font-style: italic; }
 .plan-coverage { margin: 12px 0 0; padding: 12px 16px; border-radius: 8px; background: var(--paper); border: 1px solid var(--rule); font-size: 15px; line-height: 21px; color: var(--ink-2); }
 .place-coverage { margin: 0 var(--pad); }
+.area-note { margin: 8px var(--pad) 0; padding: 10px 12px; border-radius: 8px; background: var(--paper); border: 1px solid var(--rule); font-size: 14px; line-height: 20px; color: var(--ink-2); }
+.note-actions { padding: 0 var(--pad); }
+.note-actions .text-button { font-size: 14px; }

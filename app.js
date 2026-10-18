@@ -762,6 +762,9 @@ function fitCoordinates(coords, maxZoom = 14) {
   if (!map || !valid.length) return;
   if (valid.length === 1) { map.easeTo({ center: valid[0], zoom: Math.max(map.getZoom(), 15), padding: cameraPadding(), duration: motionMs(700) }); return; }
   const bounds = valid.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(valid[0], valid[0]));
+  // easeTo with padding leaves that padding on the map, and fitBounds adds its own on top. On a
+  // phone the two together leave no room, and MapLibre silently skips the move. Clear it first.
+  map.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
   map.fitBounds(bounds, { padding: cameraPadding(), maxZoom, duration: motionMs(800) });
 }
 
@@ -1136,7 +1139,7 @@ function viewHome() {
     <li><button class="row" data-action="lines"><span class="row-main"><span class="row-title">All lines</span><span class="row-meta">${idx.routes.size} lines across 5 agencies</span></span>${ICONS.chevron}</button></li>
     <li><button class="row" data-action="sources"><span class="row-main"><span class="row-title">Data sources and credits</span><span class="row-meta">Schedules, live data, maps, and address search</span></span>${ICONS.chevron}</button></li>
   </ul></section>`);
-  parts.push(`<p class="note">${esc(liveStatusLine())} <button class="text-button" data-action="intro" style="min-height:0;font-size:13px">Show the introduction</button></p>`);
+  parts.push(`<p class="note">${esc(liveStatusLine())}</p><div class="note-actions"><button class="text-button" data-action="intro">Show the introduction</button></div>`);
   return parts.join('');
 }
 
@@ -1241,7 +1244,7 @@ function viewSearch() {
   const waiting = forSearch && autocomplete.status === 'loading' && autocomplete.query === q.trim();
   const noPlaces = !forSearch || q.trim().length < 3 || (autocomplete.status === 'done' && !autocomplete.results.length);
   if (!routes.length && !stops.length && !personal.length && noPlaces && !waiting) {
-    return `<p class="empty" style="padding-top:16px">No results for “${esc(q)}”. Check the spelling, or try a street address, a station, or a line such as 38R or 51A.</p>`;
+    return `<p class="empty" style="padding-top:16px">No Bay Area results for “${esc(q)}”. Check the spelling, or try a Bay Area address, a station, or a line such as 38R or 51A.</p>`;
   }
   const parts = [];
   if (personal.length) parts.push(`<section class="section" style="margin-top:8px"><h2 class="label">Your places</h2><ul class="rows">${personal.map(([p, icon]) => placeOptionRow(p, 'search-place', icon)).join('')}</ul></section>`);
@@ -1371,7 +1374,8 @@ function viewStop({ agency, stop }) {
 function departureRow(group, first, agencyId) {
   const next = group.times[0];
   const m = minutesLabel(next.time);
-  const status = delayStatus(next.delay);
+  // A trip missing from the schedule has no scheduled time to be early or late against.
+  const status = group.unscheduled ? { cls: 'status-live', text: 'Live' } : delayStatus(next.delay);
   const later = group.times.slice(1, 3).map(t => minutesLabel(t.time));
   let laterText = '';
   if (later.length) {
@@ -1384,6 +1388,7 @@ function departureRow(group, first, agencyId) {
     <span class="when"><strong>${esc(m.value)}</strong>${m.unit ? `<span>${m.unit}</span>` : ''}</span>
     <span class="what">${badge}<div class="row-title" style="margin-top:6px">${esc(title)}</div>
       <div class="status ${status.cls}">${ICONS.live}${esc(status.text)}</div>
+      ${group.unscheduled ? '<div class="then">Not in the published schedule, so the line is not shown.</div>' : ''}
       ${laterText ? `<div class="then">${esc(laterText)}</div>` : ''}</span>
     <span class="row-end"></span></li>`;
 }
@@ -1413,7 +1418,7 @@ function viewSources() {
         <p>Reproduced with permission granted by the City and County of San Francisco.</p>
         <p>AC Transit data is licensed under a Creative Commons Attribution 3.0 Unported License.</p>
         <p>Map data © OpenStreetMap contributors and OpenMapTiles. Map tiles by OpenFreeMap. Satellite imagery by Esri, Maxar, Earthstar Geographics, and the GIS User Community.</p>
-        <p>Address search by Stadia Maps. Geocoding data © OpenStreetMap contributors, OpenAddresses, and Who’s On First.</p>
+        <p>Address search by Stadia Maps, with Photon by Komoot as a backup. Geocoding data © OpenStreetMap contributors, OpenAddresses, and Who’s On First.</p>
         <p>Trip plans are calculated with OpenTripPlanner.</p>
         <p>All transit data is provided as is, without warranty. Times are estimates. Confirm important trips with the agency.</p>
         <p>Rove is not affiliated with or endorsed by BART, SFMTA, VTA, AC Transit, Caltrain, or MTC.</p>
@@ -1437,7 +1442,7 @@ function placeFromStop(agencyId, stopId) {
 }
 
 function currentLocationPlace() {
-  return state.userLocation ? { kind: 'location', name: 'Your location', lat: state.userLocation[1], lon: state.userLocation[0] } : null;
+  return state.userLocation && inServiceArea({ lat: state.userLocation[1], lon: state.userLocation[0] }) ? { kind: 'location', name: 'Your location', lat: state.userLocation[1], lon: state.userLocation[0] } : null;
 }
 
 function openPlan({ from, to } = {}) {
@@ -1648,6 +1653,7 @@ function viewResults() {
       <button type="button" class="text-button" data-action="back">Edit</button>
     </div>
     <p class="caption results-when">${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Times are from published schedules' : ''}</p>
+    ${areaNoteHtml()}
     ${its.length > 1 ? `<div class="segmented" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
     <ul class="itineraries">${order.map(i => {
       const it = its[i];
@@ -2074,8 +2080,26 @@ function onPosition(pos) {
   $('#locateButton').classList.add('active');
   const pick = locate.pendingPick;
   locate.pendingPick = null;
+  const here = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+  if (!inServiceArea(here)) {
+    if (first || pick) toast('You are outside the Bay Area. Search for a Bay Area place to plan a trip.');
+    if (pick) return;
+  }
   if (pick && currentView().name === 'plan') { state.plan[pick] = currentLocationPlace(); afterPick(); return; }
   if (first && ['home'].includes(currentView().name)) render();
+}
+
+/* When location permission was already granted, open the map where the rider is, as long as
+ * that is inside the Bay Area. */
+function centerOnGrantedLocation() {
+  navigator.geolocation.getCurrentPosition(pos => {
+    onPosition(pos);
+    const here = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+    if (!state.map || !inServiceArea(here)) return;
+    const center = () => { if (currentView().name === 'home') state.map.easeTo({ center: [here.lon, here.lat], zoom: Math.max(state.map.getZoom(), 14), padding: cameraPadding(), duration: motionMs(900) }); };
+    const whenReady = () => (state.mapReady ? center() : setTimeout(whenReady, 300));
+    whenReady();
+  }, () => {}, { timeout: 10000, maximumAge: 60000 });
 }
 function onPositionError(err) {
   locate.pendingPick = null;
@@ -2165,7 +2189,7 @@ async function fetchArrivals(place, { maxAgeMs = 25000 } = {}) {
       for (const a of arrivals) {
         const route = a.routeId ? idx.routes.get(routeKey(place.a.id, a.routeId)) : null;
         const gk = `${a.routeId || a.routeName}|${a.headsign || ''}`;
-        if (!groups.has(gk)) groups.set(gk, { route, label: route ? null : a.routeName || 'Trip', headsign: a.headsign || null, times: [] });
+        if (!groups.has(gk)) groups.set(gk, { route, label: route ? null : a.routeName || AGENCY_SHORT[place.a.id] || 'Transit', headsign: a.headsign || null, unscheduled: a.scheduled === false, times: [] });
         groups.get(gk).times.push({ time: a.time, delay: a.delay });
       }
       const list = [...groups.values()].map(g => { g.times.sort((x, y) => x.time - y.time); return g; }).sort((x, y) => x.times[0].time - y.times[0].time);
@@ -2219,7 +2243,7 @@ async function fetchPlanStatus(force = false) {
     if (response.status === 404) next = { available: false, reason: 'missing' };
     else {
       const body = await response.json().catch(() => ({}));
-      next = { available: response.ok && body.available !== false, reason: response.ok ? null : body.code || 'ROUTING_UNAVAILABLE', regions: Array.isArray(body.regions) ? body.regions : null };
+      next = { available: response.ok && body.available !== false, reason: response.ok ? null : body.code || 'ROUTING_UNAVAILABLE' };
     }
   } catch {
     next = { available: false, reason: 'network' };
@@ -2294,8 +2318,8 @@ function planErrorMessage(status, body) {
   if (status === 400) {
     const message = String(body?.error || '');
     if (/same place/i.test(message)) return { which: 'to', text: 'The starting point and destination are the same place.' };
-    if (which === 'from') return { which, text: /outside/i.test(message) ? `Rove cannot plan trips from this starting point yet. Trip planning is available in ${regionListText()} today.` : 'Choose the starting point again.' };
-    if (which === 'to') return { which, text: /outside/i.test(message) ? `Rove cannot plan trips to this destination yet. Trip planning is available in ${regionListText()} today.` : 'Choose the destination again.' };
+    if (which === 'from') return { which, text: /outside/i.test(message) ? 'This starting point is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.' : 'Choose the starting point again.' };
+    if (which === 'to') return { which, text: /outside/i.test(message) ? 'This destination is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.' : 'Choose the destination again.' };
     if (which === 'time') return { which, text: 'Choose a time within the next 60 days.' };
     return { which: null, text: 'Rove could not plan this trip. Check the places and time, then try again.' };
   }
@@ -2384,8 +2408,48 @@ const GEOCODER = {
   autocomplete: 'https://api.stadiamaps.com/geocoding/v1/autocomplete',
   search: 'https://api.stadiamaps.com/geocoding/v1/search',
   reverse: 'https://api.stadiamaps.com/geocoding/v1/reverse',
-  attribution: 'Address search by Stadia Maps, using OpenStreetMap, OpenAddresses, and Who’s On First'
+  photon: 'https://photon.komoot.io/api/',
+  photonReverse: 'https://photon.komoot.io/reverse',
+  attribution: {
+    stadia: 'Address search by Stadia Maps, using OpenStreetMap, OpenAddresses, and Who’s On First',
+    photon: 'Address search by Photon from Komoot, using OpenStreetMap data'
+  }
 };
+
+/* Stadia Maps is the primary geocoder. If Stadia refuses a request (401 or 403, for example when
+ * the site's domain is not registered or the account's quota is used up), Rove switches to the
+ * public Photon geocoder for the rest of the session, so address search keeps working. */
+let geocodeProvider = 'stadia';
+let geocodeSource = 'stadia';
+const geocodeAttribution = () => GEOCODER.attribution[geocodeSource === 'photon' ? 'photon' : 'stadia'];
+
+function normalizePhotonFeature(f) {
+  const p = f.properties || {};
+  const [lon, lat] = f.geometry?.coordinates || [];
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const street = [p.housenumber, p.street].filter(Boolean).join(' ');
+  const name = p.name || street || p.city;
+  if (!name) return null;
+  const isLocality = ['city', 'town', 'village', 'suburb', 'neighbourhood'].includes(p.osm_value) && p.osm_key === 'place';
+  const detail = [p.name && street ? street : null, p.city && p.city !== name ? p.city : null].filter(Boolean).join(', ');
+  return { kind: 'place', id: `photon:${p.osm_type || ''}${p.osm_id || `${lat},${lon}`}`, name, detail, layer: isLocality ? 'locality' : (!p.name && p.housenumber ? 'address' : 'venue'), lat, lon };
+}
+
+/* Drops repeats of the same name within about 150 m (one stop is often mapped twice). */
+function dedupePlaces(list) {
+  const out = [];
+  for (const p of list) if (!out.some(q => q.name === p.name && distanceMeters([p.lon, p.lat], [q.lon, q.lat]) < 150)) out.push(p);
+  return out;
+}
+
+async function photonGeocode(q, { signal, size }) {
+  const params = new URLSearchParams({ q, limit: String(size + 2), lang: 'en', bbox: [SERVICE_AREA.minLon, SERVICE_AREA.minLat, SERVICE_AREA.maxLon, SERVICE_AREA.maxLat].join(',') });
+  const response = await fetch(`${GEOCODER.photon}?${params}`, { signal });
+  if (response.status === 429) throw new Error('rate-limited');
+  if (!response.ok) throw new Error(`geocoder ${response.status}`);
+  const body = await response.json();
+  return dedupePlaces((body.features || []).map(normalizePhotonFeature).filter(p => p && inServiceArea(p))).slice(0, size);
+}
 
 const PLACES_KEY = { recent: 'rove-recent-places-v1', saved: 'rove-saved-places-v1' };
 
@@ -2393,9 +2457,9 @@ const geocodeCache = new Map();
 
 let geocodeBackend = 'unknown';
 
-/* Address search covers the whole United States, ranked toward the rider's location, or the
- * part of the map they are looking at when location is off. The point is rounded to about 1 km
- * before it leaves the browser. */
+/* The point sent to a backend address-search proxy, if one exists: the rider's location, or the
+ * part of the map they are looking at. It is rounded to about 1 km before it leaves the browser.
+ * Stadia and Photon are not sent a point (see geocode). */
 function geocodeBias() {
   const center = state.userLocation || (state.map ? state.map.getCenter().toArray() : [-122.27, 37.8]);
   return { center };
@@ -2422,36 +2486,63 @@ async function geocode(query, { signal, mode = 'autocomplete', size = 6 } = {}) 
       else if (r.ok) {
         geocodeBackend = 'available';
         const body = await r.json();
-        const results = (body.results || []).filter(x => Number.isFinite(x.lat) && Number.isFinite(x.lon)).map(x => ({ kind: 'place', id: x.id, name: x.name, detail: x.detail || '', layer: x.layer || 'place', lat: x.lat, lon: x.lon }));
-        geocodeCache.set(cacheKey, results);
-        return results;
+        const results = (body.results || []).filter(x => inServiceArea(x)).map(x => ({ kind: 'place', id: x.id, name: x.name, detail: x.detail || '', layer: x.layer || 'place', lat: x.lat, lon: x.lon }));
+        geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
+        return geocodeCache.get(cacheKey);
       }
     } catch (error) {
       if (error.name === 'AbortError') throw error;
     }
   }
-  const params = new URLSearchParams({
-    text: q, size: String(size), lang: 'en',
-    'focus.point.lat': center[1].toFixed(2), 'focus.point.lon': center[0].toFixed(2),
-    'boundary.country': 'USA'
-  });
-  const response = await fetch(`${mode === 'search' ? GEOCODER.search : GEOCODER.autocomplete}?${params}`, { signal });
-  if (response.status === 429) throw new Error('rate-limited');
-  if (!response.ok) throw new Error(`geocoder ${response.status}`);
-  const body = await response.json();
-  const results = (body.features || []).map(normalizeGeocodeFeature).filter(Boolean);
-  geocodeCache.set(cacheKey, results);
-  return results;
+  if (geocodeProvider === 'stadia') {
+    // No focus point: in testing, a focus point let nearby businesses that merely contain the
+    // words outrank the place itself (typing "Oakland" in San Francisco listed bridge viewpoints
+    // before the city). The Bay Area rectangle already keeps results local.
+    const params = new URLSearchParams({
+      text: q, size: String(size), lang: 'en',
+      'boundary.rect.min_lat': String(SERVICE_AREA.minLat), 'boundary.rect.max_lat': String(SERVICE_AREA.maxLat),
+      'boundary.rect.min_lon': String(SERVICE_AREA.minLon), 'boundary.rect.max_lon': String(SERVICE_AREA.maxLon)
+    });
+    let response = null;
+    try {
+      response = await fetch(`${mode === 'search' ? GEOCODER.search : GEOCODER.autocomplete}?${params}`, { signal });
+    } catch (error) {
+      if (error.name === 'AbortError') throw error;
+    }
+    if (response && response.status === 429) throw new Error('rate-limited');
+    if (response && response.ok) {
+      const body = await response.json();
+      const results = dedupePlaces((body.features || []).map(normalizeGeocodeFeature).filter(p => p && inServiceArea(p)));
+      geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
+      geocodeSource = 'stadia';
+      return geocodeCache.get(cacheKey);
+    }
+    // Not authorized for this domain: use Photon for the rest of the session. A network error or
+    // server error: use Photon for this request only.
+    if (response && [401, 403].includes(response.status)) geocodeProvider = 'photon';
+    else if (response && response.status < 500) throw new Error(`geocoder ${response.status}`);
+  }
+  const results = await photonGeocode(q, { signal, size });
+  geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
+  geocodeSource = 'photon';
+  return geocodeCache.get(cacheKey);
 }
 
 async function reverseGeocode(lat, lon) {
+  const signal = AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined;
+  const near = place => (place && distanceMeters([lon, lat], [place.lon, place.lat]) < 120 ? place : null);
   try {
-    const params = new URLSearchParams({ 'point.lat': lat.toFixed(6), 'point.lon': lon.toFixed(6), size: '1', layers: 'address,venue,street', lang: 'en' });
-    const response = await fetch(`${GEOCODER.reverse}?${params}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
+    if (geocodeProvider === 'stadia') {
+      const params = new URLSearchParams({ 'point.lat': lat.toFixed(6), 'point.lon': lon.toFixed(6), size: '1', layers: 'address,venue,street', lang: 'en' });
+      const response = await fetch(`${GEOCODER.reverse}?${params}`, { signal }).catch(() => null);
+      if (response?.ok) { const f = (await response.json()).features?.[0]; return near(f ? normalizeGeocodeFeature(f) : null); }
+      if (response && ![401, 403].includes(response.status) && response.status < 500) return null;
+      if (response && [401, 403].includes(response.status)) geocodeProvider = 'photon';
+    }
+    const response = await fetch(`${GEOCODER.photonReverse}?${new URLSearchParams({ lat: lat.toFixed(6), lon: lon.toFixed(6), limit: '1', lang: 'en' })}`, { signal });
     if (!response.ok) return null;
     const f = (await response.json()).features?.[0];
-    const place = f ? normalizeGeocodeFeature(f) : null;
-    return place && distanceMeters([lon, lat], [place.lon, place.lat]) < 120 ? place : null;
+    return near(f ? normalizePhotonFeature(f) : null);
   } catch { return null; }
 }
 
@@ -2506,7 +2597,7 @@ function rememberPlace(p) {
 }
 
 function savePlace(p, label) {
-  const entry = { kind: p.kind, name: p.name, detail: p.detail || '', lat: p.lat, lon: p.lon, agency: p.agency, stop: p.stop, label };
+  const entry = { kind: p.kind, name: p.name, detail: p.detail || '', lat: p.lat, lon: p.lon, agency: p.agency, stop: p.stop, layer: p.layer, label };
   let list = savedPlaces().filter(x => placeKey(x) !== placeKey(entry));
   if (label === 'Home' || label === 'Work') list = list.filter(x => x.label !== label);
   store.set(PLACES_KEY.saved, [...list, entry].sort((a, b) => ['Home', 'Work'].indexOf(b.label) - ['Home', 'Work'].indexOf(a.label)));
@@ -2526,7 +2617,8 @@ const PLACE_ICON = {
 
 function placeOptionRow(p, action, icon, extra = '') {
   const data = Object.entries({ lat: p.lat, lon: p.lon, name: p.name, detail: p.detail || '', kind: p.kind, agency: p.agency || '', stop: p.stop || '', layer: p.layer || '' }).map(([k, v]) => `data-p-${k}="${esc(v)}"`).join(' ');
-  const meta = p.label && p.label !== p.name ? `${p.label} · ${p.detail || ''}` : p.detail || (p.kind === 'stop' ? AGENCY_SHORT[p.agency] || '' : '');
+  const fixedLabel = p.label === 'Home' || p.label === 'Work';
+  const meta = fixedLabel ? [p.name, p.detail].filter(Boolean).join(' · ') : p.detail || (p.kind === 'stop' ? AGENCY_SHORT[p.agency] || '' : '');
   return `<li><button type="button" class="row result place-row" data-action="${action}" ${data} ${extra}><span class="place-icon ${icon === 'saved' ? 'is-saved' : ''}">${PLACE_ICON[icon] || PLACE_ICON.place}</span><span class="row-main"><span class="row-title">${esc(p.label === 'Home' || p.label === 'Work' ? p.label : p.name)}</span>${meta ? `<span class="row-meta">${esc(meta.replace(/ · $/, ''))}</span>` : ''}</span></button></li>`;
 }
 
@@ -2542,9 +2634,9 @@ function autocompleteSectionHtml(action) {
   if (a.status === 'loading') body = '<li aria-hidden="true"><div class="row skeleton-row"><span class="sk sk-icon"></span><span class="row-main"><span class="sk sk-line"></span><span class="sk sk-line short"></span></span></div></li>'.repeat(3);
   else if (a.status === 'error') body = '<li><p class="empty">Address search is unavailable right now. You can still choose a stop, your location, or a point on the map.</p></li>';
   else if (a.status === 'limited') body = '<li><p class="empty">Address search is busy. Please wait a moment and try again.</p></li>';
-  else if (!a.results.length) body = `<li><p class="empty">No addresses or places match “${esc(a.query)}”.</p></li>`;
+  else if (!a.results.length) body = `<li><p class="empty">No addresses or places match “${esc(a.query)}” in the Bay Area.</p></li>`;
   else body = a.results.map(p => placeOptionRow(p, action, 'place')).join('');
-  return `<section class="section suggest-section"><h2 class="label">Addresses and places</h2><ul class="rows" aria-busy="${a.status === 'loading'}">${body}</ul><p class="attribution-note">${esc(GEOCODER.attribution)}</p></section>`;
+  return `<section class="section suggest-section"><h2 class="label">Addresses and places</h2><ul class="rows" aria-busy="${a.status === 'loading'}">${body}</ul><p class="attribution-note">${esc(geocodeAttribution())}</p></section>`;
 }
 
 /* ---------- Place view: an address or point of interest chosen from search ---------- */
@@ -2572,7 +2664,7 @@ function showPlacePin(p) {
 
 function viewPlace({ place: p }) {
   const label = savedLabel(p);
-  const covered = Boolean(regionFor(p));
+  const covered = inServiceArea(p);
   const nearby = covered ? nearbyPlaces([p.lon, p.lat], 4) : [];
   const d = state.userLocation ? distanceLabel(distanceMeters(state.userLocation, [p.lon, p.lat])) : '';
   return `${backHeader()}
@@ -2583,7 +2675,7 @@ function viewPlace({ place: p }) {
     ${covered ? `<div class="action-bar">
       <button class="button primary" data-action="place-directions">Directions</button>
       <button class="button secondary" data-action="place-from">Leave from here</button>
-    </div>` : `<p class="plan-coverage place-coverage" role="status">Transit directions and nearby stops are not available here yet. Rove covers ${esc(regionListText())} today.</p>`}
+    </div>` : `<p class="plan-coverage place-coverage" role="status">This place is outside the Bay Area. Rove shows transit and plans trips within the San Francisco Bay Area.</p>`}
     <div class="inline-actions save-actions" style="padding:8px var(--pad) 0">
       ${label ? `<button class="text-button" data-action="place-unsave">Remove from saved (${esc(label)})</button>` : `<button class="text-button" data-action="place-save" data-label="Home">Set as Home</button><button class="text-button" data-action="place-save" data-label="Work">Set as Work</button><button class="text-button" data-action="place-save" data-label="Saved">Save place</button>`}
     </div>
@@ -2617,7 +2709,7 @@ function updatePlanSuggestions() {
   const other = plan[plan.focus === 'from' ? 'to' : 'from'];
   const sections = [];
   const top = [];
-  if (state.userLocation && other?.kind !== 'location' && (!q || 'your location'.startsWith(q.toLowerCase()))) top.push(placeOptionRow({ kind: 'location', name: 'Your location', lat: state.userLocation[1], lon: state.userLocation[0] }, 'plan-pick-location', 'location'));
+  if (currentLocationPlace() && other?.kind !== 'location' && (!q || 'your location'.startsWith(q.toLowerCase()))) top.push(placeOptionRow({ kind: 'location', name: 'Your location', lat: state.userLocation[1], lon: state.userLocation[0] }, 'plan-pick-location', 'location'));
   else if (!state.userLocation && !q && 'geolocation' in navigator) top.push(`<li><button type="button" class="row result place-row" data-action="plan-locate"><span class="place-icon">${PLACE_ICON.location}</span><span class="row-main"><span class="row-title">Use my location</span><span class="row-meta">Your browser will ask for permission</span></span></button></li>`);
   for (const [p, icon] of matchingPersonalPlaces(q, q ? 3 : 6)) top.push(placeOptionRow(p, 'plan-place', icon));
   if (top.length) sections.push(`<ul class="rows">${top.join('')}</ul>`);
@@ -2635,6 +2727,23 @@ function updatePlanSuggestions() {
   box.innerHTML = sections.join('');
 }
 
+/* Moves addresses whose house number matches the query to the top of the list. */
+function promoteAddressMatch(results, text) {
+  const best = bestGeocodeMatch(results, text);
+  return best && best !== results[0] ? [best, ...results.filter(p => p !== best)] : results;
+}
+
+/* For text that starts with a house number, prefer a real address with that number over the
+ * nearby intersections and businesses geocoders often rank first. */
+function bestGeocodeMatch(results, text) {
+  const number = /^(\d+[a-z]?)\s+\S/i.exec(text.trim())?.[1];
+  if (number) {
+    const address = results.find(p => p.layer === 'address' && p.name.toLowerCase().startsWith(`${number.toLowerCase()} `));
+    if (address) return address;
+  }
+  return results[0] || null;
+}
+
 /* Resolves text the rider typed but did not pick from the list. Exact stop names win, then
  * the geocoder's best match. Nothing is guessed: if neither finds it, the field is flagged. */
 
@@ -2648,24 +2757,39 @@ async function resolveDraft(which) {
   if (personal) return { ...personal[0] };
   const exact = searchNetwork(text, { routes: false, stopLimit: 8 }).stops.find(({ s }) => normalizeSearch(s.n) === needle);
   if (exact) return placeFromStop(exact.a.id, exact.s.id);
-  const cached = autocomplete.query === text && autocomplete.status === 'done' ? autocomplete.results[0] : null;
+  const cached = autocomplete.query === text && autocomplete.status === 'done' ? bestGeocodeMatch(autocomplete.results, text) : null;
   if (cached) return cached;
   try {
-    const results = await geocode(text, { mode: 'search', size: 1, signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
-    if (results[0]) return results[0];
+    const results = await geocode(text, { mode: 'search', size: 5, signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+    const best = bestGeocodeMatch(results, text);
+    if (best) return best;
   } catch (error) {
     throw new PlanError('Address search is unavailable right now. Choose a suggestion, a stop, or a point on the map.', which);
   }
-  throw new PlanError(`We could not find “${text}”. Check the address, or choose a suggestion or a point on the map.`, which);
+  throw new PlanError(`We could not find “${text}” in the Bay Area. Check the address, or choose a suggestion or a point on the map.`, which);
 }
 
 function noRouteMessage(body) {
   const code = body?.errors?.[0]?.code || '';
   if (code === 'WALKING_BETTER_THAN_TRANSIT') return 'These places are close enough that walking is faster than transit.';
   if (code === 'OUTSIDE_SERVICE_PERIOD') return 'Schedules are not available for that date. Choose a date closer to today.';
-  if (code === 'OUTSIDE_BOUNDS') return `One of these places is outside the area Rove can plan trips in. Trip planning is available in ${regionListText()} today.`;
+  if (code === 'OUTSIDE_BOUNDS') return 'One of these places is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.';
   if (code === 'NO_STOPS_IN_RANGE' || code === 'LOCATION_NOT_FOUND') return 'One of these places is too far from a transit stop to plan a trip. Try a nearby address or stop.';
   return 'No transit route was found for this time. Try a different time, or start from a nearby stop.';
+}
+
+/* A city or neighborhood picked as an end point is routed from its center, which can be far from
+ * where the rider is going. Say so, rather than presenting it as door to door. */
+const AREA_LAYERS = new Set(['locality', 'localadmin', 'borough', 'neighbourhood', 'macrohood', 'county', 'region', 'postalcode']);
+function areaNoteHtml() {
+  const { from, to } = state.plan;
+  const areas = [from, to].filter(p => p && AREA_LAYERS.has(p.layer));
+  if (!areas.length) return '';
+  let text;
+  if (areas.length === 2) text = `“${from.name}” and “${to.name}” are areas, not addresses, so these routes use their centers. Enter street addresses for exact door-to-door directions.`;
+  else if (areas[0] === from) text = `“${from.name}” is an area, not an address, so these routes start at its center. Enter a street address for exact door-to-door directions.`;
+  else text = `“${to.name}” is an area, not an address, so these routes end at its center. Enter a street address for exact door-to-door directions.`;
+  return `<p class="area-note">${esc(text)}</p>`;
 }
 
 /* Indexes of plan.results.itineraries in the order chosen by plan.sort. */
@@ -2761,42 +2885,24 @@ async function refinePointName(p) {
   }
 }
 
-/* ---------- Routing regions ----------
- * Address search works anywhere in the United States. Trip planning works only where Rove has a
- * verified routing graph. Today that is one region; the server can list more in
- * /api/v2/plan/status as { regions: [{ id, name, status, bounds }] }, and the frontend uses that
- * list when present. The default below matches PLAN_BOUNDS in the backend's lib/routing/otp.mjs. */
-const DEFAULT_ROUTING_REGIONS = [
-  { id: 'bay-area', name: 'the San Francisco Bay Area', status: 'verified', bounds: { minLat: 36.9, maxLat: 38.2, minLon: -122.75, maxLon: -121.4 } }
-];
+/* ---------- Service area ----------
+ * Rove covers the San Francisco Bay Area. These bounds match PLAN_BOUNDS in the backend's
+ * lib/routing/otp.mjs, so every place address search returns can also be routed. */
+const SERVICE_AREA = { minLat: 36.9, maxLat: 38.2, minLon: -122.75, maxLon: -121.4 };
 
-function routingRegions() {
-  const listed = state.planStatus?.regions;
-  const valid = Array.isArray(listed) ? listed.filter(r => r?.id && r?.name && ['minLat', 'maxLat', 'minLon', 'maxLon'].every(k => Number.isFinite(r.bounds?.[k]))) : [];
-  return valid.length ? valid : DEFAULT_ROUTING_REGIONS;
-}
-
-function regionFor(p) {
-  if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return null;
-  return routingRegions().find(r => p.lat >= r.bounds.minLat && p.lat <= r.bounds.maxLat && p.lon >= r.bounds.minLon && p.lon <= r.bounds.maxLon) || null;
-}
-
-/* "the San Francisco Bay Area", or "the San Francisco Bay Area and Greater Boston". */
-function regionListText() {
-  const names = routingRegions().map(r => r.name);
-  return names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
+function inServiceArea(p) {
+  if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return false;
+  return p.lat >= SERVICE_AREA.minLat && p.lat <= SERVICE_AREA.maxLat && p.lon >= SERVICE_AREA.minLon && p.lon <= SERVICE_AREA.maxLon;
 }
 
 /* Whether a trip between the chosen places can be planned. Returns null when it can. */
 function planCoverageIssue() {
   const { from, to } = state.plan;
-  const rf = from ? regionFor(from) : undefined;
-  const rt = to ? regionFor(to) : undefined;
-  const where = `Trip planning is available in ${regionListText()} today.`;
-  if (rf === null && rt === null) return { field: 'both', text: `Rove cannot plan trips between these places yet. ${where}` };
-  if (rf === null) return { field: 'from', text: `Rove cannot plan trips from this starting point yet. ${where}` };
-  if (rt === null) return { field: 'to', text: `Rove cannot plan trips to this destination yet. ${where}` };
-  if (rf && rt && rf.id !== rt.id) return { field: 'to', text: 'Rove cannot plan trips between two different regions yet. Choose a starting point and destination in the same region.' };
+  const outFrom = from && !inServiceArea(from), outTo = to && !inServiceArea(to);
+  const note = 'Rove plans trips within the San Francisco Bay Area.';
+  if (outFrom && outTo) return { field: 'both', text: `Both places are outside the Bay Area. ${note}` };
+  if (outFrom) return { field: 'from', text: `This starting point is outside the Bay Area. ${note}` };
+  if (outTo) return { field: 'to', text: `This destination is outside the Bay Area. ${note}` };
   return null;
 }
 
@@ -2835,8 +2941,8 @@ async function init() {
       style,
       center: [-122.2, 37.7],
       zoom: isMobile() ? 8.6 : 9.3,
-      minZoom: 2.5,
       maxZoom: 18.5,
+      maxBounds: [[SERVICE_AREA.minLon - 0.6, SERVICE_AREA.minLat - 0.4], [SERVICE_AREA.maxLon + 0.6, SERVICE_AREA.maxLat + 0.4]],
       attributionControl: false,
       dragRotate: false,
       pitchWithRotate: false,
@@ -2849,16 +2955,21 @@ async function init() {
     geolocateControl.on('geolocate', onPosition);
     geolocateControl.on('error', onPositionError);
     state.map.on('style.load', () => { if (!state.map.getSource('transit-routes')) addTransitLayers(); });
-    state.map.on('load', () => {
+    // 'load' waits for every tile and label font. If a font host is slow or down, still open the
+    // map once the style and transit layers are in place, rather than leaving the spinner up.
+    const markReady = () => {
+      if (state.mapReady) return;
       state.mapReady = true;
       $('#mapLoading').classList.add('done');
       setupMapInteractions();
-    });
+    };
+    state.map.on('load', markReady);
+    setTimeout(() => { if (state.map.isStyleLoaded() || state.map.getSource('transit-routes')) markReady(); }, 8000);
     state.map.on('error', e => { if (e?.error?.status !== 404) console.warn('Map error:', e?.error?.message || e); });
   }
 
   if (navigator.permissions?.query) {
-    navigator.permissions.query({ name: 'geolocation' }).then(p => { if (p.state === 'granted') navigator.geolocation.getCurrentPosition(onPosition, () => {}, { timeout: 10000 }); }).catch(() => {});
+    navigator.permissions.query({ name: 'geolocation' }).then(p => { if (p.state === 'granted') centerOnGrantedLocation(); }).catch(() => {});
   }
 
   $('#introSkip').addEventListener('click', finishIntro);

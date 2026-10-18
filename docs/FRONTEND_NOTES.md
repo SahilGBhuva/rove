@@ -84,13 +84,38 @@ Also tested: swap, Your location, Choose on map, saved Home and Work, recents, n
 
 **Not tested here:** real Stadia responses (needs a reachable network and domain authentication), real OTP itineraries (needs the OTP graph, which needs OSM data this environment cannot download), and a physical phone. Location-denied could not be simulated reliably in headless Chromium.
 
-## Nationwide scope (Phase 3 update)
+## Phase 4: real routing, real address search, Bay Area scope
 
-Rove's target is now the whole United States. The Bay Area is the first, and so far only, region where trip planning is verified.
+Rove is a San Francisco Bay Area app. The short-lived nationwide changes from the end of Phase 3 were narrowed back: address search is limited to the Bay Area again, the map's pan limit is back, and the page title says Bay Area. The service-area check stayed, so a place outside the Bay Area is explained rather than routed.
 
-- **Removed Bay Area limits:** address search is no longer boxed to the Bay Area (it covers the United States, ranked toward the rider), the map can pan anywhere, and Bay Area wording was removed from search messages, the page title, the description, and the loading text.
-- **Kept honest:** places outside a routing region open and can be saved, but Rove says plainly that it cannot plan trips there yet and removes Directions, Leave from here, Find routes, and the time options rather than showing controls that cannot work. No planner request is sent for those trips.
-- **Ready for more regions:** the region list comes from `/api/v2/plan/status` when the backend provides it (request 9 in `FRONTEND_ROUTING_API_CONTRACT.md`), with a built-in default for the Bay Area.
-- **Still Bay Area only:** stops, lines, live times, and nearby stops come from Rove's Bay Area network data. The home screen copy names the five Bay Area agencies, which is accurate today.
+Changes:
 
-Tested with fixture address results for Times Square and Chicago Union Station: the place card, the planner notice for a picked destination and for typed text resolved at Find routes, no planner request sent, and the map centering on New York.
+- **Real backend integration.** Tested against the backend at `47ecca6` and a real OpenTripPlanner 2.8.1 graph (details below). The frontend needed no contract changes; the response shape matched `docs/API_CONTRACT.md`.
+- **Map framing bug fixed.** After any camera move with padding (opening a place, a stop, or the map centering on your location), journeys on a phone did not zoom to fit: MapLibre kept the old padding, added the new one, ran out of room, and silently skipped the move. `fitCoordinates` now clears padding first. This affected Phases 2 and 3 as well.
+- **Map ready even when label fonts fail.** The loading cover now lifts once the style and transit layers are in, instead of waiting forever for every font tile.
+- **Opens on your location.** When location permission was already granted and you are in the Bay Area, the map centers on you. Outside the Bay Area, Rove says so and does not offer "Your location" as a trip start.
+- **Address search.** No focus point (it hurt ranking), Photon as a backup geocoder, addresses that match a typed house number ranked first, duplicates removed, and a note on results when an end point is a whole city or neighborhood.
+- **BART trips missing from the schedule** (Antioch line, added trips) show "BART", "Live", and "Not in the published schedule, so the line is not shown." instead of "Trip".
+- **Touch targets.** "Show the introduction" is now a full-size button. Home and Work rows show the place name under the label.
+
+## Phase 4 testing and data sources
+
+| What | Source | Status |
+|---|---|---|
+| Routing | **Real.** Backend `claude-development` at `47ecca6`, with an OTP 2.8.1 graph built in this session from the backend's own inputs: `otp-shaded-2.8.1.jar` (SHA-1 matches Maven Central), the clipped Bay Area OSM extract (SHA-256 matches the backend's `SHA256SUMS`), and the five GTFS feeds from `data/raw`. The backend's own `verify-routing` script passed all 11 checks against it. | Verified |
+| Address search | **Real** Stadia responses recorded from a browser on the Mac, replayed in the browser tests, plus a direct run of Rove's `geocode` code in that browser against live Stadia and Photon. | Verified |
+| Stops, lines, colors, shapes | Real `network.json` and GTFS | Verified |
+| BART realtime | `api.bart.gov` is unreachable from the test environment, so the live board correctly showed "Live arrivals for BART are unavailable." The Antioch display was tested with a **fixture** in the contract's shape. | Fixture for display only |
+| 511 realtime | No key in this environment | Not tested |
+| Basemap tiles and label fonts | Blocked in the test environment; fallback style | Visual check earlier on the Mac |
+
+Journeys planned through the interface with real routing (Saturday evening schedules, "Leave now"), at 390 x 844 and 1440 x 900:
+
+1. UC Berkeley to Ferry Building: AC Transit 51B to Rockridge, then BART Yellow to Montgomery; AC Transit F; AC Transit 27, 18, and NL. Five options, sorting, leg focus from the list and the map, and Edit all work.
+2. Downtown Oakland to SFO: BART Yellow from 19th Street to SFO, 56 minutes, several departures.
+3. Stanford University to San Jose Diridon: walk to Palo Alto, Caltrain Local Weekend to Diridon, 56 minutes.
+4. Oakland to Palo Alto: AC Transit NL, Muni 12, and Caltrain; BART Blue and Caltrain; AC Transit 54, BART Orange, and VTA Rapid 500. The area note appears because both ends are whole cities.
+
+An address in New York (1600 Broadway) and one in Los Angeles (200 N Spring St) return no results, with "No Bay Area results for ..." (real Stadia, Bay Area rectangle). Also tested: autocomplete loading, empty, and error states; typed text resolved on Find routes; Enter to pick; swap; Your location; Choose on map; saved places; screen widths from 320 to 1440 with no overflow and no buttons under 44 px. The Phase 2 and Phase 3 suites still pass.
+
+Not tested here: a physical iPhone, live BART and 511 feeds through the interface, and realtime-adjusted routing (the backend routes on schedules).
