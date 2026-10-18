@@ -53,3 +53,44 @@ Esri World Imagery terms need review before any public launch.
 | Bottom sheet | Swipe up from half to full, down to half, down to peek (synthetic touch events) | Headless Chromium |
 
 Not yet tested: real trips from OpenTripPlanner, 511 live data, and a physical phone.
+
+## Phase 3 changes: door-to-door trips
+
+- **Any address to any address.** The trip fields and the main search suggest addresses, venues, neighborhoods, and cities from Stadia Maps, alongside stops, stations, your location, and saved and recent places. Text that was typed but not picked is resolved when Find routes is tapped; if nothing matches, the field is flagged with "We could not find ...", and nothing is guessed.
+- **Typing no longer rebuilds the form.** Suggestions update in their own container, so the caret, the keyboard, and the screen reader focus stay put. Enter takes the first suggestion (waiting for address results if they are still loading). Arrow keys move through the list.
+- **Places.** Picking an address from the main search opens a place card with Directions, Leave from here, Set as Home, Set as Work, Save place, and nearby stops. Saved places appear on the home screen under Your places.
+- **Choose on map** names the point with a street address when the reverse geocoder finds one within 120 m.
+- **Results.** A compact from and to card with Edit (inputs are kept), sorting by Fastest, Fewer transfers, or Less walking, a Fastest tag, the boarding stop and time, walking time and distance, transfers, service alert flags, and skeleton rows while loading.
+- **Map.** Transit legs in their line colors with a darker casing for pale colors, dashed walking legs, labeled boarding, exit, and transfer stops, and other lines faded. Tapping a leg on the map or its name in the timeline highlights it in both places and frames it. A transit leg without a route shape is dashed and labeled "Route shape not available."
+
+## Phase 3 testing and data sources
+
+| What | Source | Result |
+|---|---|---|
+| Frontend and backend code | Real (frontend Phase 3; backend `claude-development` at `41849f9`) | No page errors in any run |
+| Stops, lines, colors, shapes | Real `network.json` | Used for every itinerary leg and suggestion |
+| Address search | **Fixture.** `api.stadiamaps.com` is blocked from the test environment, so Playwright answered with Pelias-format GeoJSON for eleven known places | Suggestions, loading skeleton, empty, error, Enter, typed-then-submitted, reverse naming all pass |
+| Journey planning | Real backend routing code in front of a **fixture** OTP server (`fake-otp3.mjs`). Lines, stops, and shapes are real; times are generated; walking legs are straight lines | All four journeys below plan and draw correctly |
+| Basemap | Blocked here; fallback style | Visual check only |
+
+Journeys tested at 390 x 844 and 1440 x 900 by typing both places and picking suggestions:
+
+1. UC Berkeley to Ferry Building: BART Red, BART Orange then Yellow (transfer at 12th Street), AC Transit F. Sorting, leg focus from the timeline and from the map, and Edit keeping the inputs all pass.
+2. Downtown Oakland to SFO: BART Yellow and BART Red from 12th Street.
+3. Stanford to San Jose Diridon: Caltrain Limited and Local from Palo Alto, VTA 22.
+4. Berkeley to Palo Alto: BART Red to Millbrae, then Caltrain. One option has no route shape, which shows the dashed line and the note.
+
+Also tested: swap, Your location, Choose on map, saved Home and Work, recents, no horizontal overflow and no buttons under 44 px tall at 320, 375, 390, 430, 768, 1024, and 1440 wide.
+
+**Not tested here:** real Stadia responses (needs a reachable network and domain authentication), real OTP itineraries (needs the OTP graph, which needs OSM data this environment cannot download), and a physical phone. Location-denied could not be simulated reliably in headless Chromium.
+
+## Nationwide scope (Phase 3 update)
+
+Rove's target is now the whole United States. The Bay Area is the first, and so far only, region where trip planning is verified.
+
+- **Removed Bay Area limits:** address search is no longer boxed to the Bay Area (it covers the United States, ranked toward the rider), the map can pan anywhere, and Bay Area wording was removed from search messages, the page title, the description, and the loading text.
+- **Kept honest:** places outside a routing region open and can be saved, but Rove says plainly that it cannot plan trips there yet and removes Directions, Leave from here, Find routes, and the time options rather than showing controls that cannot work. No planner request is sent for those trips.
+- **Ready for more regions:** the region list comes from `/api/v2/plan/status` when the backend provides it (request 9 in `FRONTEND_ROUTING_API_CONTRACT.md`), with a built-in default for the Bay Area.
+- **Still Bay Area only:** stops, lines, live times, and nearby stops come from Rove's Bay Area network data. The home screen copy names the five Bay Area agencies, which is accurate today.
+
+Tested with fixture address results for Times Square and Chicago Union Station: the place card, the planner notice for a picked destination and for typed text resolved at Find routes, no planner request sent, and the map centering on New York.

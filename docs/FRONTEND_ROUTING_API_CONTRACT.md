@@ -14,7 +14,27 @@ The earlier `POST /api/journeys` proposal is withdrawn. The frontend now uses th
 | `GET /api/v2/plan` | Trip results, timeline, and step-by-step navigation. | `submitPlan`, `normalizeItinerary`, `viewResults`, `buildSteps` |
 | `GET /api/realtime` | Fallback only, when `/api/v2/realtime` returns 404 (an older server). | `loadRealtime` |
 
-Origin and destination search uses the browser's copy of `network.json` for instant results, and sends the station's coordinates (the parent station when one exists). Riders can also choose any point on the map, or right-click the map on desktop.
+Origin and destination can be any address or place. Suggestions combine, in this order: your location, saved and recent places (stored in the browser), stops and stations from the browser's copy of `network.json`, and addresses and places from the geocoder. Stations lead only when the query names one; otherwise addresses lead. Riders can also choose any point on the map, or right-click the map on desktop. The frontend sends the chosen point's coordinates and name to `/api/v2/plan` unchanged.
+
+### Address search (Phase 3)
+
+| Call | Used for | Frontend code |
+|---|---|---|
+| `GET /api/v2/places/autocomplete?q=&lat=&lon=` | **Not built yet.** Preferred automatically when it exists (any non-404 answer). | `geocode` |
+| `GET https://api.stadiamaps.com/geocoding/v1/autocomplete` | Suggestions while typing (debounced 220 ms, 3 characters minimum, previous request canceled). Covers the whole United States (`boundary.country=USA`), ranked toward the rider's location or the map center. | `geocode`, `requestAutocomplete` |
+| `GET https://api.stadiamaps.com/geocoding/v1/search` | Text the rider typed but did not pick, resolved when they tap Find routes. | `resolveDraft` |
+| `GET https://api.stadiamaps.com/geocoding/v1/reverse` | Names a point chosen on the map, if a result lies within 120 m. Otherwise the point keeps "Near <stop>" or "Pinned location". | `reverseGeocode`, `refinePointName` |
+
+No API key is in the frontend. Stadia authenticates browser requests by domain, and accepts `localhost` without a key during development. Typed text that neither a stop name nor the geocoder recognizes is flagged on the field: the frontend never guesses a location.
+
+### Routing regions
+
+Rove's target is the whole United States, so address search and the map work nationwide. Trip planning is a separate question: it only works where the backend has a verified routing graph. Today that is one region, the San Francisco Bay Area, with the same bounds as `PLAN_BOUNDS` in `lib/routing/otp.mjs`.
+
+- The frontend keeps a default region list (`DEFAULT_ROUTING_REGIONS` in `app.js`) and uses the server's list instead when `/api/v2/plan/status` returns one.
+- If either place is outside every region, or the two places are in different regions, the planner shows a plain notice in place of Find routes and makes no `/api/v2/plan` request. Example: "Rove cannot plan trips to this destination yet. Trip planning is available in the San Francisco Bay Area today."
+- A place outside every region still opens, can be saved, and shows on the map. Its Directions and Leave from here buttons, and its nearby stops, are replaced by the same kind of notice.
+- A `400` "outside" answer or an `OUTSIDE_BOUNDS` routing error from the backend produces the same honest wording.
 
 ## How the frontend follows the display rules
 
@@ -28,6 +48,17 @@ Origin and destination search uses the browser's copy of `network.json` for inst
 - Vehicles are drawn only when `routeId` is not null. BART never has vehicles.
 
 ## Requests for the backend
+
+**New in Phase 3**
+
+9. **Routing regions in plan status (needed for the second region).** Please add `regions: [{ "id": "bay-area", "name": "the San Francisco Bay Area", "status": "verified", "bounds": { "minLat", "maxLat", "minLon", "maxLon" } }]` to `GET /api/v2/plan/status`, generated from the same source as `PLAN_BOUNDS`, so the frontend and backend cannot drift. `name` is used in sentences, so it carries its article. Longer term, each region needs its own OTP graph or router, and `/api/v2/plan` needs to pick the router by region.
+5. **Address search proxy (recommended before a public launch).** `GET /api/v2/places/autocomplete?q=&lat=&lon=` returning `{ "results": [{ "id", "name", "detail", "layer", "lat", "lon" }] }`, with the geocoder key kept on the server, a per-IP rate limit, and a short cache. Optional siblings: `/api/v2/places/search` and `/api/v2/places/reverse` with the same result shape. The frontend already calls the autocomplete route first and falls back to Stadia on a 404.
+6. **Walking directions.** The plan API has no walk `steps`. OTP's `legs.steps { distance relativeDirection absoluteDirection streetName stayOn area }` would let the frontend show turn-by-turn walking ("Turn left onto Shattuck Ave"). Today walking legs show distance and time only, and the map draws them from `legGeometry`.
+7. **Leg geometry.** The frontend draws `legs[].geometry` as is. If a transit leg has no geometry, or only its two end points while it passes intermediate stops, the frontend dashes it and says "Route shape not available." Please confirm OTP's graph is built with GTFS `shapes.txt` for all five feeds so this never appears in practice.
+8. **Routing error codes.** Please pass OTP's `routingErrors[].code` through unchanged in `errors[].code`. The frontend has specific copy for `WALKING_BETTER_THAN_TRANSIT`, `OUTSIDE_SERVICE_PERIOD`, `OUTSIDE_BOUNDS`, and `LOCATION_NOT_FOUND`.
+
+**Still open from Phase 2**
+
 
 1. **Several stops in one arrivals call.** Same-named stops on opposite sides of a street (for example both Muni platforms at "Market St & Sansome St") are one place in the interface. The frontend currently makes up to four `/api/v2/arrivals` calls for one place. Accepting `stop=15689,15690` would make that one call.
 2. **Alert entity IDs.** 511 alerts keep prefixed IDs (`SF:38R`) while BART alerts use static IDs. The frontend handles both, but static IDs plus `agency` on every entity would be simpler and less fragile.

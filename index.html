@@ -5,18 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#0e0f11" media="(prefers-color-scheme: dark)" />
-  <title>Rove | Bay Area Transit</title>
-  <meta name="description" content="A map-first guide to BART, Muni, VTA, AC Transit, and Caltrain." />
+  <title>Rove | Transit Maps and Trip Planning</title>
+  <meta name="description" content="A map-first transit guide. Live times and door-to-door trips, starting with BART, Muni, VTA, AC Transit, and Caltrain in the San Francisco Bay Area." />
   <link rel="preload" href="public/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=10" />
+  <link rel="stylesheet" href="styles.css?v=11" />
 </head>
 <body>
   <a class="skip-link" href="#panelBody">Skip to transit information</a>
 
   <main class="map-area" aria-label="Map">
-    <div id="map" class="map" role="region" aria-label="Interactive map of Bay Area transit lines and stops"></div>
-    <div class="map-loading" id="mapLoading" role="status"><span class="spinner" aria-hidden="true"></span><span>Loading the Bay Area transit network</span></div>
+    <div id="map" class="map" role="region" aria-label="Interactive map of transit lines and stops"></div>
+    <div class="map-loading" id="mapLoading" role="status"><span class="spinner" aria-hidden="true"></span><span>Loading the transit network</span></div>
   </main>
 
   <aside class="panel" id="panel" aria-label="Transit information">
@@ -30,7 +30,7 @@
       </div>
       <div class="search-field" role="search">
         <svg class="search-glyph" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M12.6 12.6 17 17"/></svg>
-        <input id="searchInput" type="search" placeholder="Search stops and lines" autocomplete="off" spellcheck="false" aria-label="Search stops and lines" aria-controls="panelBody" />
+        <input id="searchInput" type="search" placeholder="Search places, stops, and lines" autocomplete="off" spellcheck="false" aria-label="Search places, stops, and lines" aria-controls="panelBody" />
         <button class="search-clear" id="searchClear" aria-label="Clear search" hidden>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15"/></svg>
         </button>
@@ -89,6 +89,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

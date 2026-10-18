@@ -64,7 +64,7 @@ function distanceMeters(a, b) {
 function distanceLabel(meters) {
   const miles = meters / 1609.34;
   if (miles < 0.1) return `${Math.round(meters * 3.281 / 10) * 10} ft`;
-  return `${miles < 10 ? miles.toFixed(1) : Math.round(miles)} mi`;
+  return `${miles < 10 ? miles.toFixed(1) : Math.round(miles).toLocaleString('en-US')} mi`;
 }
 
 /* WCAG relative luminance and contrast, used to keep badge text readable. */
@@ -118,7 +118,8 @@ const state = {
   stack: [{ name: 'home' }],
   searchQuery: '',
   detent: 'half',
-  plan: { from: null, to: null, timeMode: 'now', dateTime: '', results: null, error: null, loading: false, expanded: 0, focus: null, query: '' },
+  plan: { from: null, to: null, draft: { from: '', to: '' }, timeMode: 'now', dateTime: '', results: null, error: null, loading: false, expanded: 0, focus: null, query: '', sort: 'fastest' },
+  focusLeg: null,
   nav: null,
   wakeLock: null,
   introIndex: 0
@@ -590,6 +591,7 @@ function addTransitLayers() {
   map.addSource('transit-stops', { type: 'geojson', data: stopFeatures() });
   map.addSource('vehicles', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addSource('journey', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addSource('journey-points', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
   const line = { type: 'line', source: 'transit-routes', layout: { 'line-cap': 'round', 'line-join': 'round' } };
   map.addLayer({ ...line, id: 'tr-bus', minzoom: 11.5, filter: ['==', ['get', 'cat'], 'bus'], paint: { 'line-color': t.bus, 'line-width': ['interpolate', ['linear'], ['zoom'], 11.5, 0.7, 14, 1.4, 17, 2.6], 'line-opacity': ['interpolate', ['linear'], ['zoom'], 11.5, 0, 12.5, 0.38] } }, before);
@@ -599,14 +601,20 @@ function addTransitLayers() {
   map.addLayer({ ...line, id: 'tr-selected-casing', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.surface], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 5, 12, 8, 16, 11] } }, before);
   map.addLayer({ ...line, id: 'tr-selected', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 7] } }, before);
 
-  map.addLayer({ id: 'journey-casing', type: 'line', source: 'journey', filter: ['==', ['get', 'mode'], 'TRANSIT'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': t.surface, 'line-width': 9 } });
-  map.addLayer({ id: 'journey-transit', type: 'line', source: 'journey', filter: ['==', ['get', 'mode'], 'TRANSIT'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': 5.5 } });
-  map.addLayer({ id: 'journey-walk', type: 'line', source: 'journey', filter: ['!=', ['get', 'mode'], 'TRANSIT'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': t.journeyWalk, 'line-width': 3.5, 'line-dasharray': [0.2, 2] } });
+  const jl = { type: 'line', source: 'journey', layout: { 'line-cap': 'round', 'line-join': 'round' } };
+  const jOpacity = ['case', ['==', ['get', 'dim'], 1], 0.35, 1];
+  const jWidth = (base, focus) => ['case', ['==', ['get', 'focus'], 1], focus, base];
+  map.addLayer({ ...jl, id: 'journey-casing', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': ['get', 'casing'], 'line-width': jWidth(9, 12), 'line-opacity': jOpacity } });
+  map.addLayer({ ...jl, id: 'journey-transit', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': ['get', 'color'], 'line-width': jWidth(5.5, 8), 'line-opacity': jOpacity } });
+  map.addLayer({ ...jl, id: 'journey-approx', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 1]], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': ['get', 'stroke'], 'line-width': jWidth(4, 6), 'line-opacity': jOpacity, 'line-dasharray': [2, 1.5] } });
+  map.addLayer({ ...jl, id: 'journey-walk', filter: ['!=', ['get', 'mode'], 'TRANSIT'], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(3.5, 5), 'line-opacity': jOpacity, 'line-dasharray': [0.2, 2] } });
+  map.addLayer({ id: 'journey-stops', type: 'circle', source: 'journey-points', paint: { 'circle-radius': ['case', ['==', ['get', 'kind'], 'transfer'], 7, 5.5], 'circle-color': t.surface, 'circle-stroke-color': ['case', ['==', ['get', 'kind'], 'transfer'], t.ink, ['get', 'color']], 'circle-stroke-width': 3 } });
+  map.addLayer({ id: 'journey-stop-labels', type: 'symbol', source: 'journey-points', minzoom: 10.5, layout: { 'text-field': ['get', 'name'], 'text-font': state.glyphFont, 'text-size': 12.5, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': t.ink, 'text-halo-color': t.halo, 'text-halo-width': 1.8 } });
 
   const stopPaint = (radius, strokeWidth) => ({ 'circle-radius': radius, 'circle-color': t.surface, 'circle-stroke-color': t.stopStroke, 'circle-stroke-width': strokeWidth });
-  map.addLayer({ id: 'st-bus', type: 'circle', source: 'transit-stops', minzoom: 15, filter: ['all', ['==', ['get', 'cat'], 'bus'], ['==', ['get', 'child'], 0]], paint: { ...stopPaint(['interpolate', ['linear'], ['zoom'], 15, 2.5, 17, 4.5], 1.2), 'circle-stroke-color': t.bus } });
-  map.addLayer({ id: 'st-light', type: 'circle', source: 'transit-stops', minzoom: 12, filter: ['all', ['==', ['get', 'cat'], 'light'], ['==', ['get', 'child'], 0]], paint: stopPaint(['interpolate', ['linear'], ['zoom'], 12, 2.5, 16, 5], 1.6) });
-  map.addLayer({ id: 'st-heavy', type: 'circle', source: 'transit-stops', minzoom: 9.5, filter: ['all', ['==', ['get', 'cat'], 'heavy'], ['==', ['get', 'child'], 0]], paint: stopPaint(['interpolate', ['linear'], ['zoom'], 9.5, 2.6, 12, 4, 16, 6.5], 2) });
+  map.addLayer({ id: 'st-bus', type: 'circle', source: 'transit-stops', minzoom: 15, filter: ['all', ['==', ['get', 'cat'], 'bus'], ['==', ['get', 'child'], 0]], paint: { ...stopPaint(['interpolate', ['linear'], ['zoom'], 15, 2.5, 17, 4.5], 1.2), 'circle-stroke-color': t.bus } }, 'journey-casing');
+  map.addLayer({ id: 'st-light', type: 'circle', source: 'transit-stops', minzoom: 12, filter: ['all', ['==', ['get', 'cat'], 'light'], ['==', ['get', 'child'], 0]], paint: stopPaint(['interpolate', ['linear'], ['zoom'], 12, 2.5, 16, 5], 1.6) }, 'journey-casing');
+  map.addLayer({ id: 'st-heavy', type: 'circle', source: 'transit-stops', minzoom: 9.5, filter: ['all', ['==', ['get', 'cat'], 'heavy'], ['==', ['get', 'child'], 0]], paint: stopPaint(['interpolate', ['linear'], ['zoom'], 9.5, 2.6, 12, 4, 16, 6.5], 2) }, 'journey-casing');
   map.addLayer({ id: 'st-selected', type: 'circle', source: 'transit-stops', filter: ['==', ['get', 'id'], '__none__'], paint: { ...stopPaint(['interpolate', ['linear'], ['zoom'], 9, 3, 14, 5.5], 2.4), 'circle-stroke-color': ['get', 'color'] } });
   map.addLayer({ id: 'st-place', type: 'circle', source: 'transit-stops', filter: ['==', ['get', 'id'], '__none__'], paint: { 'circle-radius': 9, 'circle-color': t.ink, 'circle-stroke-color': t.surface, 'circle-stroke-width': 3 } });
 
@@ -633,6 +641,7 @@ function addTransitLayers() {
   renderVehicles();
   renderJourney();
 }
+
 
 const ROUTE_LAYERS = ['tr-bus', 'tr-light', 'tr-heavy-casing', 'tr-heavy'];
 const STOP_LAYERS = ['st-bus', 'st-light', 'st-heavy', 'st-heavy-label', 'st-light-label'];
@@ -716,21 +725,28 @@ function renderVehicles() {
 
 function journeyFeatures(itinerary) {
   if (!itinerary) return { type: 'FeatureCollection', features: [] };
-  const features = (itinerary.legs || []).map(leg => {
+  const focus = state.focusLeg;
+  const features = (itinerary.legs || []).map((leg, legIndex) => {
     let coords = leg.geometry?.coordinates;
     if (!Array.isArray(coords) || coords.length < 2) coords = [[leg.from?.lon, leg.from?.lat], [leg.to?.lon, leg.to?.lat]];
     coords = coords.filter(c => Number.isFinite(c?.[0]) && Number.isFinite(c?.[1]));
     if (coords.length < 2) return null;
-    return { type: 'Feature', properties: { mode: leg.mode === 'WALK' ? 'WALK' : 'TRANSIT', color: normalizeColor(leg.routeColor, theme().ink) }, geometry: { type: 'LineString', coordinates: coords } };
+    const color = leg.mode === 'WALK' ? theme().ink : legInfo(leg).color;
+    const casing = luminance(color) > 0.55 ? theme().brightCasing : theme().surface;
+    return { type: 'Feature', properties: { mode: leg.mode === 'WALK' ? 'WALK' : 'TRANSIT', color, casing, stroke: luminance(color) > 0.55 ? theme().brightCasing : color, legIndex, approx: legShapeMissing(leg) ? 1 : 0, dim: focus != null && focus !== legIndex ? 1 : 0, focus: focus === legIndex ? 1 : 0 }, geometry: { type: 'LineString', coordinates: coords } };
   }).filter(Boolean);
   return { type: 'FeatureCollection', features };
 }
 
+/* Boarding, exit, and transfer stops for the journey on the map. */
+
+
 function renderJourney() {
-  const source = state.map?.getSource('journey');
-  if (!source) return;
-  source.setData(journeyFeatures(state.journey));
+  const map = state.map;
+  map?.getSource('journey')?.setData(journeyFeatures(state.journey));
+  map?.getSource('journey-points')?.setData(journeyPointFeatures(state.journey));
 }
+
 
 function cameraPadding() {
   if (isMobile()) {
@@ -776,6 +792,12 @@ function setupMapInteractions() {
 
   map.on('click', e => {
     if (state.mapPick) { endMapPick(e.lngLat); return; }
+    if (state.journey && ['results', 'navigate'].includes(currentView().name)) {
+      const box = isMobile() ? 12 : 6;
+      const legHit = map.queryRenderedFeatures([[e.point.x - box, e.point.y - box], [e.point.x + box, e.point.y + box]], { layers: ['journey-transit', 'journey-approx', 'journey-walk'].filter(id => map.getLayer(id)) })[0];
+      if (legHit && currentView().name === 'results') { focusLeg(Number(legHit.properties.legIndex), { scroll: true }); return; }
+      if (legHit) return;
+    }
     const box = isMobile() ? 12 : 6;
     const hits = map.queryRenderedFeatures([[e.point.x - box, e.point.y - box], [e.point.x + box, e.point.y + box]], { layers: present() });
     if (!hits.length) return;
@@ -792,6 +814,7 @@ function setupMapInteractions() {
 
   map.on('contextmenu', e => {
     const point = placeFromPoint(e.lngLat);
+    refinePointName(point);
     const html = `<div class="vehicle-pop"><strong>${esc(point.name)}</strong><div class="map-menu"><button class="text-button" data-pin="to">Directions to here</button><button class="text-button" data-pin="from">Leave from here</button></div></div>`;
     const popup = new maplibregl.Popup({ offset: 6, maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(html).addTo(map);
     popup.getElement().querySelectorAll('[data-pin]').forEach(b => b.addEventListener('click', () => {
@@ -1004,23 +1027,34 @@ function onLeaveFocus() {
   const wantKey = routeView ? routeView.key : null;
   if (state.selectedKey !== wantKey) { state.selectedKey = wantKey; applyMapState(); }
   if (top.name === 'stop') highlightPlace(placeFor(top.agency, top.stop)); else highlightPlace(null);
-  if (!['results', 'navigate'].includes(top.name) && state.journey) { state.journey = null; renderJourney(); applyMapState(); }
+  if (!['results', 'navigate'].includes(top.name) && state.journey) { state.journey = null; state.focusLeg = null; renderJourney(); applyMapState(); }
+  if (top.name === 'place') showPlacePin(top.place); else if (placePin) showPlacePin(null);
   if (top.name !== 'navigate') releaseWakeLock();
 }
+
 
 function render() {
   const view = currentView();
   const body = $('#panelBody');
-  const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources };
+  const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources, place: viewPlace };
+  // Keep the caret where it was if a field inside the panel has focus while the view refreshes.
+  const active = document.activeElement;
+  const keep = active && body.contains(active) && active.id && active.tagName === 'INPUT' && !(active.dataset.planField && !state.plan.focus) ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
   body.innerHTML = (renderers[view.name] || viewHome)(view);
-  const hideSearch = ['plan', 'results', 'navigate'].includes(view.name) || (isMobile() && ['route', 'stop', 'lines', 'sources'].includes(view.name));
+  if (keep) {
+    const again = document.getElementById(keep.id);
+    if (again) { again.focus({ preventScroll: true }); try { again.setSelectionRange(keep.start, keep.end); } catch { /* not a text field */ } }
+  }
+  const hideSearch = ['plan', 'results', 'navigate'].includes(view.name) || (isMobile() && ['route', 'stop', 'lines', 'sources', 'place'].includes(view.name));
   $('#searchInput').closest('.search-field').hidden = hideSearch;
   $('#panel').classList.toggle('search-hidden', hideSearch);
+  if (view.name === 'plan') updatePlanSuggestions();
   updatePlanMarkers();
   setTimeout(prefetchVisibleArrivals, 0);
 }
 
 /* Re-renders views that show live data, without moving the scroll position. */
+
 function refreshLiveViews() {
   const view = currentView();
   if (!['home', 'route', 'stop', 'sources'].includes(view.name)) return;
@@ -1077,10 +1111,15 @@ function viewHome() {
   const parts = [];
   const introDone = store.get(STORAGE.intro, null);
   if (!state.userLocation) {
-    parts.push(`<div class="welcome">${introDone ? '' : '<p>Live times and maps for BART, Muni, VTA, AC Transit, and Caltrain.</p>'}
+    parts.push(`<div class="welcome">${introDone ? '' : '<p>Live times, maps, and door-to-door trips for BART, Muni, VTA, AC Transit, and Caltrain.</p>'}
       <div class="inline-actions"><button class="text-button" data-action="locate">Use my location</button><button class="text-button" data-action="plan">Plan a trip</button></div></div>`);
   } else {
     parts.push(`<div class="welcome"><div class="inline-actions"><button class="text-button" data-action="plan">Plan a trip</button></div></div>`);
+  }
+
+  const places = savedPlaces();
+  if (places.length) {
+    parts.push(`<section class="section"><h2 class="label">Your places</h2><ul class="rows">${places.map(p => placeOptionRow(p, 'search-place', 'saved')).join('')}</ul></section>`);
   }
 
   if (state.userLocation) {
@@ -1088,18 +1127,27 @@ function viewHome() {
     parts.push(`<section class="section"><h2 class="label">Nearby</h2>${nearby.length ? `<ul class="rows">${nearby.map(n => placeRow(n.place, distanceLabel(n.d))).join('')}</ul>` : '<p class="empty">No stops within a mile of your location.</p>'}</section>`);
   }
 
-  const savedPlaces = state.saved.map(x => placeFor(x.a, x.id)).filter(Boolean);
-  if (savedPlaces.length) {
-    parts.push(`<section class="section"><h2 class="label">Saved</h2><ul class="rows">${savedPlaces.map(p => placeRow(p)).join('')}</ul></section>`);
+  const savedStops = state.saved.map(x => placeFor(x.a, x.id)).filter(Boolean);
+  if (savedStops.length) {
+    parts.push(`<section class="section"><h2 class="label">Saved stops</h2><ul class="rows">${savedStops.map(p => placeRow(p)).join('')}</ul></section>`);
   }
 
   parts.push(`<section class="section"><h2 class="label">Explore</h2><ul class="rows">
     <li><button class="row" data-action="lines"><span class="row-main"><span class="row-title">All lines</span><span class="row-meta">${idx.routes.size} lines across 5 agencies</span></span>${ICONS.chevron}</button></li>
-    <li><button class="row" data-action="sources"><span class="row-main"><span class="row-title">Data sources and credits</span><span class="row-meta">Schedules, live data, and map providers</span></span>${ICONS.chevron}</button></li>
+    <li><button class="row" data-action="sources"><span class="row-main"><span class="row-title">Data sources and credits</span><span class="row-meta">Schedules, live data, maps, and address search</span></span>${ICONS.chevron}</button></li>
   </ul></section>`);
   parts.push(`<p class="note">${esc(liveStatusLine())} <button class="text-button" data-action="intro" style="min-height:0;font-size:13px">Show the introduction</button></p>`);
   return parts.join('');
 }
+
+/* Stations lead the list only when the query names one; otherwise addresses and places do. */
+function stationsLead(q, stops) {
+  const needle = normalizeSearch(q);
+  return needle.length >= 2 && stops.some(({ a, s }) => (s.k || stopCategory(a.id, s.id) !== 'bus' || idx.children.has(stopKey(a.id, s.id))) && normalizeSearch(s.n).startsWith(needle));
+}
+
+/* Saved and recent places whose name or address contains the query. */
+
 
 function placeRow(place, trailing = '') {
   const arrivals = cachedArrivals(place);
@@ -1187,21 +1235,32 @@ function highlight(text, query) {
 function viewSearch() {
   const q = state.searchQuery;
   const { routes, stops } = searchNetwork(q);
-  if (!routes.length && !stops.length) {
-    return `<p class="empty" style="padding-top:16px">No results for “${esc(q)}”. Check the spelling, or search for a line number such as 38R or 51A.</p>`;
+  const personal = matchingPersonalPlaces(q, 3);
+  const forSearch = autocomplete.target === 'search';
+  const places = forSearch ? autocompleteSectionHtml('search-place') : '';
+  const waiting = forSearch && autocomplete.status === 'loading' && autocomplete.query === q.trim();
+  const noPlaces = !forSearch || q.trim().length < 3 || (autocomplete.status === 'done' && !autocomplete.results.length);
+  if (!routes.length && !stops.length && !personal.length && noPlaces && !waiting) {
+    return `<p class="empty" style="padding-top:16px">No results for “${esc(q)}”. Check the spelling, or try a street address, a station, or a line such as 38R or 51A.</p>`;
   }
   const parts = [];
-  if (routes.length) parts.push(`<section class="section" style="margin-top:8px"><h2 class="label">Lines</h2><ul class="rows">${routes.map(info => `<li><button class="row result" data-action="route" data-key="${esc(info.key)}">${badgeHtml(info)}<span class="row-main"><span class="row-title">${highlight(info.title, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[info.a.id])} · ${esc(modeName(info))}</span></span>${ICONS.chevron}</button></li>`).join('')}</ul></section>`);
-  if (stops.length) parts.push(`<section class="section" style="margin-top:${routes.length ? 24 : 8}px"><h2 class="label">Stops and stations</h2><ul class="rows">${stops.map(({ a, s }) => {
+  if (personal.length) parts.push(`<section class="section" style="margin-top:8px"><h2 class="label">Your places</h2><ul class="rows">${personal.map(([p, icon]) => placeOptionRow(p, 'search-place', icon)).join('')}</ul></section>`);
+  const linesHtml = routes.length ? `<section class="section"><h2 class="label">Lines</h2><ul class="rows">${routes.map(info => `<li><button class="row result" data-action="route" data-key="${esc(info.key)}">${badgeHtml(info)}<span class="row-main"><span class="row-title">${highlight(info.title, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[info.a.id])} · ${esc(modeName(info))}</span></span>${ICONS.chevron}</button></li>`).join('')}</ul></section>` : '';
+  const stopsHtml = stops.length ? `<section class="section"><h2 class="label">Stops and stations</h2><ul class="rows">${stops.slice(0, 6).map(({ a, s }) => {
     const rs = sortRoutes(routesForStop(a.id, s.id));
     const isStation = s.k || idx.children.has(stopKey(a.id, s.id));
     const d = state.userLocation ? distanceLabel(distanceMeters(state.userLocation, s.p)) : '';
     return `<li><button class="row result" data-action="stop" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">${badgesFor(rs, 3)}<span class="row-main"><span class="row-title">${highlight(s.n, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[a.id])}${isStation ? ' · Station' : ''}</span></span>${d ? `<span class="row-end caption">${esc(d)}</span>` : ICONS.chevron}</button></li>`;
-  }).join('')}</ul></section>`);
-  return parts.join('');
+  }).join('')}</ul></section>` : '';
+  // A query that starts with a house number is almost always an address.
+  if (/^\d+\s+\S/.test(q.trim())) parts.push(places, linesHtml, stopsHtml);
+  else if (stationsLead(q, stops)) parts.push(linesHtml, stopsHtml, places);
+  else parts.push(linesHtml, places, stopsHtml);
+  return `<div class="search-results">${parts.filter(Boolean).join('')}</div>`;
 }
 
 /* ---------- Route ---------- */
+
 function openRoute(key) {
   const info = idx.routes.get(key);
   if (!info) return;
@@ -1354,12 +1413,15 @@ function viewSources() {
         <p>Reproduced with permission granted by the City and County of San Francisco.</p>
         <p>AC Transit data is licensed under a Creative Commons Attribution 3.0 Unported License.</p>
         <p>Map data © OpenStreetMap contributors and OpenMapTiles. Map tiles by OpenFreeMap. Satellite imagery by Esri, Maxar, Earthstar Geographics, and the GIS User Community.</p>
+        <p>Address search by Stadia Maps. Geocoding data © OpenStreetMap contributors, OpenAddresses, and Who’s On First.</p>
+        <p>Trip plans are calculated with OpenTripPlanner.</p>
         <p>All transit data is provided as is, without warranty. Times are estimates. Confirm important trips with the agency.</p>
         <p>Rove is not affiliated with or endorsed by BART, SFMTA, VTA, AC Transit, Caltrain, or MTC.</p>
         <p>Typeface: Atkinson Hyperlegible Next, licensed under the SIL Open Font License 1.1.</p>
       </div>
     </section>`;
 }
+
 
 function formatGtfsDate(value) {
   if (!/^\d{8}$/.test(value || '')) return 'unknown';
@@ -1382,9 +1444,9 @@ function openPlan({ from, to } = {}) {
   closePopovers();
   clearSearchField();
   const plan = state.plan;
-  if (from !== undefined) plan.from = from;
-  if (to !== undefined) plan.to = to;
-  if (!plan.from && state.userLocation) plan.from = currentLocationPlace();
+  if (from !== undefined) { plan.from = from; plan.draft.from = ''; }
+  if (to !== undefined) { plan.to = to; plan.draft.to = ''; }
+  if (!plan.from && !plan.draft.from && state.userLocation) plan.from = currentLocationPlace();
   plan.results = null; plan.error = null; plan.errorField = null; plan.focus = null; plan.query = '';
   pushView({ name: 'plan' }, { detent: 'full' });
   fetchPlanStatus();
@@ -1393,56 +1455,51 @@ function openPlan({ from, to } = {}) {
 }
 
 
+
 function viewPlan() {
   const plan = state.plan;
   const status = state.planStatus;
-  const field = (id, which, label, value) => `<label class="plan-field${plan.errorField === which ? ' invalid' : ''}"><span class="marker"><i></i></span><span class="visually-hidden">${label}</span>
-    <input id="${id}" data-plan-field="${which}" value="${esc(value?.name || '')}" placeholder="${label}" autocomplete="off" spellcheck="false" ${plan.errorField === which ? 'aria-invalid="true"' : ''} /></label>`;
-  let suggestions = '';
-  if (plan.focus) {
-    const q = plan.query;
-    const items = [];
-    if (state.userLocation && (!q || 'your location'.includes(q.toLowerCase()))) items.push(`<li><button class="row" data-action="plan-pick-location"><span class="row-main"><span class="row-title">Your location</span></span></button></li>`);
-    else if (!state.userLocation && !q) items.push(`<li><button class="row" data-action="plan-locate"><span class="row-main"><span class="row-title">Use my location</span><span class="row-meta">Your browser will ask for permission</span></span></button></li>`);
-    if (!q) items.push(`<li><button class="row" data-action="plan-map"><span class="row-main"><span class="row-title">Choose on map</span><span class="row-meta">Tap any point on the map</span></span></button></li>`);
-    if (q.length >= 2) {
-      for (const { a, s } of searchNetwork(q, { routes: false, stopLimit: 8 }).stops) {
-        items.push(`<li><button class="row" data-action="plan-pick" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">${badgesFor(sortRoutes(routesForStop(a.id, s.id)), 3)}<span class="row-main"><span class="row-title">${highlight(s.n, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[a.id])}</span></span></button></li>`);
-      }
-      if (items.length === 0 || !items.some(i => i.includes('plan-pick"'))) items.push(`<li><p class="empty">No stops match “${esc(q)}”. Try a station name, or choose a point on the map.</p></li><li><button class="row" data-action="plan-map"><span class="row-main"><span class="row-title">Choose on map</span></span></button></li>`);
-    }
-    suggestions = `<ul class="rows suggestions">${items.join('')}</ul>`;
-  }
-  const canPlan = Boolean(plan.from && plan.to);
+  const field = (id, which, label) => {
+    const value = plan[which]?.name || plan.draft[which] || '';
+    return `<label class="plan-field${plan.errorField === which ? ' invalid' : ''}"><span class="marker"><i></i></span><span class="visually-hidden">${label}</span>
+    <input id="${id}" data-plan-field="${which}" value="${esc(value)}" placeholder="${label}" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="${which === 'to' ? 'search' : 'next'}" role="combobox" aria-autocomplete="list" aria-controls="planSuggest" aria-expanded="${plan.focus === which}" ${plan.errorField === which ? 'aria-invalid="true" aria-describedby="planError"' : ''} /></label>`;
+  };
+  const hasFrom = Boolean(plan.from || plan.draft.from.trim());
+  const hasTo = Boolean(plan.to || plan.draft.to.trim());
+  const coverage = planCoverageIssue();
   let submit;
-  if (status && !status.available) {
-    submit = '';
-  } else if (canPlan) {
-    submit = `<button type="submit" class="button primary block plan-submit" ${plan.loading ? 'aria-busy="true"' : ''}>${plan.loading ? 'Finding routes' : 'Find routes'}</button>`;
-  } else {
-    submit = `<p class="caption" style="margin-top:12px">${plan.from ? 'Choose a destination to see routes.' : 'Choose a starting point to see routes.'}</p>`;
-  }
+  if (status && !status.available) submit = '';
+  else if (coverage) submit = `<p class="plan-coverage" role="status">${esc(coverage.text)}</p>`;
+  else if (hasFrom && hasTo) submit = `<button type="submit" class="button primary block plan-submit" ${plan.loading ? 'aria-busy="true" disabled' : ''}>${plan.loading ? 'Finding routes' : 'Find routes'}</button>`;
+  else submit = `<p class="caption" style="margin-top:12px">${hasFrom ? 'Enter a destination to see routes.' : 'Enter a starting point to see routes.'}</p>`;
   return `${backHeader()}
     <div class="hero" style="padding-bottom:8px"><h1 class="title-2">Plan a trip</h1></div>
     <div id="planNotice">${planNoticeHtml()}</div>
-    <form class="plan-form" data-plan-form novalidate>
+    <form class="plan-form${plan.focus ? ' suggesting' : ''}" data-plan-form novalidate>
       <div class="plan-fields">
-        ${field('planFrom', 'from', 'Starting point', plan.from)}
-        ${field('planTo', 'to', 'Destination', plan.to)}
+        ${field('planFrom', 'from', 'Starting point')}
+        ${field('planTo', 'to', 'Destination')}
         <button type="button" class="swap-button" data-action="plan-swap" aria-label="Swap starting point and destination">${ICONS.swap}</button>
       </div>
-      ${suggestions || `<div class="plan-options">
-        <select id="planTimeMode" aria-label="When">
-          <option value="now" ${plan.timeMode === 'now' ? 'selected' : ''}>Leave now</option>
-          <option value="depart" ${plan.timeMode === 'depart' ? 'selected' : ''}>Depart at</option>
-          <option value="arrive" ${plan.timeMode === 'arrive' ? 'selected' : ''}>Arrive by</option>
-        </select>
-        ${plan.timeMode !== 'now' ? `<input type="datetime-local" id="planDateTime" aria-label="Date and time" class="${plan.errorField === 'time' ? 'invalid' : ''}" value="${esc(plan.dateTime || localInputValue(new Date()))}" />` : ''}
+      <div id="planSuggest" class="plan-suggest" role="listbox" aria-label="Suggestions"></div>
+      <div class="plan-body">
+        ${coverage ? '' : `<div class="plan-options">
+          <select id="planTimeMode" aria-label="When">
+            <option value="now" ${plan.timeMode === 'now' ? 'selected' : ''}>Leave now</option>
+            <option value="depart" ${plan.timeMode === 'depart' ? 'selected' : ''}>Depart at</option>
+            <option value="arrive" ${plan.timeMode === 'arrive' ? 'selected' : ''}>Arrive by</option>
+          </select>
+          ${plan.timeMode !== 'now' ? `<input type="datetime-local" id="planDateTime" aria-label="Date and time" class="${plan.errorField === 'time' ? 'invalid' : ''}" value="${esc(plan.dateTime || localInputValue(new Date()))}" />` : ''}
+        </div>`}
+        ${submit}
+        ${plan.loading ? '<ul class="itineraries skeleton-list" aria-hidden="true">' + '<li><div class="itinerary"><span class="sk sk-line"></span><span class="sk sk-bar"></span><span class="sk sk-line short"></span></div></li>'.repeat(3) + '</ul>' : ''}
+        ${plan.error ? `<p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>` : ''}
       </div>
-      ${submit}`}
-    </form>
-    ${plan.error && !plan.focus ? `<p class="empty plan-error" role="alert">${esc(plan.error)}</p>` : ''}`;
+    </form>`;
 }
+
+/* Fills the suggestion list for the focused trip field without re-rendering the inputs. */
+
 
 function localInputValue(date) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date).map(p => [p.type, p.value]));
@@ -1462,18 +1519,32 @@ function pacificIso(localValue) {
 
 async function submitPlan() {
   const plan = state.plan;
-  if (!plan.from || !plan.to || plan.loading) return;
+  if (plan.loading) return;
   if (plan.timeMode !== 'now') plan.dateTime = $('#planDateTime')?.value || plan.dateTime || localInputValue(new Date());
-  const params = new URLSearchParams({
-    fromLat: plan.from.lat.toFixed(6), fromLon: plan.from.lon.toFixed(6), fromName: plan.from.name,
-    toLat: plan.to.lat.toFixed(6), toLon: plan.to.lon.toFixed(6), toName: plan.to.name, limit: '5'
-  });
-  const requestTime = plan.timeMode === 'now' ? new Date() : new Date(pacificIso(plan.dateTime));
-  if (plan.timeMode !== 'now') params.set('time', pacificIso(plan.dateTime));
-  if (plan.timeMode === 'arrive') params.set('arriveBy', 'true');
+  plan.focus = null;
+  document.activeElement?.blur?.();
   plan.loading = true; plan.error = null; plan.errorField = null;
   render();
   try {
+    for (const which of ['from', 'to']) {
+      if (!plan[which] && plan.draft[which].trim()) {
+        plan[which] = await resolveDraft(which);
+        plan.draft[which] = '';
+        rememberPlace(plan[which]);
+      }
+    }
+    if (!plan.from || !plan.to) throw new PlanError(plan.from ? 'Enter a destination.' : 'Enter a starting point.', plan.from ? 'to' : 'from');
+    const coverage = planCoverageIssue();
+    if (coverage) { plan.loading = false; render(); return; }
+    if (distanceMeters([plan.from.lon, plan.from.lat], [plan.to.lon, plan.to.lat]) < 30) throw new PlanError('The starting point and destination are the same place.', 'to');
+    const params = new URLSearchParams({
+      fromLat: plan.from.lat.toFixed(6), fromLon: plan.from.lon.toFixed(6), fromName: plan.from.name,
+      toLat: plan.to.lat.toFixed(6), toLon: plan.to.lon.toFixed(6), toName: plan.to.name, limit: '5'
+    });
+    const requestTime = plan.timeMode === 'now' ? new Date() : new Date(pacificIso(plan.dateTime));
+    if (plan.timeMode !== 'now') params.set('time', pacificIso(plan.dateTime));
+    if (plan.timeMode === 'arrive') params.set('arriveBy', 'true');
+    render();
     const response = await fetch(`/api/v2/plan?${params}`, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(35000) : undefined });
     const body = await response.json().catch(() => null);
     if (!response.ok) {
@@ -1482,20 +1553,23 @@ async function submitPlan() {
       throw new PlanError(err.text, err.which);
     }
     const itineraries = (body?.itineraries || []).map(normalizeItinerary).filter(it => it.legs.length);
-    if (!itineraries.length) throw new PlanError(body?.errors?.[0]?.message || 'No transit route was found for this time. Try a different time or a nearby stop.');
+    if (!itineraries.length) throw new PlanError(noRouteMessage(body));
     plan.results = { itineraries, request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive' }, scheduledOnly: body.routing?.realtime !== 'partial' };
-    plan.expanded = 0;
+    plan.sort = 'fastest';
+    plan.expanded = sortedItineraryIndexes()[0];
     plan.loading = false;
-    state.journey = itineraries[0];
+    state.focusLeg = null;
+    state.journey = itineraries[plan.expanded];
     pushView({ name: 'results' }, { detent: 'half' });
-    renderJourney(); applyMapState(); updatePlanMarkers(); fitJourney(itineraries[0]);
+    renderJourney(); applyMapState(); updatePlanMarkers(); fitJourney(state.journey);
   } catch (error) {
     plan.loading = false;
     if (error instanceof PlanError) { plan.error = error.message; plan.errorField = error.field || null; }
     else plan.error = error?.name === 'TimeoutError' ? 'The trip planner took too long to respond. Please try again.' : 'Rove could not reach the trip planner. Check your connection and try again.';
-    render();
+    if (currentView().name === 'plan') render();
   }
 }
+
 
 class PlanError extends Error {
   constructor(message, field = null) { super(message); this.field = field; }
@@ -1548,57 +1622,74 @@ function itinerarySummary(it) {
   const transfers = Number.isFinite(it.transfers) ? it.transfers : Math.max(0, transitLegs.filter(l => !l.staySeated).length - 1);
   const leaveIn = Math.round((new Date(it.startTime) - Date.now()) / 60000);
   const leave = leaveIn <= 0 ? 'Leave now' : leaveIn < 60 ? `Leave in ${leaveIn} min` : `Leave at ${clock(new Date(it.startTime))}`;
-  const board = first.from?.name && first.from.name !== state.plan.from?.name ? ` from ${first.from.name}` : '';
-  const walk = Number.isFinite(it.walkMeters) && it.walkMeters > 0 ? ` · ${distanceLabel(it.walkMeters)} walk` : '';
-  const parts = [`${it.usesRealtime ? ICONS.live : ''}${esc(`${leave}${board}`)}`, esc(transfers === 0 ? 'No transfers' : plural(transfers, 'transfer'))];
-  let text = parts.join(' · ') + esc(walk);
+  const board = first.from?.name ? ` · Board at ${first.from.name} ${clock(legStart(first))}` : '';
+  const walkSec = Number.isFinite(it.walkSeconds) ? it.walkSeconds : null;
+  const walk = Number.isFinite(it.walkMeters) && it.walkMeters > 0 ? ` · ${walkSec ? `${durationLabel(walkSec)} walk, ` : 'Walk '}${distanceLabel(it.walkMeters)}` : '';
+  let text = `${it.usesRealtime ? ICONS.live : ''}${esc(leave)}${esc(board)}`;
+  text += `<br>${esc(transfers === 0 ? 'No transfers' : plural(transfers, 'transfer'))}${esc(walk)}`;
   if (it.hasCancellation) text += ' · <span class="status-canceled">Includes a canceled trip</span>';
+  if ((it.legs || []).some(l => l.alerts?.length)) text += ` · <span class="status-late">${ICONS.alert}Service alert</span>`;
   return text;
 }
+
 
 
 function viewResults() {
   const plan = state.plan;
   const its = plan.results?.itineraries || [];
   const when = plan.results?.request?.time ? clock(new Date(plan.results.request.time)) : '';
+  const order = sortedItineraryIndexes();
+  const fastestIndex = sortedItineraryIndexes('fastest')[0];
+  const sortButton = (key, label) => `<button type="button" class="seg-option" data-action="it-sort" data-sort="${key}" aria-pressed="${(plan.sort || 'fastest') === key}">${label}</button>`;
   return `${backHeader()}
-    <div class="hero" style="padding-bottom:8px">
-      <h1 class="title-2">${esc(plan.from?.name)} to ${esc(plan.to?.name)}</h1>
-      <p class="caption">${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Times are from published schedules' : ''}</p>
+    <h1 class="visually-hidden">Routes from ${esc(plan.from?.name)} to ${esc(plan.to?.name)}</h1>
+    <div class="trip-card">
+      <div class="trip-ends"><p><span class="marker"><i></i></span><span>${esc(plan.from?.name)}</span></p><p><span class="marker to"><i></i></span><span>${esc(plan.to?.name)}</span></p></div>
+      <button type="button" class="text-button" data-action="back">Edit</button>
     </div>
-    <ul class="itineraries">${its.map((it, i) => {
+    <p class="caption results-when">${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Times are from published schedules' : ''}</p>
+    ${its.length > 1 ? `<div class="segmented" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
+    <ul class="itineraries">${order.map(i => {
+      const it = its[i];
       const open = plan.expanded === i;
       return `<li><button class="itinerary" data-action="it-toggle" data-index="${i}" aria-expanded="${open}">
-        <div class="it-top"><span class="it-times">${esc(clock(new Date(it.startTime)))} to ${esc(clock(new Date(it.endTime)))}</span><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}</span></div>
+        <div class="it-top"><span class="it-times">${esc(clock(new Date(it.startTime)))} to ${esc(clock(new Date(it.endTime)))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}</span></div>
         ${journeyBar(it)}
         <div class="it-meta">${itinerarySummary(it)}</div></button>
         ${open ? `${itineraryTimeline(it)}<div class="action-bar" style="padding-bottom:16px"><button class="button primary" data-action="nav-start" data-index="${i}">Start</button></div>` : ''}</li>`;
     }).join('')}</ul>
-    <p class="note">Rove plans with published schedules. Check live departures at your stop before you leave.</p>`;
+    <p class="note">${plan.results?.scheduledOnly ? 'These routes use published schedules. Check live departures at your stop before you leave.' : 'Live times are shown where agencies provide them. Other times are scheduled.'}</p>`;
 }
+
+/* True when the leg's line on the map is a straight join of its end stops, not the real route. */
+
 
 
 function itineraryTimeline(it) {
   const items = [];
   const legs = it.legs || [];
+  const focus = state.journey === it ? state.focusLeg : null;
+  const legLink = (i, text) => `<button type="button" class="leg-link" data-action="leg-focus" data-leg="${i}" aria-pressed="${focus === i}">${esc(text)}</button>`;
   legs.forEach((leg, i) => {
+    const focused = focus === i ? ' leg-focused' : '';
     if (leg.mode === 'WALK') {
       const meters = Number.isFinite(leg.distanceMeters) ? leg.distanceMeters : null;
       const isLast = i === legs.length - 1;
-      items.push(`<li><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"></span><span class="body"><strong>Walk${meters ? ` ${esc(distanceLabel(meters))}` : ''}</strong><span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? '' : ` to ${esc(leg.to?.name || 'the stop')}`}</span></span></li>`);
+      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"></span><span class="body">${legLink(i, `Walk${meters ? ` ${distanceLabel(meters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? ` to ${esc(state.plan.to?.name || 'your destination')}` : ` to ${esc(leg.to?.name || 'the stop')}`}</span></span></li>`);
       return;
     }
     const li = legInfo(leg);
     const stopsCount = leg.intermediateStops ? leg.intermediateStops.length + 1 : null;
     const timing = leg.canceled ? '<span class="status-canceled">Canceled</span>' : leg.realtime ? `<span class="${delayStatus(leg.delaySeconds).cls}">${ICONS.live}${esc(delayStatus(leg.delaySeconds).text)}</span>` : 'Scheduled';
+    const shapeNote = legShapeMissing(leg) ? '<span class="row-meta shape-note">Route shape not available. The map joins the boarding and exit stops with a dashed line.</span>' : '';
     if (!leg.staySeated) {
-      items.push(`<li style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body">
-        <strong>${esc(leg.from?.name || 'Board')}</strong>
+      items.push(`<li class="${focused}" data-leg="${i}" style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body">
+        ${legLink(i, leg.from?.name || 'Board')}
         <span class="row-meta leg-line"><span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? `<span>To ${esc(displayName(leg.headsign))}</span>` : ''}</span>
         <span class="row-meta">${leg.from?.platform ? `Platform ${esc(leg.from.platform)} · ` : ''}${stopsCount ? `${plural(stopsCount, 'stop')} · ` : ''}${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))} · ${timing}</span>
-        ${legAlertsHtml(leg)}</span></li>`);
+        ${shapeNote}${legAlertsHtml(leg)}</span></li>`);
     } else {
-      items.push(`<li style="--leg-color:${esc(li.color)}"><span class="t"></span><span class="rail"></span><span class="body"><span class="row-meta leg-line">Stay on board. It continues as <span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? ` to ${esc(displayName(leg.headsign))}` : ''}</span></span></li>`);
+      items.push(`<li class="${focused}" data-leg="${i}" style="--leg-color:${esc(li.color)}"><span class="t"></span><span class="rail"></span><span class="body"><span class="row-meta leg-line">Stay on board. It continues as <span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? ` to ${esc(displayName(leg.headsign))}` : ''}</span>${shapeNote}</span></li>`);
     }
     const next = legs[i + 1];
     if (next && next.mode !== 'WALK' && next.staySeated) return;
@@ -1613,7 +1704,10 @@ function itineraryTimeline(it) {
   return `<ol class="timeline">${items.join('')}</ol>`;
 }
 
+/* Highlights one leg on the map and in the list, and frames it. */
+
 /* ---------- Step-by-step navigation ---------- */
+
 
 function buildSteps(it) {
   const steps = [];
@@ -1708,12 +1802,15 @@ function clearSearchField() {
   state.searchQuery = '';
   $('#searchInput').value = '';
   $('#searchClear').hidden = true;
+  requestAutocomplete('', 'search');
 }
+
 
 function onSearchInput(value) {
   state.searchQuery = value;
   $('#searchClear').hidden = !value;
   const top = currentView();
+  requestAutocomplete(value, 'search');
   if (value.trim()) {
     if (top.name === 'search') render();
     else { state.stack.push({ name: 'search' }); render(); }
@@ -1723,6 +1820,7 @@ function onSearchInput(value) {
     render();
   }
 }
+
 
 function toggleSaved(agencyId, stopId) {
   const place = placeFor(agencyId, stopId);
@@ -1737,6 +1835,7 @@ function toggleSaved(agencyId, stopId) {
 function handleAction(el) {
   const action = el.dataset.action;
   const view = currentView();
+  const plan = state.plan;
   switch (action) {
     case 'back': popView(); break;
     case 'route': openRoute(el.dataset.key); break;
@@ -1746,23 +1845,37 @@ function handleAction(el) {
     case 'intro': showIntro(0); break;
     case 'locate': locate(); break;
     case 'plan': openPlan({}); break;
-    case 'plan-to': openPlan({ to: placeFromStop(el.dataset.agency, el.dataset.stop), from: currentLocationPlace() || (state.plan.from?.stop !== el.dataset.stop ? state.plan.from : null) }); break;
-    case 'plan-from': openPlan({ from: placeFromStop(el.dataset.agency, el.dataset.stop), to: state.plan.to && state.plan.to.stop !== el.dataset.stop ? state.plan.to : null }); break;
-    case 'plan-swap': { const p = state.plan; [p.from, p.to] = [p.to, p.from]; p.focus = null; render(); break; }
-    case 'plan-pick': state.plan[state.plan.focus] = placeFromStop(el.dataset.agency, el.dataset.stop); afterPick(); break;
-    case 'plan-pick-location': state.plan[state.plan.focus] = currentLocationPlace(); afterPick(); break;
-    case 'plan-locate': locate({ thenPick: state.plan.focus }); break;
-    case 'plan-map': startMapPick(state.plan.focus || (state.plan.to ? 'from' : 'to')); break;
+    case 'plan-to': openPlan({ to: placeFromStop(el.dataset.agency, el.dataset.stop), from: currentLocationPlace() || (plan.from?.stop !== el.dataset.stop ? plan.from : null) }); break;
+    case 'plan-from': openPlan({ from: placeFromStop(el.dataset.agency, el.dataset.stop), to: plan.to && plan.to.stop !== el.dataset.stop ? plan.to : null }); break;
+    case 'plan-swap': {
+      [plan.from, plan.to] = [plan.to, plan.from];
+      [plan.draft.from, plan.draft.to] = [plan.draft.to, plan.draft.from];
+      if (plan.errorField === 'from' || plan.errorField === 'to') plan.errorField = plan.errorField === 'from' ? 'to' : 'from';
+      plan.focus = null; render(); updatePlanMarkers(); break;
+    }
+    case 'plan-pick': { const p = placeFromStop(el.dataset.agency, el.dataset.stop); plan[plan.focus] = p; rememberPlace(p); afterPick(); break; }
+    case 'plan-place': { const p = placeFromRow(el); plan[plan.focus] = p; rememberPlace(p); afterPick(); break; }
+    case 'plan-pick-location': plan[plan.focus] = currentLocationPlace(); afterPick(); break;
+    case 'plan-locate': locate({ thenPick: plan.focus }); break;
+    case 'plan-map': startMapPick(plan.focus || (plan.to ? 'from' : 'to')); break;
     case 'plan-recheck': fetchPlanStatus(true); break;
+    case 'search-place': openPlace(placeFromRow(el)); break;
+    case 'place-directions': openPlan({ to: { ...view.place }, from: currentLocationPlace() || (plan.from && placeKey(plan.from) !== placeKey(view.place) ? plan.from : null) }); break;
+    case 'place-from': openPlan({ from: { ...view.place }, to: plan.to && placeKey(plan.to) !== placeKey(view.place) ? plan.to : null }); break;
+    case 'place-save': savePlace(view.place, el.dataset.label); render(); toast(el.dataset.label === 'Saved' ? 'Saved. It will appear on the home screen.' : `Set as ${el.dataset.label}.`); break;
+    case 'place-unsave': unsavePlace(view.place); render(); toast('Removed from your places'); break;
     case 'save': if (view.name === 'stop') toggleSaved(view.agency, view.stop); break;
     case 'toggle-alert': { el.classList.toggle('expanded'); el.setAttribute('aria-expanded', String(el.classList.contains('expanded'))); break; }
+    case 'it-sort': plan.sort = el.dataset.sort; render(); break;
     case 'it-toggle': {
       const i = Number(el.dataset.index);
-      state.plan.expanded = state.plan.expanded === i ? -1 : i;
-      const it = state.plan.results.itineraries[state.plan.expanded >= 0 ? state.plan.expanded : i];
+      plan.expanded = plan.expanded === i ? -1 : i;
+      const it = plan.results.itineraries[plan.expanded >= 0 ? plan.expanded : i];
+      state.focusLeg = null;
       state.journey = it; renderJourney(); applyMapState(); fitJourney(it);
       render(); break;
     }
+    case 'leg-focus': focusLeg(Number(el.dataset.leg)); break;
     case 'nav-start': startNavigation(Number(el.dataset.index)); break;
     case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; render(); focusStep(); } break;
     case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; render(); focusStep(); } break;
@@ -1771,16 +1884,23 @@ function handleAction(el) {
   }
 }
 
+
 function afterPick() {
   const plan = state.plan;
   const picked = plan.focus;
+  if (picked) plan.draft[picked] = '';
   plan.focus = null; plan.query = '';
+  requestAutocomplete('', picked);
   if (plan.errorField === picked) { plan.error = null; plan.errorField = null; }
+  document.activeElement?.blur?.();
   render();
   const next = picked === 'from' && !plan.to ? '#planTo' : picked === 'to' && !plan.from ? '#planFrom' : null;
   if (next) requestAnimationFrame(() => $(next)?.focus());
-  else requestAnimationFrame(() => $('.plan-submit')?.focus());
+  else requestAnimationFrame(() => { document.activeElement?.blur?.(); $('.plan-submit')?.focus({ preventScroll: true }); });
 }
+
+/* Moves the trip fields in and out of their suggestion state without rebuilding them. */
+
 
 function bindPanel() {
   const body = $('#panelBody');
@@ -1788,6 +1908,8 @@ function bindPanel() {
     const el = e.target.closest('[data-action]');
     if (el && body.contains(el)) { e.preventDefault(); handleAction(el); }
   });
+  // Keep focus in the trip field while a suggestion is pressed, so the list stays put.
+  body.addEventListener('mousedown', e => { if (e.target.closest('#planSuggest button')) e.preventDefault(); });
   body.addEventListener('submit', e => { if (e.target.matches('[data-plan-form]')) { e.preventDefault(); submitPlan(); } });
   body.addEventListener('change', e => {
     if (e.target.id === 'planTimeMode') { state.plan.timeMode = e.target.value; if (!state.plan.dateTime) state.plan.dateTime = localInputValue(new Date()); render(); }
@@ -1795,25 +1917,39 @@ function bindPanel() {
   });
   body.addEventListener('focusin', e => {
     const which = e.target.dataset?.planField;
-    if (!which || state.plan.focus === which) return;
-    state.plan.focus = which; state.plan.query = '';
-    const pos = e.target.value.length;
-    render();
-    const input = $(`[data-plan-field="${which}"]`);
-    input?.focus(); input?.setSelectionRange(pos, pos); input?.select();
+    if (!which) return;
+    setPlanFocus(which);
+    if (state.plan[which]) e.target.select();
+  });
+  body.addEventListener('focusout', e => {
+    if (!e.target.dataset?.planField) return;
+    const to = e.relatedTarget;
+    if (to && (to.dataset?.planField || to.closest?.('#planSuggest'))) return;
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (currentView().name !== 'plan' || active?.dataset?.planField || active?.closest?.('#planSuggest')) return;
+      if (state.plan.focus) { setPlanFocus(null); render(); }
+    }, 0);
   });
   body.addEventListener('input', e => {
     const which = e.target.dataset?.planField;
     if (!which) return;
-    state.plan.query = e.target.value;
-    state.plan[which] = null;
-    const value = e.target.value, caret = e.target.selectionStart;
-    render();
-    const input = $(`[data-plan-field="${which}"]`);
-    if (input) { input.value = value; input.focus(); input.setSelectionRange(caret, caret); }
+    const plan = state.plan;
+    plan.draft[which] = e.target.value;
+    plan[which] = null;
+    plan.query = e.target.value;
+    if (plan.errorField === which) { plan.errorField = null; plan.error = null; e.target.closest('.plan-field')?.classList.remove('invalid'); e.target.removeAttribute('aria-invalid'); $('#planError')?.remove(); }
+    if (plan.focus !== which) plan.focus = which;
+    requestAutocomplete(e.target.value, which);
+    updatePlanSuggestions();
+    updatePlanMarkers();
   });
   body.addEventListener('keydown', e => {
-    if (e.target.dataset?.planField && e.key === 'Escape') { state.plan.focus = null; render(); }
+    const which = e.target.dataset?.planField;
+    if (!which) return;
+    if (e.key === 'Escape') { setPlanFocus(null); e.target.blur(); render(); }
+    if (e.key === 'Enter') { e.preventDefault(); commitPlanField(which); }
+    if (e.key === 'ArrowDown') { const first = $('#planSuggest .result'); if (first) { e.preventDefault(); first.focus(); } }
   });
 
   const input = $('#searchInput');
@@ -1828,8 +1964,9 @@ function bindPanel() {
   body.addEventListener('keydown', e => {
     if (!e.target.classList?.contains('result')) return;
     const results = $$('.result', body), i = results.indexOf(e.target);
+    const inPlan = Boolean(e.target.closest('#planSuggest'));
     if (e.key === 'ArrowDown') { e.preventDefault(); results[Math.min(i + 1, results.length - 1)].focus(); }
-    if (e.key === 'ArrowUp') { e.preventDefault(); (i === 0 ? input : results[i - 1]).focus(); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); (i === 0 ? (inPlan ? $(`[data-plan-field="${state.plan.focus}"]`) : input) : results[i - 1])?.focus(); }
   });
   $('#searchClear').addEventListener('click', () => { clearSearchField(); onSearchInput(''); input.focus(); });
 }
@@ -1837,6 +1974,7 @@ function bindPanel() {
 /* ======================================================================
  * 8. Popovers, intro, location, startup
  * ==================================================================== */
+
 function toast(message) {
   const el = $('#toast');
   el.textContent = message;
@@ -2081,7 +2219,7 @@ async function fetchPlanStatus(force = false) {
     if (response.status === 404) next = { available: false, reason: 'missing' };
     else {
       const body = await response.json().catch(() => ({}));
-      next = { available: response.ok && body.available !== false, reason: response.ok ? null : body.code || 'ROUTING_UNAVAILABLE' };
+      next = { available: response.ok && body.available !== false, reason: response.ok ? null : body.code || 'ROUTING_UNAVAILABLE', regions: Array.isArray(body.regions) ? body.regions : null };
     }
   } catch {
     next = { available: false, reason: 'network' };
@@ -2156,8 +2294,8 @@ function planErrorMessage(status, body) {
   if (status === 400) {
     const message = String(body?.error || '');
     if (/same place/i.test(message)) return { which: 'to', text: 'The starting point and destination are the same place.' };
-    if (which === 'from') return { which, text: /outside/i.test(message) ? 'The starting point is outside the area Rove covers.' : 'Choose the starting point again.' };
-    if (which === 'to') return { which, text: /outside/i.test(message) ? 'The destination is outside the area Rove covers.' : 'Choose the destination again.' };
+    if (which === 'from') return { which, text: /outside/i.test(message) ? `Rove cannot plan trips from this starting point yet. Trip planning is available in ${regionListText()} today.` : 'Choose the starting point again.' };
+    if (which === 'to') return { which, text: /outside/i.test(message) ? `Rove cannot plan trips to this destination yet. Trip planning is available in ${regionListText()} today.` : 'Choose the destination again.' };
     if (which === 'time') return { which, text: 'Choose a time within the next 60 days.' };
     return { which: null, text: 'Rove could not plan this trip. Check the places and time, then try again.' };
   }
@@ -2226,10 +2364,440 @@ function endMapPick(lngLat) {
   $('#mapPick').hidden = true;
   document.body.classList.remove('map-picking');
   if (!which) return;
-  if (lngLat) state.plan[which] = placeFromPoint(lngLat);
+  if (lngLat) {
+    const p = placeFromPoint(lngLat);
+    state.plan[which] = p;
+    state.plan.draft[which] = '';
+    if (state.plan.errorField === which) { state.plan.error = null; state.plan.errorField = null; }
+    refinePointName(p);
+  }
   if (isMobile()) setDetent('full');
   render();
   updatePlanMarkers();
+}
+
+/* Replaces "Near <stop>" with the street address once the reverse geocoder answers. */
+
+
+const GEOCODER = {
+  backend: '/api/v2/places/autocomplete',
+  autocomplete: 'https://api.stadiamaps.com/geocoding/v1/autocomplete',
+  search: 'https://api.stadiamaps.com/geocoding/v1/search',
+  reverse: 'https://api.stadiamaps.com/geocoding/v1/reverse',
+  attribution: 'Address search by Stadia Maps, using OpenStreetMap, OpenAddresses, and Who’s On First'
+};
+
+const PLACES_KEY = { recent: 'rove-recent-places-v1', saved: 'rove-saved-places-v1' };
+
+const geocodeCache = new Map();
+
+let geocodeBackend = 'unknown';
+
+/* Address search covers the whole United States, ranked toward the rider's location, or the
+ * part of the map they are looking at when location is off. The point is rounded to about 1 km
+ * before it leaves the browser. */
+function geocodeBias() {
+  const center = state.userLocation || (state.map ? state.map.getCenter().toArray() : [-122.27, 37.8]);
+  return { center };
+}
+
+function normalizeGeocodeFeature(f) {
+  const p = f.properties || {};
+  const [lon, lat] = f.geometry?.coordinates || [];
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const name = p.name || p.label || 'Unnamed place';
+  const detail = String(p.label || '').replace(new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')},?\\s*`), '').replace(/, (United States|USA)$/, '');
+  return { kind: 'place', id: p.gid || `${lat},${lon}`, name, detail, layer: p.layer || 'place', lat, lon };
+}
+
+async function geocode(query, { signal, mode = 'autocomplete', size = 6 } = {}) {
+  const q = query.trim();
+  const cacheKey = `${mode}|${q.toLowerCase()}`;
+  if (geocodeCache.has(cacheKey)) return geocodeCache.get(cacheKey);
+  const { center } = geocodeBias();
+  if (geocodeBackend !== 'missing' && mode === 'autocomplete') {
+    try {
+      const r = await fetch(`${GEOCODER.backend}?q=${encodeURIComponent(q)}&lat=${center[1].toFixed(2)}&lon=${center[0].toFixed(2)}`, { signal });
+      if (r.status === 404) geocodeBackend = 'missing';
+      else if (r.ok) {
+        geocodeBackend = 'available';
+        const body = await r.json();
+        const results = (body.results || []).filter(x => Number.isFinite(x.lat) && Number.isFinite(x.lon)).map(x => ({ kind: 'place', id: x.id, name: x.name, detail: x.detail || '', layer: x.layer || 'place', lat: x.lat, lon: x.lon }));
+        geocodeCache.set(cacheKey, results);
+        return results;
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') throw error;
+    }
+  }
+  const params = new URLSearchParams({
+    text: q, size: String(size), lang: 'en',
+    'focus.point.lat': center[1].toFixed(2), 'focus.point.lon': center[0].toFixed(2),
+    'boundary.country': 'USA'
+  });
+  const response = await fetch(`${mode === 'search' ? GEOCODER.search : GEOCODER.autocomplete}?${params}`, { signal });
+  if (response.status === 429) throw new Error('rate-limited');
+  if (!response.ok) throw new Error(`geocoder ${response.status}`);
+  const body = await response.json();
+  const results = (body.features || []).map(normalizeGeocodeFeature).filter(Boolean);
+  geocodeCache.set(cacheKey, results);
+  return results;
+}
+
+async function reverseGeocode(lat, lon) {
+  try {
+    const params = new URLSearchParams({ 'point.lat': lat.toFixed(6), 'point.lon': lon.toFixed(6), size: '1', layers: 'address,venue,street', lang: 'en' });
+    const response = await fetch(`${GEOCODER.reverse}?${params}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
+    if (!response.ok) return null;
+    const f = (await response.json()).features?.[0];
+    const place = f ? normalizeGeocodeFeature(f) : null;
+    return place && distanceMeters([lon, lat], [place.lon, place.lat]) < 120 ? place : null;
+  } catch { return null; }
+}
+
+/* Debounced, cancelable autocomplete shared by the main search and the trip fields. */
+
+const autocomplete = { timer: null, controller: null, query: '', status: 'idle', results: [], target: null };
+
+function requestAutocomplete(query, target) {
+  const q = query.trim();
+  autocomplete.commitOnResults = null;
+  clearTimeout(autocomplete.timer);
+  autocomplete.controller?.abort();
+  autocomplete.query = q; autocomplete.target = target;
+  if (q.length < 3) { autocomplete.status = 'idle'; autocomplete.results = []; return; }
+  const cached = geocodeCache.get(`autocomplete|${q.toLowerCase()}`);
+  if (cached) { autocomplete.status = 'done'; autocomplete.results = cached; return; }
+  autocomplete.status = 'loading'; autocomplete.results = [];
+  autocomplete.timer = setTimeout(async () => {
+    const controller = new AbortController();
+    autocomplete.controller = controller;
+    try {
+      const results = await geocode(q, { signal: controller.signal });
+      if (autocomplete.query !== q) return;
+      autocomplete.status = 'done'; autocomplete.results = results;
+    } catch (error) {
+      if (error.name === 'AbortError' || autocomplete.query !== q) return;
+      autocomplete.status = error.message === 'rate-limited' ? 'limited' : 'error'; autocomplete.results = [];
+    }
+    onAutocompleteResults(target);
+  }, 220);
+}
+
+function onAutocompleteResults(target) {
+  if (target === 'search' && currentView().name === 'search') render();
+  if ((target === 'from' || target === 'to') && currentView().name === 'plan' && state.plan.focus === target) {
+    updatePlanSuggestions();
+    if (autocomplete.commitOnResults === target) { autocomplete.commitOnResults = null; commitPlanField(target); }
+  }
+}
+
+function placeKey(p) { return p.kind === 'stop' ? `stop:${p.agency}:${p.stop}` : `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`; }
+
+function recentPlaces() { return store.get(PLACES_KEY.recent, []).filter(p => Number.isFinite(p?.lat)); }
+
+function savedPlaces() { return store.get(PLACES_KEY.saved, []).filter(p => Number.isFinite(p?.lat)); }
+
+function rememberPlace(p) {
+  if (!p || p.kind === 'location') return;
+  const entry = { kind: p.kind, name: p.name, detail: p.detail || '', lat: p.lat, lon: p.lon, agency: p.agency, stop: p.stop, layer: p.layer };
+  const list = recentPlaces().filter(x => placeKey(x) !== placeKey(entry));
+  store.set(PLACES_KEY.recent, [entry, ...list].slice(0, 8));
+}
+
+function savePlace(p, label) {
+  const entry = { kind: p.kind, name: p.name, detail: p.detail || '', lat: p.lat, lon: p.lon, agency: p.agency, stop: p.stop, label };
+  let list = savedPlaces().filter(x => placeKey(x) !== placeKey(entry));
+  if (label === 'Home' || label === 'Work') list = list.filter(x => x.label !== label);
+  store.set(PLACES_KEY.saved, [...list, entry].sort((a, b) => ['Home', 'Work'].indexOf(b.label) - ['Home', 'Work'].indexOf(a.label)));
+}
+
+function unsavePlace(p) { store.set(PLACES_KEY.saved, savedPlaces().filter(x => placeKey(x) !== placeKey(p))); }
+
+function savedLabel(p) { return savedPlaces().find(x => placeKey(x) === placeKey(p))?.label || null; }
+
+const PLACE_ICON = {
+  saved: '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="m10 2.8 2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 8.1l5-.7Z"/></svg>',
+  recent: '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2"/></svg>',
+  place: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17.5s5.5-5 5.5-9.5a5.5 5.5 0 0 0-11 0c0 4.5 5.5 9.5 5.5 9.5Z"/><circle cx="10" cy="8" r="2"/></svg>',
+  location: '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" stroke="none" d="M10 2.5 16.5 16 10 12.8 3.5 16Z" transform="rotate(45 10 10)"/></svg>',
+  map: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m3 5 4.5-1.8 5 1.8L17 3.2v11.8l-4.5 1.8-5-1.8L3 16.8Z"/><path d="M7.5 3.2v11.8M12.5 5v11.8"/></svg>'
+};
+
+function placeOptionRow(p, action, icon, extra = '') {
+  const data = Object.entries({ lat: p.lat, lon: p.lon, name: p.name, detail: p.detail || '', kind: p.kind, agency: p.agency || '', stop: p.stop || '', layer: p.layer || '' }).map(([k, v]) => `data-p-${k}="${esc(v)}"`).join(' ');
+  const meta = p.label && p.label !== p.name ? `${p.label} · ${p.detail || ''}` : p.detail || (p.kind === 'stop' ? AGENCY_SHORT[p.agency] || '' : '');
+  return `<li><button type="button" class="row result place-row" data-action="${action}" ${data} ${extra}><span class="place-icon ${icon === 'saved' ? 'is-saved' : ''}">${PLACE_ICON[icon] || PLACE_ICON.place}</span><span class="row-main"><span class="row-title">${esc(p.label === 'Home' || p.label === 'Work' ? p.label : p.name)}</span>${meta ? `<span class="row-meta">${esc(meta.replace(/ · $/, ''))}</span>` : ''}</span></button></li>`;
+}
+
+function placeFromRow(el) {
+  const d = el.dataset;
+  return { kind: d.pKind || 'place', name: d.pName, detail: d.pDetail || '', lat: Number(d.pLat), lon: Number(d.pLon), agency: d.pAgency || undefined, stop: d.pStop || undefined, layer: d.pLayer || undefined };
+}
+
+function autocompleteSectionHtml(action) {
+  const a = autocomplete;
+  if (a.query.length < 3) return '';
+  let body;
+  if (a.status === 'loading') body = '<li aria-hidden="true"><div class="row skeleton-row"><span class="sk sk-icon"></span><span class="row-main"><span class="sk sk-line"></span><span class="sk sk-line short"></span></span></div></li>'.repeat(3);
+  else if (a.status === 'error') body = '<li><p class="empty">Address search is unavailable right now. You can still choose a stop, your location, or a point on the map.</p></li>';
+  else if (a.status === 'limited') body = '<li><p class="empty">Address search is busy. Please wait a moment and try again.</p></li>';
+  else if (!a.results.length) body = `<li><p class="empty">No addresses or places match “${esc(a.query)}”.</p></li>`;
+  else body = a.results.map(p => placeOptionRow(p, action, 'place')).join('');
+  return `<section class="section suggest-section"><h2 class="label">Addresses and places</h2><ul class="rows" aria-busy="${a.status === 'loading'}">${body}</ul><p class="attribution-note">${esc(GEOCODER.attribution)}</p></section>`;
+}
+
+/* ---------- Place view: an address or point of interest chosen from search ---------- */
+
+function openPlace(p) {
+  closePopovers();
+  clearSearchField();
+  rememberPlace(p);
+  pushView({ name: 'place', place: p }, { detent: 'half' });
+  showPlacePin(p);
+  state.map?.easeTo({ center: [p.lon, p.lat], zoom: Math.max(state.map.getZoom(), 15.5), padding: cameraPadding(), duration: motionMs(700) });
+}
+
+let placePin = null;
+
+function showPlacePin(p) {
+  placePin?.remove(); placePin = null;
+  if (!p || !state.map || typeof maplibregl === 'undefined') return;
+  const el = document.createElement('div');
+  el.className = 'place-pin';
+  el.innerHTML = '<i></i>';
+  el.setAttribute('aria-hidden', 'true');
+  placePin = new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([p.lon, p.lat]).addTo(state.map);
+}
+
+function viewPlace({ place: p }) {
+  const label = savedLabel(p);
+  const covered = Boolean(regionFor(p));
+  const nearby = covered ? nearbyPlaces([p.lon, p.lat], 4) : [];
+  const d = state.userLocation ? distanceLabel(distanceMeters(state.userLocation, [p.lon, p.lat])) : '';
+  return `${backHeader()}
+    <div class="hero">
+      <h1 class="title-1">${esc(p.name)}</h1>
+      ${[p.detail, d ? `${d} away` : ''].some(Boolean) ? `<p class="caption">${esc([p.detail, d ? `${d} away` : ''].filter(Boolean).join(' · '))}</p>` : ''}
+    </div>
+    ${covered ? `<div class="action-bar">
+      <button class="button primary" data-action="place-directions">Directions</button>
+      <button class="button secondary" data-action="place-from">Leave from here</button>
+    </div>` : `<p class="plan-coverage place-coverage" role="status">Transit directions and nearby stops are not available here yet. Rove covers ${esc(regionListText())} today.</p>`}
+    <div class="inline-actions save-actions" style="padding:8px var(--pad) 0">
+      ${label ? `<button class="text-button" data-action="place-unsave">Remove from saved (${esc(label)})</button>` : `<button class="text-button" data-action="place-save" data-label="Home">Set as Home</button><button class="text-button" data-action="place-save" data-label="Work">Set as Work</button><button class="text-button" data-action="place-save" data-label="Saved">Save place</button>`}
+    </div>
+    ${covered ? `<section class="section"><h2 class="label">Nearby stops</h2>${nearby.length ? `<ul class="rows">${nearby.map(n => placeRow(n.place, distanceLabel(n.d))).join('')}</ul>` : '<p class="empty">No stops within a mile of this place.</p>'}</section>` : ''}`;
+}
+
+function matchingPersonalPlaces(q, limit = 3) {
+  const needle = normalizeSearch(q);
+  const seen = new Set();
+  const out = [];
+  for (const [p, icon] of [...savedPlaces().map(p => [p, 'saved']), ...recentPlaces().map(p => [p, 'recent'])]) {
+    const key = placeKey(p);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const hay = normalizeSearch(`${p.label || ''} ${p.name} ${p.detail || ''}`);
+    if (!needle || hay.includes(needle)) out.push([p, icon]);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function updatePlanSuggestions() {
+  const plan = state.plan;
+  const box = $('#planSuggest');
+  const form = $('.plan-form');
+  if (!box || !form) return;
+  form.classList.toggle('suggesting', Boolean(plan.focus));
+  for (const which of ['from', 'to']) $(`[data-plan-field="${which}"]`)?.setAttribute('aria-expanded', String(plan.focus === which));
+  if (!plan.focus) { box.innerHTML = ''; return; }
+  const q = plan.query.trim();
+  const other = plan[plan.focus === 'from' ? 'to' : 'from'];
+  const sections = [];
+  const top = [];
+  if (state.userLocation && other?.kind !== 'location' && (!q || 'your location'.startsWith(q.toLowerCase()))) top.push(placeOptionRow({ kind: 'location', name: 'Your location', lat: state.userLocation[1], lon: state.userLocation[0] }, 'plan-pick-location', 'location'));
+  else if (!state.userLocation && !q && 'geolocation' in navigator) top.push(`<li><button type="button" class="row result place-row" data-action="plan-locate"><span class="place-icon">${PLACE_ICON.location}</span><span class="row-main"><span class="row-title">Use my location</span><span class="row-meta">Your browser will ask for permission</span></span></button></li>`);
+  for (const [p, icon] of matchingPersonalPlaces(q, q ? 3 : 6)) top.push(placeOptionRow(p, 'plan-place', icon));
+  if (top.length) sections.push(`<ul class="rows">${top.join('')}</ul>`);
+  let stops = [];
+  if (q.length >= 2) {
+    stops = searchNetwork(q, { routes: false, stopLimit: 4 }).stops;
+    if (stops.length) sections.push(`<section class="section suggest-section"><h2 class="label">Stops and stations</h2><ul class="rows">${stops.map(({ a, s }) => `<li><button type="button" class="row result" data-action="plan-pick" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">${badgesFor(sortRoutes(routesForStop(a.id, s.id)), 3)}<span class="row-main"><span class="row-title">${highlight(s.n, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[a.id])}</span></span></button></li>`).join('')}</ul></section>`);
+  }
+  const places = autocomplete.target === plan.focus ? autocompleteSectionHtml('plan-place') : '';
+  if (places) {
+    if (!stationsLead(q, stops)) sections.splice(top.length ? 1 : 0, 0, places); else sections.push(places);
+  }
+  if (q.length > 0 && q.length < 3 && !sections.length) sections.push('<p class="empty">Keep typing to search addresses and places.</p>');
+  sections.push(`<ul class="rows"><li><button type="button" class="row result place-row" data-action="plan-map"><span class="place-icon">${PLACE_ICON.map}</span><span class="row-main"><span class="row-title">Choose on map</span><span class="row-meta">Tap any point on the map</span></span></button></li></ul>`);
+  box.innerHTML = sections.join('');
+}
+
+/* Resolves text the rider typed but did not pick from the list. Exact stop names win, then
+ * the geocoder's best match. Nothing is guessed: if neither finds it, the field is flagged. */
+
+async function resolveDraft(which) {
+  const plan = state.plan;
+  const text = plan.draft[which].trim();
+  if (!text) return null;
+  if (/^your location$/i.test(text) && state.userLocation) return currentLocationPlace();
+  const needle = normalizeSearch(text);
+  const personal = matchingPersonalPlaces(text, 6).find(([p]) => normalizeSearch(p.name) === needle || normalizeSearch(p.label || '') === needle);
+  if (personal) return { ...personal[0] };
+  const exact = searchNetwork(text, { routes: false, stopLimit: 8 }).stops.find(({ s }) => normalizeSearch(s.n) === needle);
+  if (exact) return placeFromStop(exact.a.id, exact.s.id);
+  const cached = autocomplete.query === text && autocomplete.status === 'done' ? autocomplete.results[0] : null;
+  if (cached) return cached;
+  try {
+    const results = await geocode(text, { mode: 'search', size: 1, signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+    if (results[0]) return results[0];
+  } catch (error) {
+    throw new PlanError('Address search is unavailable right now. Choose a suggestion, a stop, or a point on the map.', which);
+  }
+  throw new PlanError(`We could not find “${text}”. Check the address, or choose a suggestion or a point on the map.`, which);
+}
+
+function noRouteMessage(body) {
+  const code = body?.errors?.[0]?.code || '';
+  if (code === 'WALKING_BETTER_THAN_TRANSIT') return 'These places are close enough that walking is faster than transit.';
+  if (code === 'OUTSIDE_SERVICE_PERIOD') return 'Schedules are not available for that date. Choose a date closer to today.';
+  if (code === 'OUTSIDE_BOUNDS') return `One of these places is outside the area Rove can plan trips in. Trip planning is available in ${regionListText()} today.`;
+  if (code === 'NO_STOPS_IN_RANGE' || code === 'LOCATION_NOT_FOUND') return 'One of these places is too far from a transit stop to plan a trip. Try a nearby address or stop.';
+  return 'No transit route was found for this time. Try a different time, or start from a nearby stop.';
+}
+
+/* Indexes of plan.results.itineraries in the order chosen by plan.sort. */
+
+function sortedItineraryIndexes(sort = state.plan.sort) {
+  const plan = state.plan;
+  const its = plan.results?.itineraries || [];
+  const arriveBy = plan.results?.request?.arriveBy;
+  const ms = v => new Date(v).getTime();
+  const fastest = (a, b) => (arriveBy ? ms(b.startTime) - ms(a.startTime) : ms(a.endTime) - ms(b.endTime)) || (a.durationSeconds - b.durationSeconds);
+  const transfersOf = it => (Number.isFinite(it.transfers) ? it.transfers : 99);
+  const by = {
+    fastest,
+    transfers: (a, b) => transfersOf(a) - transfersOf(b) || fastest(a, b),
+    walking: (a, b) => (a.walkMeters ?? 1e9) - (b.walkMeters ?? 1e9) || fastest(a, b)
+  }[sort || 'fastest'];
+  return its.map((it, i) => [it, i]).sort((x, y) => by(x[0], y[0]) || x[1] - y[1]).map(([, i]) => i);
+}
+
+function legShapeMissing(leg) {
+  if (leg.mode === 'WALK') return false;
+  const c = leg.geometry?.coordinates;
+  if (!Array.isArray(c) || c.length < 2) return true;
+  return c.length === 2 && (leg.intermediateStops?.length || 0) > 0;
+}
+
+function focusLeg(i, { scroll = false } = {}) {
+  const it = state.journey;
+  const leg = it?.legs?.[i];
+  if (!leg) return;
+  state.focusLeg = state.focusLeg === i ? null : i;
+  renderJourney();
+  if (currentView().name === 'results') {
+    render();
+    if (scroll) requestAnimationFrame(() => $(`.timeline [data-leg="${i}"]`)?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' }));
+  }
+  if (state.focusLeg == null) { fitJourney(it); return; }
+  const c = leg.geometry?.coordinates;
+  fitCoordinates(Array.isArray(c) && c.length >= 2 ? c : [[leg.from?.lon, leg.from?.lat], [leg.to?.lon, leg.to?.lat]], 16);
+}
+
+function journeyPointFeatures(itinerary) {
+  if (!itinerary) return { type: 'FeatureCollection', features: [] };
+  const legs = itinerary.legs || [];
+  const out = [];
+  const add = (p, kind, color, legIndex) => {
+    if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
+    const near = out.find(f => distanceMeters(f.geometry.coordinates, [p.lon, p.lat]) < 40);
+    if (near) { near.properties.kind = 'transfer'; return; }
+    out.push({ type: 'Feature', properties: { kind, color, name: p.name || '', legIndex }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } });
+  };
+  legs.forEach((leg, i) => {
+    if (leg.mode === 'WALK') return;
+    const color = legInfo(leg).color;
+    if (!leg.staySeated) add(leg.from, 'board', color, i);
+    const next = legs[i + 1];
+    if (!(next && next.mode !== 'WALK' && next.staySeated)) add(leg.to, 'alight', color, i);
+  });
+  return { type: 'FeatureCollection', features: out };
+}
+
+function setPlanFocus(which) {
+  const plan = state.plan;
+  if (plan.focus === which) return;
+  plan.focus = which;
+  plan.query = which ? (plan[which] ? '' : plan.draft[which]) : '';
+  if (which) requestAutocomplete(plan.query, which);
+  updatePlanSuggestions();
+}
+
+/* Enter in a trip field: take the first suggestion, or move on to finding routes. */
+
+function commitPlanField(which) {
+  const plan = state.plan;
+  if (plan.draft[which].trim() && autocomplete.target === which && autocomplete.status === 'loading') { autocomplete.commitOnResults = which; return; }
+  const first = $('#planSuggest .result:not([data-action="plan-map"]):not([data-action="plan-locate"])');
+  if (plan.draft[which].trim() && first) { handleAction(first); return; }
+  if (!plan.draft[which].trim() && plan[which] && which === 'from' && !plan.to && !plan.draft.to) { $('#planTo')?.focus(); return; }
+  setPlanFocus(null);
+  submitPlan();
+}
+
+async function refinePointName(p) {
+  const found = await reverseGeocode(p.lat, p.lon);
+  if (!found) return;
+  p.name = found.name; p.detail = found.detail;
+  const inPlan = state.plan.from === p || state.plan.to === p;
+  if (inPlan && currentView().name === 'plan') {
+    for (const which of ['from', 'to']) {
+      const input = $(`[data-plan-field="${which}"]`);
+      if (state.plan[which] === p && input && document.activeElement !== input) input.value = p.name;
+    }
+  }
+}
+
+/* ---------- Routing regions ----------
+ * Address search works anywhere in the United States. Trip planning works only where Rove has a
+ * verified routing graph. Today that is one region; the server can list more in
+ * /api/v2/plan/status as { regions: [{ id, name, status, bounds }] }, and the frontend uses that
+ * list when present. The default below matches PLAN_BOUNDS in the backend's lib/routing/otp.mjs. */
+const DEFAULT_ROUTING_REGIONS = [
+  { id: 'bay-area', name: 'the San Francisco Bay Area', status: 'verified', bounds: { minLat: 36.9, maxLat: 38.2, minLon: -122.75, maxLon: -121.4 } }
+];
+
+function routingRegions() {
+  const listed = state.planStatus?.regions;
+  const valid = Array.isArray(listed) ? listed.filter(r => r?.id && r?.name && ['minLat', 'maxLat', 'minLon', 'maxLon'].every(k => Number.isFinite(r.bounds?.[k]))) : [];
+  return valid.length ? valid : DEFAULT_ROUTING_REGIONS;
+}
+
+function regionFor(p) {
+  if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return null;
+  return routingRegions().find(r => p.lat >= r.bounds.minLat && p.lat <= r.bounds.maxLat && p.lon >= r.bounds.minLon && p.lon <= r.bounds.maxLon) || null;
+}
+
+/* "the San Francisco Bay Area", or "the San Francisco Bay Area and Greater Boston". */
+function regionListText() {
+  const names = routingRegions().map(r => r.name);
+  return names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
+}
+
+/* Whether a trip between the chosen places can be planned. Returns null when it can. */
+function planCoverageIssue() {
+  const { from, to } = state.plan;
+  const rf = from ? regionFor(from) : undefined;
+  const rt = to ? regionFor(to) : undefined;
+  const where = `Trip planning is available in ${regionListText()} today.`;
+  if (rf === null && rt === null) return { field: 'both', text: `Rove cannot plan trips between these places yet. ${where}` };
+  if (rf === null) return { field: 'from', text: `Rove cannot plan trips from this starting point yet. ${where}` };
+  if (rt === null) return { field: 'to', text: `Rove cannot plan trips to this destination yet. ${where}` };
+  if (rf && rt && rf.id !== rt.id) return { field: 'to', text: 'Rove cannot plan trips between two different regions yet. Choose a starting point and destination in the same region.' };
+  return null;
 }
 
 /* @@INSERT */
@@ -2262,14 +2830,13 @@ async function init() {
     $('#mapLoading').innerHTML = '<span>The map could not be loaded. Search and stop information still work.</span>';
   } else {
     const style = await fetchStyle(mode);
-    const b = state.network.bounds;
     state.map = new maplibregl.Map({
       container: 'map',
       style,
       center: [-122.2, 37.7],
       zoom: isMobile() ? 8.6 : 9.3,
+      minZoom: 2.5,
       maxZoom: 18.5,
-      maxBounds: b ? [[b[0] - 0.6, b[1] - 0.4], [b[2] + 0.6, b[3] + 0.4]] : undefined,
       attributionControl: false,
       dragRotate: false,
       pitchWithRotate: false,
