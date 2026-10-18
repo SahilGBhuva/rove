@@ -162,3 +162,31 @@ Every screen was inspected in light and dark mode. No horizontal overflow, no co
 - Fixed: stop names in Nearby and similar lists now start at the same position, whatever the number of line badges.
 
 Tests on the final code: real-data journeys (`qa5`, real backend and OTP; steps and Drive through the test-only prototype), the Phase 2 and Phase 3 suites on the fallback server, a visual review of every main screen at 390 x 844 and 1440 x 900, and the drop-off UI test above. No page errors, no horizontal overflow, no overlapping controls.
+
+## Final integration test against backend `7e1c2f2` (October 18, 2026)
+
+Setup: this frontend served by the backend's own `server.mjs` at `7e1c2f2`, real OpenTripPlanner 2.8.1 (graph built from the backend's checksum-verified inputs, the backend's `router-config.json`), and the backend's full place index. No shim or mock in the routing or search path. Map tiles are blocked in the test environment, so the plain fallback basemap was used. Phone 390 x 844 and desktop 1440 x 900.
+
+Real tests (all passed, no page errors, no horizontal overflow, no controls under the panel):
+
+- Walk to transit with turn-by-turn steps: UC Berkeley to Ferry Building, Stanford University to San Jose Diridon, Sunnyvale Station to SFO, 1105 Lily Avenue to SFO.
+- Park and ride, 1105 Lily Avenue to SFO: 7 minute drive to the Sunnyvale Caltrain lot (439 spaces mapped), 7 driving steps, route notes shown.
+- Drop-off, 1105 Lily Avenue to SFO: 5 minute drive to a street near Lawrence Station, then a walk to the platform. From Half Moon Bay the drop-off drive was 18 minutes, inside the 20 minute limit.
+- No service at 2:30 am (Milpitas to Fremont): "No transit route was found for this time."
+- Place search: "UC Berkeley" and "Stanford University" return the campuses first. The Berkeley point is in the hills (backend request 15).
+- Muni Metro (N Judah) and VTA light rail (Green, Orange) show as light rail.
+- Platforms appear on BART legs in trip results and navigation.
+
+Simulated tests (live feeds are blocked in the test environment; the backend reported `bartUpdates` network errors and no 511 key):
+
+- Departure boards with live, stale ("Updated 10 min ago. Live times may be out of date.") and unverified BART arrivals, an alert, an Antioch line trip and an added trip.
+- Planner outage (503), network loss, and address search down.
+
+Not tested with real live data: BART and 511 arrivals and alerts. Run `npm run rove` on the Mac and open a BART station and a Muni, VTA, Caltrain and AC Transit stop.
+
+Fixed in this pass:
+
+- A 404 "no route" answer from `/api/v2/plan` was shown as "Trip planning is offline" and turned the planner off.
+- Drop-off drives were labeled as park-and-ride.
+- The backend's step `instruction`, parking capacity and `routing.notes` are now shown, and the Drive and Drop-off hints state the drive limit from `/api/v2/status`.
+- Unscheduled BART arrivals now say whether they are an Antioch line train or an extra train, from the backend's `note`.

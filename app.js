@@ -1397,7 +1397,7 @@ function departureRow(group, first, agencyId) {
     <span class="when"><strong>${esc(m.value)}</strong>${m.unit ? `<span>${m.unit}</span>` : ''}</span>
     <span class="what">${badge}<div class="row-title" style="margin-top:6px">${esc(title)}</div>
       <div class="status ${status.cls}">${ICONS.live}${esc(status.text)}</div>
-      ${group.unscheduled ? '<div class="then">Not in the published schedule, so the line is not shown.</div>' : ''}
+      ${group.unscheduled ? `<div class="then">${group.antioch ? 'Antioch line train (Pittsburg Center and Antioch). BART does not publish a schedule match for these trips.' : 'Extra train not in the published schedule, so the line is not shown.'}</div>` : ''}
       ${laterText ? `<div class="then">${esc(laterText)}</div>` : ''}</span>
     <span class="row-end"></span></li>`;
 }
@@ -1511,13 +1511,19 @@ function viewPlan() {
           ${plan.timeMode !== 'now' ? `<input type="datetime-local" id="planDateTime" aria-label="Date and time" class="${plan.errorField === 'time' ? 'invalid' : ''}" value="${esc(plan.dateTime || localInputValue(new Date()))}" />` : ''}
         </div>
         ${plan.driveNote && !driveOk ? '<p class="caption plan-hint" id="driveNote" role="status">Driving to a station is not available yet. Rove plans walking connections to transit today.</p>' : ''}
-        ${access === 'CAR_PARKING' ? '<p class="caption plan-hint">Rove drives you to a park-and-ride lot, then plans transit from there. Parking availability is not known.</p>' : ''}
-        ${access === 'CAR_DROP_OFF' ? '<p class="caption plan-hint">Someone drives you to the station and drops you off, then Rove plans transit from there.</p>' : ''}`}
+        ${access === 'CAR_PARKING' ? `<p class="caption plan-hint">Rove plans a drive to a park-and-ride lot, then transit from there. ${driveLimitText()}Parking availability is not known.</p>` : ''}
+        ${access === 'CAR_DROP_OFF' ? `<p class="caption plan-hint">Rove plans a drive to a street near the station, where you are dropped off, then transit from there. ${driveLimitText()}</p>` : ''}`}
         ${submit}
         ${plan.loading ? '<ul class="itineraries skeleton-list" aria-hidden="true">' + '<li><div class="itinerary"><span class="sk sk-line"></span><span class="sk sk-bar"></span><span class="sk sk-line short"></span></div></li>'.repeat(3) + '</ul>' : ''}
         ${plan.error ? `<p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>` : ''}
       </div>
     </form>`;
+}
+
+/* "Drives are limited to 20 minutes and do not include traffic. " from /api/v2/status. */
+function driveLimitText() {
+  const max = state.planStatus?.maxDriveMinutes;
+  return max ? `Drives are limited to ${max} minutes and do not include traffic. ` : 'Drive times do not include traffic. ';
 }
 
 /* Driving to a park-and-ride lot needs the server to say it can route it (/api/v2/status). */
@@ -1574,6 +1580,8 @@ async function submitPlan() {
     render();
     const response = await fetch(`/api/v2/plan?${params}`, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(35000) : undefined });
     const body = await response.json().catch(() => null);
+    // The planner answers 404 with an empty itinerary list when there is no route; that is not an outage.
+    if (response.status === 404 && Array.isArray(body?.itineraries)) throw new PlanError(noRouteMessage(body));
     if (!response.ok) {
       const err = planErrorMessage(response.status, body);
       if (err.offline) state.planStatus = { available: false, reason: response.status === 404 ? 'missing' : 'ROUTING_UNAVAILABLE', checkedAt: Date.now() };
@@ -1581,7 +1589,7 @@ async function submitPlan() {
     }
     const itineraries = (body?.itineraries || []).map(normalizeItinerary).filter(it => it.legs.length);
     if (!itineraries.length) throw new PlanError(noRouteMessage(body));
-    plan.results = { itineraries, request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
+    plan.results = { itineraries, notes: Array.isArray(body.routing?.notes) ? body.routing.notes.filter(n => typeof n === 'string') : [], request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
     plan.sort = 'fastest';
     plan.expanded = sortedItineraryIndexes()[0];
     plan.loading = false;
@@ -1698,6 +1706,7 @@ function viewResults() {
       <button type="button" class="text-button" data-action="back">Edit</button>
     </div>
     <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
+    ${plan.results?.notes?.length ? `<ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${areaNoteHtml()}
     ${its.length > 1 ? `<div class="segmented sort-switch" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
     <ul class="itineraries">${order.map(i => {
@@ -1725,7 +1734,7 @@ function itineraryTimeline(it) {
   legs.forEach((leg, i) => {
     const focused = focus === i ? ' leg-focused' : '';
     if (leg.mode === 'CAR') {
-      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail drive"><span class="glyph">${MODE_ICONS.car}</span></span><span class="body">${legLink(i, `Drive${Number.isFinite(leg.distanceMeters) ? ` ${distanceLabel(leg.distanceMeters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))} to ${esc(parkingLabel(leg, legs))}</span>${stepsListHtml(leg, 'Driving directions')}</span></li>`);
+      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail drive"><span class="glyph">${MODE_ICONS.car}</span></span><span class="body">${legLink(i, `Drive${Number.isFinite(leg.distanceMeters) ? ` ${distanceLabel(leg.distanceMeters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))} to ${esc(parkingLabel(leg, legs))}</span>${leg.to?.parking ? `<span class="row-meta">${leg.to.parkingCapacity ? `${esc(leg.to.parkingCapacity.toLocaleString('en-US'))} spaces mapped. ` : ''}Space availability is not known.</span>` : ''}${stepsListHtml(leg, 'Driving directions')}</span></li>`);
       return;
     }
     if (leg.mode === 'WALK') {
@@ -2252,7 +2261,7 @@ async function fetchArrivals(place, { maxAgeMs = 25000 } = {}) {
       for (const a of arrivals) {
         const route = a.routeId ? idx.routes.get(routeKey(place.a.id, a.routeId)) : null;
         const gk = `${a.routeId || a.routeName}|${a.headsign || ''}`;
-        if (!groups.has(gk)) groups.set(gk, { route, label: route ? null : a.routeName || AGENCY_SHORT[place.a.id] || 'Transit', headsign: a.headsign || null, unscheduled: a.scheduled === false, times: [] });
+        if (!groups.has(gk)) groups.set(gk, { route, label: route ? null : a.routeName || AGENCY_SHORT[place.a.id] || 'Transit', headsign: a.headsign || null, unscheduled: a.scheduled === false, antioch: a.scheduled === false && /antioch line/i.test(a.note || ''), times: [] });
         groups.get(gk).times.push({ time: a.time, delay: a.delay });
       }
       const list = [...groups.values()].map(g => { g.times.sort((x, y) => x.time - y.time); return g; }).sort((x, y) => x.times[0].time - y.times[0].time);
@@ -2308,7 +2317,7 @@ async function fetchPlanStatus(force = false) {
     if (response.ok) {
       const body = await response.json().catch(() => ({}));
       const routing = body.routing || {};
-      next = { available: routing.available !== false, reason: routing.available === false ? routing.code || 'ROUTING_UNAVAILABLE' : null, access: Array.isArray(routing.access) ? routing.access : ['WALK'], walkSteps: Boolean(routing.walkSteps) };
+      next = { available: routing.available !== false, reason: routing.available === false ? routing.code || 'ROUTING_UNAVAILABLE' : null, access: Array.isArray(routing.access) ? routing.access : ['WALK'], walkSteps: Boolean(routing.walkSteps), maxDriveMinutes: Number.isFinite(routing.maxDriveMinutes) ? routing.maxDriveMinutes : null };
       if (body.search && body.search.addresses === false) geocodeBackend = 'missing';
     } else {
       response = await fetch('/api/v2/plan/status', { cache: 'no-store' });
@@ -2343,7 +2352,7 @@ function normalizeItinerary(it) {
     const transit = Boolean(leg.transit);
     const startTime = leg.start?.estimated || leg.start?.scheduled;
     const endTime = leg.end?.estimated || leg.end?.scheduled;
-    const end = p => p ? { name: displayName(p.stop?.station?.name || p.name || ''), lat: p.lat, lon: p.lon, platform: p.stop?.platform || null, stopName: p.name, parking: p.parking?.name || null } : null;
+    const end = p => p ? { name: displayName(p.stop?.station?.name || p.name || ''), lat: p.lat, lon: p.lon, platform: p.stop?.platform || null, stopName: p.name, parking: p.parking ? (p.parking.name || 'Parking') : null, parkingCapacity: Number.isFinite(p.parking?.capacity) ? p.parking.capacity : null } : null;
     return {
       mode: transit ? 'TRANSIT' : (leg.mode === 'CAR' ? 'CAR' : 'WALK'),
       transitMode: leg.mode,
@@ -2881,7 +2890,8 @@ function noRouteMessage(body) {
   if (code === 'OUTSIDE_SERVICE_PERIOD') return 'Schedules are not available for that date. Choose a date closer to today.';
   if (code === 'OUTSIDE_BOUNDS') return 'One of these places is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.';
   if (code === 'NO_STOPS_IN_RANGE' || code === 'LOCATION_NOT_FOUND') return 'One of these places is too far from a transit stop to plan a trip. Try a nearby address or stop.';
-  return 'No transit route was found for this time. Try a different time, or start from a nearby stop.';
+  if (code === 'NO_TRANSIT_CONNECTION' || code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW' || !body?.errors?.[0]?.message) return 'No transit route was found for this time. Try a different time, or start from a nearby stop.';
+  return body.errors[0].message;
 }
 
 /* A city or neighborhood picked as an end point is routed from its center, which can be far from
@@ -3044,6 +3054,8 @@ function parkingLabel(leg, legs) {
   const name = leg.to?.parking || '';
   const next = legs ? legs[legs.indexOf(leg) + 1] : null;
   const station = next?.mode === 'WALK' ? next.to?.name : null;
+  // A drive that does not end at a parking lot is a drop-off.
+  if (!name) return `the drop-off point near ${station || leg.to?.name || 'the station'}`;
   if (name && !/^(p\s*\+\s*r|p\s*&\s*r|park\s*(and|&|n)\s*ride|parking|parking lot)$/i.test(name.trim())) return /parking|garage|\blot\b/i.test(name) ? name : `${name} parking`;
   if (station) return `the park-and-ride lot at ${station}`;
   return leg.to?.name || 'the park-and-ride lot';
@@ -3062,6 +3074,7 @@ const STEP_VERBS = {
 };
 
 function stepText(s) {
+  if (s.instruction) return s.instruction;
   const street = s.streetName && !/^(path|bike path|footpath|sidewalk|service road|steps|parking aisle|open area|corridor|footbridge|underpass|crosswalk|elevator|ramp|link|road|track|alley|bridleway)$/i.test(s.streetName) ? s.streetName : null;
   const where = street ? ` onto ${street}` : '';
   switch (s.relativeDirection) {

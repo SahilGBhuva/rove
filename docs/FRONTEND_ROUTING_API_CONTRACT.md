@@ -1,6 +1,6 @@
 # Frontend use of the backend API
 
-Updated October 18, 2026. The authoritative contract is `docs/API_CONTRACT.md` on the backend branch (`claude-development`, commit `fb4d30c`). This file records how the frontend on `claude-frontend` uses it, and what the frontend asks the backend to change.
+Updated October 18, 2026. The authoritative contract is `docs/API_CONTRACT.md` on the backend branch (`claude-development`, commit `7e1c2f2`). This file records how the frontend on `claude-frontend` uses it, and what the frontend asks the backend to change.
 
 The earlier `POST /api/journeys` proposal is withdrawn. The frontend now uses the backend's real endpoints.
 
@@ -12,7 +12,7 @@ The earlier `POST /api/journeys` proposal is withdrawn. The frontend now uses th
 | `GET /api/v2/arrivals?agency=&stop=` | Departures on stop pages, and the next departure on nearby and saved rows. Cached for 25 seconds per stop. | `fetchArrivals`, `viewStop`, `placeRow` |
 | `GET /api/v2/status` | Whether routing and address search are available, and which ways of reaching transit the planner supports (`routing.access`). Falls back to `/api/v2/plan/status` on older servers. | `fetchPlanStatus`, `driveSupported` |
 | `GET /api/v2/plan/status` | Fallback for the above. | `fetchPlanStatus`, `planNoticeHtml` |
-| `GET /api/v2/plan` | Trip results, timeline, and step-by-step navigation. Adds `access=CAR_PARKING` when the rider chooses Drive and the server supports it. | `submitPlan`, `normalizeItinerary`, `viewResults`, `buildSteps` |
+| `GET /api/v2/plan` | Trip results, timeline, and step-by-step navigation. Adds `access=CAR_PARKING` (Drive) or `access=CAR_DROP_OFF` (Drop-off) when the rider chooses one and `/api/v2/status` lists it. Shows `routing.notes`, step `instruction`s, parking capacity, and `maxDriveMinutes`. | `submitPlan`, `normalizeItinerary`, `viewResults`, `buildSteps` |
 | `GET /api/realtime` | Fallback only, when `/api/v2/realtime` returns 404 (an older server). | `loadRealtime` |
 
 Origin and destination can be any address or place. Suggestions combine, in this order: your location, saved and recent places (stored in the browser), stops and stations from the browser's copy of `network.json`, and addresses and places from the geocoder. Stations lead only when the query names one; otherwise addresses lead. Riders can also choose any point on the map, or right-click the map on desktop. The frontend sends the chosen point's coordinates and name to `/api/v2/plan` unchanged.
@@ -47,37 +47,39 @@ Rove covers the San Francisco Bay Area only. `SERVICE_AREA` in `app.js` matches 
 - Arrivals with status `unverified` show "Live arrivals are unavailable right now" instead of an empty board. `canceled` entries are listed separately as "Canceled" or "Not stopping here". `stale` arrivals show their age and "Live times may be out of date."
 - Vehicles are drawn only when `routeId` is not null. BART never has vehicles.
 
-## Compatibility with the backend at `fb4d30c` (checked October 18, 2026)
+## Compatibility with the backend at `7e1c2f2` (checked October 18, 2026)
 
-`fb4d30c` is the latest commit on `claude-development`. The backend working copy also has uncommitted realtime-matching changes, which were not read as part of the contract.
+`7e1c2f2` is the latest commit on `claude-development`. Tested end to end: this frontend served by the backend's own `server.mjs` at `7e1c2f2`, real OpenTripPlanner 2.8.1 with the backend's `router-config.json`, and the backend's full place index (880,197 addresses). See `FRONTEND_NOTES.md` for results.
 
 | Backend feature | Frontend status |
-|---|---|
-| `GET /api/v2/status` | Used. Routing availability, address search, and `routing.access` decide what the planner offers. |
-| `GET /api/v2/places/search`, `/reverse` | Used first, with `near`. Kinds `address`, `poi`, `street`, `area`, `station`, `stop` all render; `approximate` results show their note. |
-| `GET /api/v2/plan` | Used. Response shape matches; tested end to end against real OTP. Errors 400, 404, 502, 503 handled without inventing trips. |
-| `GET /api/v2/arrivals` with `scheduled: false` | Handled: shown as "BART · Live" with a note, no line guessed. |
-| `POST /api/journeys` | Not used. `GET /api/v2/plan` covers the same planner. |
-| Walk and drive `steps` | Not in `fb4d30c`. The frontend accepts `distanceMeters` or OTP's `distance`, and shows directions only when steps are present. |
-| `access=CAR_PARKING` (Drive) | Not in `fb4d30c`. Drive appears but stays unavailable until `/api/v2/status` lists it. |
-| `access=CAR_DROP_OFF` (Drop-off) | Not in `fb4d30c`. A Drop-off option appears only when `/api/v2/status` lists it. Note: OTP 2.8.1's `planConnection` refused `CAR_DROP_OFF` as an access mode on the real graph ("CAR_PICKUP needs to be combined with WALK mode for the same leg"), so the backend will need a different query to support it. |
-| One-command startup | Not in `fb4d30c`. The manual steps are below. |
+| --- | --- |
+| `GET /api/v2/status` | Used. `routing.access`, `walkSteps` and `maxDriveMinutes` decide what the planner offers and say. |
+| `GET /api/v2/places/search`, `/reverse` | Used first, with `near`. |
+| `GET /api/v2/plan` | Used. A 404 with an `itineraries` array is "no route", not an outage (fixed in this pass; it used to show "Trip planning is offline"). |
+| Walk and drive `steps` with `instruction` | Used. The backend's `instruction` text is shown as is. |
+| `access=CAR_PARKING` | Used. The drive row shows the lot name, mapped spaces, and "Space availability is not known." |
+| `access=CAR_DROP_OFF` | Used. The drive row says "to the drop-off point near <station>" (it used to say park-and-ride). |
+| `routing.notes` | Shown under the results caption. |
+| `GET /api/v2/arrivals` with `scheduled: false` | Shown as "BART · Live". A `note` naming the Antioch line is shown as an Antioch line train; other unscheduled trips as an extra train. |
+| Light rail (`type: 0`) in `network.json` | Muni Metro and VTA light rail show as light rail. |
+| `.woff2` content type | Fixed in the backend. |
+| `POST /api/journeys` | Not used. |
 
- "Trip planning is not available right now"
+### Running the real thing
 
-`npm start` in the frontend working copy runs that branch's own `server.mjs`, which predates the v2 API and only serves `/api/realtime`. `/api/v2/status` and `/api/v2/plan/status` return 404 there, so the planner correctly reports that trip planning is unavailable. Nothing is wrong with the frontend; it is running without the backend.
+`npm run rove` in `~/rove-claude` starts OpenTripPlanner and the server, on port 4173 or the next free port. If an old server is still running on 4173 (for example an earlier `npm start` in `~/rove-frontend`), that old copy answers on 4173 and shows "Trip planning is not available right now". Stop it, or open the port `npm run rove` prints.
 
-To run the real thing before the branches are merged (without changing either working copy):
-
-1. Make a separate worktree of the backend branch: `git -C ~/rove-claude worktree add ~/rove-integration claude-development`.
-2. Copy the frontend files into it: `cp ~/rove-frontend/{index.html,app.js,styles.css} ~/rove-integration/` and `cp -R ~/rove-frontend/public/fonts ~/rove-integration/public/`.
-3. Give it the backend's data: link or copy `data/raw`, `data/extracted`, `data/places/bay-area-places.sqlite`, `data/otp/bin` and `data/otp/graph` from `~/rove-claude`.
-4. Start OpenTripPlanner: `npm run otp:start` (build the graph first with `npm run otp:build` if `data/otp/graph/graph.obj` is missing).
-5. Start the server: `npm start`, then open `http://localhost:4173`. `/api/v2/status` should report `routing.available: true` and `search.addresses: true`.
-
-At merge time the same four frontend paths (`index.html`, `app.js`, `styles.css`, `public/fonts/`) replace the backend branch's copies. The backend's `server.mjs` and `lib/` stay as they are.
+To try this frontend before the branches are merged, copy `index.html`, `app.js`, `styles.css` and `public/fonts/` from `~/rove-frontend` into a separate worktree of `claude-development` and run `npm run rove` there. At merge time the same four paths replace the backend branch's copies; the backend's `server.mjs`, `lib/` and `public/data/network.json` stay as they are.
 
 ## Requests for the backend
+
+**New after `7e1c2f2` (found in final integration testing)**
+
+15. **UC Berkeley place point.** Request: `GET /api/v2/places/search?q=UC%20Berkeley&limit=3`. Response, first result: `{"name":"University of California, Berkeley","kind":"poi","category":"University","address":"Oakland","lat":37.8755,"lon":-122.239069,"id":"osm:975983"}`. The point is in the hills east of campus, and the address says Oakland. A trip from it starts "Head southeast on the path, Turn right onto Centennial Drive" and walks 1.2 miles to the first bus. Expected: a point in central campus (near Sather Tower, about 37.8721, -122.2578) and "Berkeley". Suggest using the OSM label or admin-centre node, or a curated point, for large campuses. Stanford is fine (450 Jane Stanford Way).
+16. **Platform on arrivals.** `/api/v2/arrivals` gives `stopId` (for example `M50-2`) but no platform. Trip plans already carry `stop.platform` from GTFS. Please add `platform` to each arrival so the departure board can show it; the frontend will not parse stop IDs to guess it.
+17. **Park-and-ride "no stops" message (minor).** `GET /api/v2/plan?fromLat=37.4636&fromLon=-122.4286&toLat=37.7955&toLon=-122.3937&time=2026-10-20T08:00:00-07:00&access=park-and-ride` returns 200, no itineraries, and `NO_STOPS_IN_RANGE` with "No transit stops are within walking distance." For a drive, expected wording is about no park-and-ride lot within the drive limit. The frontend shows its own neutral text for this code, so this is not a demo blocker.
+
+**Done in `7e1c2f2`:** requests 3 (fonts), 4 (light rail type), 12 (steps), 13 (park and ride, with a 20 minute cap), and drop-off. Request 14: Stanford University and UC Berkeley now come first; see 15 for the Berkeley point.
 
 **New in Phase 5 (verified against the real OTP graph through a prototype; see `FRONTEND_NOTES.md`)**
 
