@@ -215,3 +215,28 @@ Tests (all passed; no page errors, horizontal overflow, small tap targets, or co
 - No service at 2:30 am, Muni N and VTA Green shown as light rail, home and planner entry point with keyboard.
 - Simulated: planner outage, network loss, address search down; live, stale, and unavailable arrival boards.
 - Screen review of home, address search, place, stop, planner, results, and map layers on phone and desktop.
+
+## Map visibility fix and design language v3 (October 18, 2026)
+
+Source: `~/rove-cac/map-ux-regression-audit.md` (P0: bus network nearly invisible).
+
+Bugs fixed, with their causes:
+
+- **Bus routes invisible at normal zoom (P0).** `tr-bus` started at zoom 11.5 and only reached 0.38 opacity at 12.5, in one gray for every route, so at the opening view (9.3 desktop, 8.6 phone) and most city views no bus was visible. Bus routes now fade in from zoom 10 (0.5 opacity by 10.6, 0.64 at 12, 0.82 at 14), are drawn in each route's own GTFS color (Muni blue and Rapid red, VTA Frequent red, AC Transit's colors) with a thin casing, and stay under rail. The regional view (below zoom 10) stays rail only on purpose; the Bus lines switch in the layers panel says "Appear as you zoom in to a city."
+- **Bus stops, labels and vehicles hidden too long.** Bus stops now appear at zoom 14.5 (was 15), bus stop names at 16.3 (there were none), live buses at 12.5 (was 13.5). A selected line and its stops show at every zoom.
+- **Near-black and pale route colors unreadable on some styles.** Several AC Transit routes are #000000 and some Muni lines are pale cyan. `mapLineColor()` mixes a route's color toward ink (Standard) or white (Dark, Satellite) only until it reaches a minimum contrast with that map's base; colors that already read well are unchanged. Journeys and live vehicles use the same rule.
+- **Satellite used the light palette.** It now has its own: dark casings under every line, light labels with dark halos, and slightly darker, less saturated imagery so transit colors lead.
+- **No way to hide buses or rail, and no sign that a saved filter was on.** The layers panel has Rail lines and Bus lines switches, a "Show everything" reset, and the layers button shows a dot while anything is hidden.
+- **Stops vanished at high zoom when the font server failed.** MapLibre drops a whole source tile when one symbol layer in it cannot load glyphs, so the new bus-stop labels would have taken the stop dots with them. Every label layer now has its own source.
+- **BART bus bridges (BB-A, BB-B) drew nothing.** BART publishes no shape for these temporary routes (their trips have no `shape_id`; service is two weekend dates). Rove does not invent geometry: the line page says "BART has not published a route shape for this line, so the map shows its stops only," and the map frames the stops.
+- **Intro card covered the loading screen.** The introduction now waits for the map.
+- **Basemap outage and offline were silent.** A chip over the map says when map details or satellite imagery are not loading (transit still shows) and when the device is offline.
+
+Design language v3: one elevation scale (no blur), 8/12/18 px radii, a visible keyboard focus ring everywhere, shared hover and press states, a floating 18 px panel, a 46 px control column, a style picker with previews, shimmer skeletons, and a loader that draws a line between two stops. Motion: views rise in over 340 ms, a selected line draws itself in (line-gradient on line-progress), a planned trip fades onto the map, the live symbol pulses gently, and the four-card introduction has small illustrations that play once. With reduced motion, everything appears in its finished state.
+
+Tests:
+
+- `npm test` (new, `test/frontend-map.test.mjs`, no dependencies): zoom rules for buses, stops and vehicles; route colors on buses; label sources; layer order; every agency color visible on all three styles; Satellite palette; the only shapeless lines are BB-A and BB-B.
+- `npm run verify-map-render` (new, needs Playwright): asks MapLibre what it drew in San Francisco, Oakland and Sunnyvale at zooms 9, 11, 12 and 14 in all three styles, plus selection and the Bus switch. 75 checks passed against backend `76bfe8b` here (basemap hosts blocked, so this checks transit layers, not imagery).
+- The full frontend QA (journeys by walk, park and ride and drop-off at phone and desktop sizes, navigation, failures, live boards) passed with no page errors or layout problems; reduced motion checked separately.
+- Real basemap, live data: on the Mac at `localhost:4175`, bus routes are visible in route colors across San Francisco at zoom 12, with live Muni vehicles.

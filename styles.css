@@ -607,3 +607,207 @@ body.theme-dark { --shadow-panel: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(
 .segmented.mode-switch.three { grid-template-columns: repeat(3, 1fr); flex-basis: 100%; }
 .route-notes { list-style: none; margin: 8px var(--pad) 0; padding: 10px 12px; border-radius: var(--radius); background: var(--paper); border: 1px solid var(--rule); font-size: 13.5px; line-height: 19px; color: var(--ink-2); }
 .route-notes li + li { margin-top: 4px; }
+
+/* ======================================================================
+ * Rove design language, v3
+ * Quiet surfaces, one accent, and the agencies' own colors on the map.
+ * Depth comes from soft, layered shadows rather than blur; motion is short,
+ * eased, and only ever explains a change (a view arriving, a line drawing).
+ * ====================================================================== */
+:root {
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --hairline: rgba(17, 18, 20, .08);
+  --elev-1: 0 0 0 1px var(--hairline), 0 1px 2px rgba(17, 18, 20, .06), 0 2px 8px rgba(17, 18, 20, .06);
+  --elev-2: 0 0 0 1px var(--hairline), 0 2px 6px rgba(17, 18, 20, .05), 0 12px 32px rgba(17, 18, 20, .12);
+  --elev-3: 0 0 0 1px var(--hairline), 0 4px 10px rgba(17, 18, 20, .07), 0 18px 48px rgba(17, 18, 20, .16);
+  --focus-ring: 0 0 0 3px rgba(47, 107, 255, .38);
+  --hover: rgba(17, 18, 20, .045);
+  --press: rgba(17, 18, 20, .08);
+  --dur-1: .14s;
+  --dur-2: .22s;
+  --dur-3: .34s;
+  --ease-out: cubic-bezier(.22, .8, .24, 1);
+  --shadow: var(--elev-1);
+  --shadow-panel: var(--elev-2);
+}
+body.theme-dark {
+  --hairline: rgba(255, 255, 255, .08);
+  --elev-1: 0 0 0 1px var(--hairline), 0 1px 2px rgba(0, 0, 0, .5), 0 2px 10px rgba(0, 0, 0, .35);
+  --elev-2: 0 0 0 1px var(--hairline), 0 2px 6px rgba(0, 0, 0, .4), 0 16px 40px rgba(0, 0, 0, .5);
+  --elev-3: 0 0 0 1px var(--hairline), 0 4px 12px rgba(0, 0, 0, .45), 0 22px 56px rgba(0, 0, 0, .55);
+  --focus-ring: 0 0 0 3px rgba(92, 139, 255, .5);
+  --hover: rgba(255, 255, 255, .05);
+  --press: rgba(255, 255, 255, .09);
+}
+
+/* Focus is always visible for keyboard users, and never for pointer clicks. */
+:where(button, a, input, select, summary, [tabindex]):focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.search-field input:focus-visible, .plan-field input:focus-visible { box-shadow: none; }
+
+/* Panel: a floating card on desktop, a sheet on phones. */
+@media (min-width: 768px) {
+  .panel { top: 14px; left: 14px; max-height: calc(100dvh - 28px); border-radius: var(--radius-lg); box-shadow: var(--elev-2); }
+  .maplibregl-ctrl-bottom-left { left: calc(var(--panel-w) + 28px); }
+}
+@media (max-width: 767px) {
+  .panel { border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: 0 0 0 1px var(--hairline), 0 -10px 30px rgba(17, 18, 20, .12); transition: height var(--dur-3) var(--ease-out); }
+  .sheet-grabber { height: 26px; }
+  .sheet-grabber span { width: 40px; height: 5px; border-radius: 3px; background: var(--rule); }
+  body.theme-dark .sheet-grabber span { background: #3a3c41; }
+}
+.brand-row { height: 60px; }
+.search-field { height: 50px; border-radius: var(--radius); transition: box-shadow var(--dur-1), background var(--dur-1); }
+.search-field:hover { background: var(--fill-strong); }
+.search-field:focus-within { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--ink), var(--focus-ring); }
+
+/* Views arrive with a short rise and fade. */
+.panel-body.view-enter > * { animation: view-in var(--dur-3) var(--ease-out) both; }
+.panel-body.view-enter > *:nth-child(2) { animation-delay: .03s; }
+.panel-body.view-enter > *:nth-child(3) { animation-delay: .06s; }
+.panel-body.view-enter > *:nth-child(n+4) { animation-delay: .09s; }
+@keyframes view-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* Rows, cards and buttons share one hover and press language. */
+.row, .itinerary, .result, .place-row, .alert-row, .menu button, .line-diagram button { transition: background var(--dur-1); }
+@media (hover: hover) {
+  .rows li > button:hover, .result:hover, .itinerary:hover, .line-diagram button:hover, .toggle-row:hover { background: var(--hover); }
+}
+.rows li > button:active, .result:active, .itinerary:active { background: var(--press); }
+.button, .quick, .seg-option, .segmented button, .control-group button, .icon-button { transition: background var(--dur-1), transform var(--dur-1) var(--ease-out), box-shadow var(--dur-1), opacity var(--dur-1); }
+.button:active, .quick:active, .control-group button:active { transform: scale(.97); }
+.button.primary { border-radius: var(--radius); box-shadow: 0 1px 2px rgba(17, 18, 20, .18); }
+.button.secondary { border-radius: var(--radius); }
+.quick { border-radius: var(--radius); min-height: 46px; padding: 0 16px 0 14px; }
+.quick:first-child { box-shadow: 0 1px 2px rgba(17, 18, 20, .2), 0 4px 12px rgba(17, 18, 20, .12); }
+body.theme-dark .quick:first-child { box-shadow: none; }
+
+/* Route options: each option is a card with a clear selected state. */
+.itinerary { border-radius: 0; }
+.itinerary[aria-expanded="true"] { background: var(--paper); }
+.it-duration { font-size: 22px; letter-spacing: -.015em; }
+.js-item .badge { border-radius: 5px; }
+.route-notes, .plan-notice, .plan-coverage, .area-note { border-color: var(--hairline); }
+
+/* Live: a calm pulse on the live symbol only. */
+.status-live .live-glyph { position: relative; }
+.status-live .live-glyph::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid currentColor; opacity: 0; animation: live-pulse 2.4s var(--ease-out) infinite; }
+@keyframes live-pulse { 0% { opacity: .5; transform: scale(.6); } 70%, 100% { opacity: 0; transform: scale(1.5); } }
+
+/* Map controls */
+.map-controls { gap: 10px; }
+.control-group { border-radius: var(--radius); box-shadow: var(--elev-1); }
+.control-group button { width: 46px; height: 46px; }
+.control-group button + button { border-top: 1px solid var(--hairline); }
+@media (hover: hover) { .control-group button:hover { background: var(--hover); } }
+#layersButton { position: relative; }
+#layersButton.filtered::after { content: ""; position: absolute; top: 9px; right: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--you); box-shadow: 0 0 0 2px var(--surface); }
+
+/* Layers */
+.layers-popover { border-radius: var(--radius-lg); box-shadow: var(--elev-3); padding: 10px 18px 14px; width: 320px; transform-origin: bottom right; animation: pop-in var(--dur-2) var(--ease-out) both; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(.98); } }
+.style-picker { grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0; background: none; }
+.style-picker button { display: flex; flex-direction: column; align-items: stretch; gap: 6px; height: auto; padding: 0 0 6px; border-radius: var(--radius); font-size: 13px; background: none; box-shadow: none; color: var(--ink-2); }
+.style-picker button[aria-checked="true"] { background: none; box-shadow: none; color: var(--ink); }
+.style-swatch { display: block; height: 58px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--hairline); transition: box-shadow var(--dur-1); background-size: cover; }
+.style-picker button[aria-checked="true"] .style-swatch { box-shadow: inset 0 0 0 1px var(--hairline), 0 0 0 2px var(--surface), 0 0 0 4px var(--you); }
+.style-swatch.standard { background:
+  linear-gradient(115deg, transparent 46%, #1675be 46% 50%, transparent 50%),
+  linear-gradient(28deg, transparent 58%, #e4002b 58% 61%, transparent 61%),
+  linear-gradient(160deg, #bdd6e4 0 22%, transparent 22%),
+  #f4f1ea; }
+.style-swatch.satellite { background:
+  linear-gradient(115deg, transparent 46%, #1675be 46% 50%, transparent 50%),
+  linear-gradient(28deg, transparent 58%, #ff5a6e 58% 61%, transparent 61%),
+  radial-gradient(circle at 30% 70%, #4d5a3d 0 30%, transparent 31%),
+  radial-gradient(circle at 75% 30%, #5d5a52 0 26%, transparent 27%),
+  linear-gradient(160deg, #1d3647 0 24%, #3b4436 24%); }
+.style-swatch.dark { background:
+  linear-gradient(115deg, transparent 46%, #2b8ad6 46% 50%, transparent 50%),
+  linear-gradient(28deg, transparent 58%, #ff4d63 58% 61%, transparent 61%),
+  linear-gradient(160deg, #0f2130 0 22%, transparent 22%),
+  #15171a; }
+.toggle-row > span:not(.dot) small { display: block; font-size: 12.5px; line-height: 16px; color: var(--ink-3); }
+.label-row { display: flex; align-items: center; justify-content: space-between; }
+.text-button.small { font-size: 13px; text-transform: none; letter-spacing: 0; font-weight: 650; color: var(--you); text-decoration: none; }
+
+/* Map status chip: offline or basemap outage, centered over the map. */
+.map-status {
+  position: fixed; z-index: 9; top: calc(16px + var(--safe-t)); left: calc(var(--panel-w) + 14px + (100vw - var(--panel-w) - 14px) / 2); transform: translateX(-50%);
+  max-width: min(460px, calc(100vw - var(--panel-w) - 48px)); padding: 10px 14px; border-radius: var(--radius);
+  background: var(--surface); color: var(--ink-2); box-shadow: var(--elev-2); font-size: 14px; line-height: 19px; font-weight: 600;
+  animation: view-in var(--dur-2) var(--ease-out) both;
+}
+.map-status.warn { background: var(--ink); color: var(--surface); }
+@media (max-width: 767px) { .map-status { left: 12px; right: 12px; transform: none; max-width: none; } }
+
+/* Loading: a line drawing itself between two stops. */
+.map-loading { flex-direction: column; gap: 14px; font-weight: 600; letter-spacing: .005em; }
+.loader-art { width: 112px; height: 46px; overflow: visible; }
+.loader-art path { fill: none; stroke-linecap: round; stroke-width: 4; }
+.loader-track { stroke: var(--fill-strong); }
+.loader-line { stroke: var(--you); stroke-dasharray: 130; stroke-dashoffset: 130; animation: loader-draw 1.6s var(--ease-out) infinite; }
+.loader-art circle { fill: var(--surface); stroke: var(--ink); stroke-width: 2.4; }
+@keyframes loader-draw { 0% { stroke-dashoffset: 130; } 60% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -130; } }
+.map-loading.done { transition: opacity var(--dur-3) var(--ease-out); }
+
+/* Skeletons shimmer rather than blink. */
+.sk { background: linear-gradient(90deg, var(--fill) 0%, var(--fill-strong) 40%, var(--fill) 80%); background-size: 240% 100%; animation: sk-shimmer 1.4s linear infinite; }
+@keyframes sk-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+/* Introduction */
+.intro { width: 360px; padding: 18px 20px 18px; border-radius: var(--radius-lg); box-shadow: var(--elev-3); }
+.intro.intro-in { animation: view-in var(--dur-3) var(--ease-out) both; }
+.intro-art { height: 120px; margin: -2px -4px 12px; border-radius: var(--radius); background: var(--paper); overflow: hidden; }
+.intro-art svg { width: 100%; height: 100%; display: block; stroke: none; fill: none; }
+.intro-progress { display: flex; gap: 6px; margin-bottom: 8px; }
+.intro-progress span { width: 18px; height: 4px; border-radius: 2px; background: var(--fill-strong); transition: background var(--dur-2), width var(--dur-2) var(--ease-out); }
+.intro-progress span.on { width: 28px; background: var(--ink); }
+.intro-progress span.done { background: var(--ink-3); }
+.intro-step { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.intro h2 { font-size: 19px; line-height: 25px; letter-spacing: -.01em; }
+.intro p { font-size: 14.5px; line-height: 21px; }
+.intro .button.primary { min-width: 96px; }
+@media (max-width: 767px) { .intro-art { height: 104px; } }
+/* Illustration parts */
+.ia-field, .ia-card { fill: var(--surface); stroke: var(--rule); stroke-width: 1; }
+.ia-ink-stroke { fill: none; stroke: var(--ink-3); stroke-width: 1.8; stroke-linecap: round; }
+.ia-type { font: 700 15px var(--font); fill: var(--ink); clip-path: inset(0 100% 0 0); animation: ia-type .5s steps(3) .15s both; }
+.ia-caret { fill: var(--you); animation: ia-blink 1s steps(1) infinite, ia-caret-move .5s steps(3) .15s both; }
+.ia-row { animation: ia-rise .45s var(--ease-out) var(--d, 0s) both; }
+.ia-bar { fill: var(--fill-strong); }
+.ia-badge-text { font: 700 9.5px var(--font); fill: #fff; }
+.ia-badge-text.dark { fill: #111; }
+.ia-pin { fill: none; stroke: var(--ink-3); stroke-width: 2; }
+.ia-faded { fill: none; stroke: var(--rule); stroke-width: 3; stroke-linecap: round; }
+body.theme-dark .ia-faded { stroke: #34363b; }
+.ia-draw { fill: none; stroke: var(--c, var(--you)); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 0; animation: ia-draw .9s var(--ease-out) var(--d, .1s) both; }
+.ia-walk { fill: none; stroke: var(--you); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: .02 .05; animation: ia-fade .4s var(--ease-out) var(--d, 0s) both; }
+.ia-stop { fill: var(--surface); stroke: var(--ink); stroke-width: 2.4; }
+.ia-stop.strong { stroke-width: 3; }
+.ia-pop { animation: ia-fade .35s var(--ease-out) var(--d, 0s) both; }
+.ia-from { fill: var(--surface); stroke: var(--you); stroke-width: 3.5; }
+.ia-to { fill: var(--ink); }
+.ia-vehicle { stroke: var(--surface); stroke-width: 2; }
+.ia-big { font: 750 40px var(--font); fill: var(--ink); letter-spacing: -.02em; }
+.ia-small { font: 600 11px var(--font); fill: var(--ink-3); }
+.ia-live-dot { fill: var(--live); }
+.ia-live-ring { fill: none; stroke: var(--live); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: ia-ring 2s var(--ease-out) infinite; }
+.ia-live-text { font: 700 11.5px var(--font); fill: var(--live); }
+@keyframes ia-type { to { clip-path: inset(0 0 0 0); } }
+@keyframes ia-caret-move { from { transform: translateX(-27px); } }
+@keyframes ia-blink { 50% { opacity: 0; } }
+@keyframes ia-rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes ia-draw { from { stroke-dashoffset: 1; } }
+@keyframes ia-fade { from { opacity: 0; } }
+@keyframes ia-ring { 0% { opacity: .7; transform: scale(1); } 80%, 100% { opacity: 0; transform: scale(3); } }
+
+/* Satellite: controls and chips sit on dark imagery, so they get a touch more lift. */
+body.map-satellite .control-group, body.map-satellite .map-status { box-shadow: 0 0 0 1px rgba(0, 0, 0, .2), 0 4px 16px rgba(0, 0, 0, .35); }
+body.map-satellite .maplibregl-ctrl-attrib { background: rgba(255, 255, 255, .9) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ia-type { clip-path: none; }
+  .ia-caret { display: none; }
+}

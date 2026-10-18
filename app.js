@@ -99,7 +99,7 @@ const ICONS = {
 /* ======================================================================
  * 2. State and storage
  * ==================================================================== */
-const STORAGE = { saved: 'rove-saved-v2', intro: 'rove-tour-v2', agencies: 'rove-agencies-v1', mapMode: 'rove-map-mode-v1', vehicles: 'rove-vehicles-v1' };
+const STORAGE = { saved: 'rove-saved-v2', intro: 'rove-tour-v2', agencies: 'rove-agencies-v1', mapMode: 'rove-map-mode-v1', vehicles: 'rove-vehicles-v1', busLines: 'rove-bus-lines-v1', railLines: 'rove-rail-lines-v1' };
 
 const state = {
   network: null,
@@ -109,6 +109,8 @@ const state = {
   glyphFont: ['Noto Sans Regular'],
   visible: new Set(),
   showVehicles: store.get(STORAGE.vehicles, true),
+  showBus: store.get(STORAGE.busLines, true),
+  showRail: store.get(STORAGE.railLines, true),
   selectedKey: null,
   journey: null,
   realtime: null,
@@ -464,17 +466,39 @@ const SATELLITE_STYLE = {
     labels: { type: 'raster', tileSize: 256, maxzoom: 19, tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], attribution: 'Labels: Esri, HERE, Garmin, © OpenStreetMap contributors' }
   },
   layers: [
-    { id: 'imagery', type: 'raster', source: 'imagery', paint: { 'raster-saturation': -0.25, 'raster-brightness-max': 0.78, 'raster-contrast': 0.05 } },
+    { id: 'imagery', type: 'raster', source: 'imagery', paint: { 'raster-saturation': -0.35, 'raster-brightness-max': 0.7, 'raster-contrast': 0.08 } },
     { id: 'reference-labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 0.85 } }
   ]
 };
 const fallbackStyle = dark => ({ version: 8, glyphs: OPENFREEMAP_GLYPHS, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': dark ? '#15171a' : '#f4f1ea' } }] });
 
+/* Map palettes for Rove's three styles. `casing` outlines lines and stops so they read over any
+ * basemap; satellite uses dark casings and light labels because imagery is dark and busy. */
 const THEME = {
-  light: { brightCasing: '#8a7d4a', surface: '#ffffff', ink: '#111214', bus: '#7b8088', faded: '#a9adb3', stopStroke: '#111214', journeyWalk: '#2f6bff', journeyDrive: '#4b5260', halo: '#ffffff' },
-  dark: { brightCasing: '#16171a', surface: '#16171a', ink: '#f2f1ee', bus: '#7d8189', faded: '#4a4c51', stopStroke: '#f2f1ee', journeyWalk: '#5c8bff', journeyDrive: '#c3c6cc', halo: '#16171a' }
+  light: { brightCasing: '#8a7d4a', surface: '#ffffff', ink: '#111214', bus: '#7b8088', faded: '#b3b7bd', stopStroke: '#111214', journeyWalk: '#2f6bff', journeyDrive: '#4b5260', halo: '#ffffff', label: '#111214', casing: '#ffffff', busCasingOpacity: 0.75 },
+  dark: { brightCasing: '#16171a', surface: '#16171a', ink: '#f2f1ee', bus: '#8b9099', faded: '#43464c', stopStroke: '#f2f1ee', journeyWalk: '#6b96ff', journeyDrive: '#c3c6cc', halo: '#16171a', label: '#f2f1ee', casing: '#0f1012', busCasingOpacity: 0.7 },
+  satellite: { brightCasing: '#0d0f12', surface: '#ffffff', ink: '#111214', bus: '#e6e8eb', faded: '#9aa0a8', stopStroke: '#111214', journeyWalk: '#8fb2ff', journeyDrive: '#ffffff', halo: 'rgba(8, 10, 14, 0.88)', label: '#ffffff', casing: '#0b0d10', busCasingOpacity: 0.8 }
 };
-const theme = () => (state.mapMode === 'dark' ? THEME.dark : THEME.light);
+const theme = () => THEME[state.mapMode === 'dark' ? 'dark' : state.mapMode === 'satellite' ? 'satellite' : 'light'];
+
+function mixHex(a, b, t) {
+  const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const [x, y] = [p(a), p(b)];
+  return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/* An agency's own route color, nudged only as far as needed to stay visible on the current map.
+ * The color is mixed toward ink (Standard) or white (Dark, Satellite) in small steps until it
+ * reaches a minimum contrast with that map's base, so near-black AC Transit lines lift on Dark and
+ * pale lines deepen on Standard, while every color that already reads well is left exactly as is. */
+const MAP_BASE = { standard: { bg: '#f4f1ea', toward: '#2a2d33', min: 2 }, dark: { bg: '#15171a', toward: '#f0f2f5', min: 2.4 }, satellite: { bg: '#1d211c', toward: '#ffffff', min: 2.6 } };
+function mapLineColor(color, mode = state.mapMode) {
+  const c = normalizeColor(color, '#6b7078');
+  const base = MAP_BASE[mode] || MAP_BASE.standard;
+  let out = c;
+  for (let t = 0.1; t <= 0.9 && contrast(out, base.bg) < base.min; t += 0.1) out = mixHex(c, base.toward, t);
+  return out;
+}
 
 /* Rove's basemap palettes, applied to the OpenFreeMap Positron layers. Land is warm off-white,
  * water a soft blue, parks a muted sage, and roads a subtle gold, so the transit lines remain
@@ -552,9 +576,10 @@ async function fetchStyle(mode) {
 function routeFeatures() {
   const features = [];
   for (const info of idx.routes.values()) {
+    const lc = mapLineColor(info.color);
     for (const shape of info.r.shapes || []) {
       if (!shape || shape.length < 2) continue;
-      features.push({ type: 'Feature', properties: { key: info.key, agency: info.a.id, cat: info.cat, color: info.color, bright: luminance(info.color) > 0.55 ? 1 : 0 }, geometry: { type: 'LineString', coordinates: shape } });
+      features.push({ type: 'Feature', properties: { key: info.key, agency: info.a.id, cat: info.cat, color: info.color, lc, bright: luminance(lc) > 0.55 ? 1 : 0 }, geometry: { type: 'LineString', coordinates: shape } });
     }
   }
   return { type: 'FeatureCollection', features };
@@ -577,6 +602,14 @@ function stopFeatures() {
   return { type: 'FeatureCollection', features };
 }
 
+/* When each part of the network appears. The regional view (zoom 8 to 10) shows rail only, so the
+ * Bay Area reads at a glance; bus routes fade in from zoom 10, which is a city or neighborhood
+ * view, and bus stops, labels and vehicles follow as the map gets closer. A selected line is
+ * drawn at every zoom. The Bus lines switch in the layers panel says so ("Appear as you zoom in to a city"). */
+const MAP_ZOOM = Object.freeze({ busRoutes: 10, busStops: 14.5, busStopLabels: 16.3, busVehicles: 12.5, lightRail: 9.5, lightStops: 13, lightLabels: 14, heavyStops: 9.5, heavyLabels: 11.5, railVehicles: 10.5 });
+const BUS_OPACITY = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.5, 12, 0.64, 14, 0.82];
+const BUS_WIDTH = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0.8, 12, 1.4, 14, 2.2, 17, 3.6];
+
 function addTransitLayers() {
   const map = state.map;
   if (map.getSource('transit-routes')) return;
@@ -587,19 +620,30 @@ function addTransitLayers() {
   const before = firstSymbol?.id;
   const t = theme();
 
-  map.addSource('transit-routes', { type: 'geojson', data: routeFeatures(), tolerance: 0.6 });
-  map.addSource('transit-stops', { type: 'geojson', data: stopFeatures() });
+  // lineMetrics lets a selected line draw itself in (line-gradient on line-progress).
+  map.addSource('transit-routes', { type: 'geojson', data: routeFeatures(), tolerance: 0.6, lineMetrics: true });
+  const stops = stopFeatures();
+  map.addSource('transit-stops', { type: 'geojson', data: stops });
+  // Labels get their own copy of the stops, so a font server outage cannot take the stop dots with it
+  // (MapLibre drops a whole tile when one of its symbol layers fails to load glyphs).
+  map.addSource('transit-stop-labels', { type: 'geojson', data: stops });
   map.addSource('vehicles', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addSource('journey', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addSource('journey-points', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addSource('journey-point-labels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addSource('vehicle-labels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
   const line = { type: 'line', source: 'transit-routes', layout: { 'line-cap': 'round', 'line-join': 'round' } };
-  map.addLayer({ ...line, id: 'tr-bus', minzoom: 11.5, filter: ['==', ['get', 'cat'], 'bus'], paint: { 'line-color': t.bus, 'line-width': ['interpolate', ['linear'], ['zoom'], 11.5, 0.7, 14, 1.4, 17, 2.6], 'line-opacity': ['interpolate', ['linear'], ['zoom'], 11.5, 0, 12.5, 0.38] } }, before);
-  map.addLayer({ ...line, id: 'tr-light', minzoom: 9.5, filter: ['==', ['get', 'cat'], 'light'], paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 9.5, 1.1, 13, 2.4, 16, 4], 'line-opacity': 0.75 } }, before);
-  map.addLayer({ ...line, id: 'tr-heavy-casing', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.surface], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 8], 'line-opacity': 0.9 } }, before);
-  map.addLayer({ ...line, id: 'tr-heavy', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.6, 12, 3, 16, 5], 'line-opacity': 0.92 } }, before);
-  map.addLayer({ ...line, id: 'tr-selected-casing', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.surface], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 5, 12, 8, 16, 11] } }, before);
-  map.addLayer({ ...line, id: 'tr-selected', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 7] } }, before);
+  const widen = (expr, by) => ['interpolate', ['linear'], ['zoom'], ...expr.slice(3).map((v, i) => (i % 2 ? v + by : v))];
+  map.addLayer({ ...line, id: 'tr-bus-casing', minzoom: MAP_ZOOM.busRoutes, filter: ['==', ['get', 'cat'], 'bus'], paint: { 'line-color': t.casing, 'line-width': widen(BUS_WIDTH, 2), 'line-opacity': ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, t.busCasingOpacity] } }, before);
+  map.addLayer({ ...line, id: 'tr-bus', minzoom: MAP_ZOOM.busRoutes, filter: ['==', ['get', 'cat'], 'bus'], paint: { 'line-color': ['get', 'lc'], 'line-width': BUS_WIDTH, 'line-opacity': BUS_OPACITY } }, before);
+  const lightWidth = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.lightRail, 1.1, 13, 2.4, 16, 4];
+  map.addLayer({ ...line, id: 'tr-light-casing', minzoom: MAP_ZOOM.lightRail, filter: ['==', ['get', 'cat'], 'light'], paint: { 'line-color': t.casing, 'line-width': widen(lightWidth, 2.2), 'line-opacity': 0.8 } }, before);
+  map.addLayer({ ...line, id: 'tr-light', minzoom: MAP_ZOOM.lightRail, filter: ['==', ['get', 'cat'], 'light'], paint: { 'line-color': ['get', 'lc'], 'line-width': lightWidth, 'line-opacity': 0.85 } }, before);
+  map.addLayer({ ...line, id: 'tr-heavy-casing', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.casing], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 8], 'line-opacity': 0.9 } }, before);
+  map.addLayer({ ...line, id: 'tr-heavy', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['get', 'lc'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.6, 12, 3, 16, 5], 'line-opacity': 0.94 } }, before);
+  map.addLayer({ ...line, id: 'tr-selected-casing', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.casing], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 5, 12, 8, 16, 11] } }, before);
+  map.addLayer({ ...line, id: 'tr-selected', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['get', 'lc'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 7] } }, before);
 
   const jl = { type: 'line', source: 'journey', layout: { 'line-cap': 'round', 'line-join': 'round' } };
   const jOpacity = ['case', ['==', ['get', 'dim'], 1], 0.35, 1];
@@ -607,24 +651,26 @@ function addTransitLayers() {
   map.addLayer({ ...jl, id: 'journey-casing', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': ['get', 'casing'], 'line-width': jWidth(9, 12), 'line-opacity': jOpacity } });
   map.addLayer({ ...jl, id: 'journey-transit', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': ['get', 'color'], 'line-width': jWidth(5.5, 8), 'line-opacity': jOpacity } });
   map.addLayer({ ...jl, id: 'journey-approx', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 1]], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': ['get', 'stroke'], 'line-width': jWidth(4, 6), 'line-opacity': jOpacity, 'line-dasharray': [2, 1.5] } });
-  map.addLayer({ ...jl, id: 'journey-drive-casing', filter: ['==', ['get', 'mode'], 'CAR'], paint: { 'line-color': t.surface, 'line-width': jWidth(8, 11), 'line-opacity': jOpacity } });
+  map.addLayer({ ...jl, id: 'journey-drive-casing', filter: ['==', ['get', 'mode'], 'CAR'], paint: { 'line-color': t.casing, 'line-width': jWidth(8, 11), 'line-opacity': jOpacity } });
   map.addLayer({ ...jl, id: 'journey-drive', filter: ['==', ['get', 'mode'], 'CAR'], paint: { 'line-color': t.journeyDrive || t.ink, 'line-width': jWidth(4.5, 7), 'line-opacity': jOpacity } });
+  map.addLayer({ ...jl, id: 'journey-walk-casing', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': t.casing, 'line-width': jWidth(6, 8), 'line-opacity': ['case', ['==', ['get', 'dim'], 1], 0.2, state.mapMode === 'standard' ? 0 : 0.6], 'line-dasharray': [0.2, 1.2] } });
   map.addLayer({ ...jl, id: 'journey-walk', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(3.5, 5), 'line-opacity': jOpacity, 'line-dasharray': [0.2, 2] } });
   map.addLayer({ id: 'journey-stops', type: 'circle', source: 'journey-points', paint: { 'circle-radius': ['case', ['==', ['get', 'kind'], 'transfer'], 7, 5.5], 'circle-color': t.surface, 'circle-stroke-color': ['case', ['==', ['get', 'kind'], 'transfer'], t.ink, ['get', 'color']], 'circle-stroke-width': 3 } });
-  map.addLayer({ id: 'journey-stop-labels', type: 'symbol', source: 'journey-points', minzoom: 10.5, layout: { 'text-field': ['get', 'name'], 'text-font': state.glyphFont, 'text-size': 12.5, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': t.ink, 'text-halo-color': t.halo, 'text-halo-width': 1.8 } });
+  map.addLayer({ id: 'journey-stop-labels', type: 'symbol', source: 'journey-point-labels', minzoom: 10.5, layout: { 'text-field': ['get', 'name'], 'text-font': state.glyphFont, 'text-size': 12.5, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': t.label, 'text-halo-color': t.halo, 'text-halo-width': 1.8 } });
 
   const stopPaint = (radius, strokeWidth) => ({ 'circle-radius': radius, 'circle-color': t.surface, 'circle-stroke-color': t.stopStroke, 'circle-stroke-width': strokeWidth });
-  map.addLayer({ id: 'st-bus', type: 'circle', source: 'transit-stops', minzoom: 15, filter: ['all', ['==', ['get', 'cat'], 'bus'], ['==', ['get', 'child'], 0]], paint: { ...stopPaint(['interpolate', ['linear'], ['zoom'], 15, 2.5, 17, 4.5], 1.2), 'circle-stroke-color': t.bus } }, 'journey-casing');
-  map.addLayer({ id: 'st-light', type: 'circle', source: 'transit-stops', minzoom: 12, filter: ['all', ['==', ['get', 'cat'], 'light'], ['==', ['get', 'child'], 0]], paint: stopPaint(['interpolate', ['linear'], ['zoom'], 12, 2.5, 16, 5], 1.6) }, 'journey-casing');
-  map.addLayer({ id: 'st-heavy', type: 'circle', source: 'transit-stops', minzoom: 9.5, filter: ['all', ['==', ['get', 'cat'], 'heavy'], ['==', ['get', 'child'], 0]], paint: stopPaint(['interpolate', ['linear'], ['zoom'], 9.5, 2.6, 12, 4, 16, 6.5], 2) }, 'journey-casing');
-  map.addLayer({ id: 'st-selected', type: 'circle', source: 'transit-stops', filter: ['==', ['get', 'id'], '__none__'], paint: { ...stopPaint(['interpolate', ['linear'], ['zoom'], 9, 3, 14, 5.5], 2.4), 'circle-stroke-color': ['get', 'color'] } });
+  map.addLayer({ id: 'st-bus', type: 'circle', source: 'transit-stops', minzoom: MAP_ZOOM.busStops, filter: ['all', ['==', ['get', 'cat'], 'bus'], ['==', ['get', 'child'], 0]], paint: { ...stopPaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busStops, 2.2, 17, 4.5], 1.4), 'circle-stroke-color': t.bus, 'circle-opacity': ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busStops, 0, MAP_ZOOM.busStops + 0.4, 1], 'circle-stroke-opacity': ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busStops, 0, MAP_ZOOM.busStops + 0.4, 1] } }, 'journey-casing');
+  map.addLayer({ id: 'st-light', type: 'circle', source: 'transit-stops', minzoom: MAP_ZOOM.lightStops, filter: ['all', ['==', ['get', 'cat'], 'light'], ['==', ['get', 'child'], 0]], paint: stopPaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.lightStops, 2.5, 16, 5], 1.6) }, 'journey-casing');
+  map.addLayer({ id: 'st-heavy', type: 'circle', source: 'transit-stops', minzoom: MAP_ZOOM.heavyStops, filter: ['all', ['==', ['get', 'cat'], 'heavy'], ['==', ['get', 'child'], 0]], paint: stopPaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.heavyStops, 2.6, 12, 4, 16, 6.5], 2) }, 'journey-casing');
+  map.addLayer({ id: 'st-selected', type: 'circle', source: 'transit-stops', filter: ['==', ['get', 'id'], '__none__'], paint: { ...stopPaint(['interpolate', ['linear'], ['zoom'], 9, 1.8, 12, 3.2, 14, 5.5], ['interpolate', ['linear'], ['zoom'], 9, 1.4, 12, 2, 14, 2.4]), 'circle-stroke-color': t.ink } });
   map.addLayer({ id: 'st-place', type: 'circle', source: 'transit-stops', filter: ['==', ['get', 'id'], '__none__'], paint: { 'circle-radius': 9, 'circle-color': t.ink, 'circle-stroke-color': t.surface, 'circle-stroke-width': 3 } });
 
   const labelLayout = size => ({ 'text-field': ['get', 'name'], 'text-font': state.glyphFont, 'text-size': size, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 9, 'text-optional': true });
-  const labelPaint = { 'text-color': t.ink, 'text-halo-color': t.halo, 'text-halo-width': 1.6 };
-  map.addLayer({ id: 'st-heavy-label', type: 'symbol', source: 'transit-stops', minzoom: 11.5, filter: ['all', ['==', ['get', 'cat'], 'heavy'], ['==', ['get', 'child'], 0]], layout: labelLayout(12), paint: labelPaint });
-  map.addLayer({ id: 'st-light-label', type: 'symbol', source: 'transit-stops', minzoom: 14, filter: ['all', ['==', ['get', 'cat'], 'light'], ['==', ['get', 'child'], 0]], layout: labelLayout(12), paint: labelPaint });
-  map.addLayer({ id: 'st-selected-label', type: 'symbol', source: 'transit-stops', minzoom: 12.5, filter: ['==', ['get', 'id'], '__none__'], layout: labelLayout(12), paint: labelPaint });
+  const labelPaint = { 'text-color': t.label, 'text-halo-color': t.halo, 'text-halo-width': 1.6 };
+  map.addLayer({ id: 'st-heavy-label', type: 'symbol', source: 'transit-stop-labels', minzoom: MAP_ZOOM.heavyLabels, filter: ['all', ['==', ['get', 'cat'], 'heavy'], ['==', ['get', 'child'], 0]], layout: labelLayout(12), paint: labelPaint });
+  map.addLayer({ id: 'st-light-label', type: 'symbol', source: 'transit-stop-labels', minzoom: MAP_ZOOM.lightLabels, filter: ['all', ['==', ['get', 'cat'], 'light'], ['==', ['get', 'child'], 0]], layout: labelLayout(12), paint: labelPaint });
+  map.addLayer({ id: 'st-bus-label', type: 'symbol', source: 'transit-stop-labels', minzoom: MAP_ZOOM.busStopLabels, filter: ['all', ['==', ['get', 'cat'], 'bus'], ['==', ['get', 'child'], 0]], layout: labelLayout(11.5), paint: { ...labelPaint, 'text-color': t.label } });
+  map.addLayer({ id: 'st-selected-label', type: 'symbol', source: 'transit-stop-labels', minzoom: 12.5, filter: ['==', ['get', 'id'], '__none__'], layout: labelLayout(12), paint: labelPaint });
 
   const vehiclePaint = radius => ({
     'circle-radius': radius,
@@ -634,10 +680,10 @@ function addTransitLayers() {
     'circle-opacity': ['case', ['get', 'stale'], 0.4, 1],
     'circle-stroke-opacity': ['case', ['get', 'stale'], 0.4, 1]
   });
-  map.addLayer({ id: 'veh-rail', type: 'circle', source: 'vehicles', minzoom: 10.5, filter: ['in', ['get', 'cat'], ['literal', ['heavy', 'light']]], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], 10.5, 4, 15, 7]) });
-  map.addLayer({ id: 'veh-bus', type: 'circle', source: 'vehicles', minzoom: 13.5, filter: ['==', ['get', 'cat'], 'bus'], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], 13.5, 4, 17, 7]) });
+  map.addLayer({ id: 'veh-rail', type: 'circle', source: 'vehicles', minzoom: MAP_ZOOM.railVehicles, filter: ['in', ['get', 'cat'], ['literal', ['heavy', 'light']]], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.railVehicles, 4, 15, 7]) });
+  map.addLayer({ id: 'veh-bus', type: 'circle', source: 'vehicles', minzoom: MAP_ZOOM.busVehicles, filter: ['==', ['get', 'cat'], 'bus'], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busVehicles, 3.2, 15, 5.5, 17, 7]) });
   map.addLayer({ id: 'veh-selected', type: 'circle', source: 'vehicles', filter: ['==', ['get', 'key'], '__none__'], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], 9, 5, 15, 8]) });
-  map.addLayer({ id: 'veh-label', type: 'symbol', source: 'vehicles', minzoom: 15.5, filter: ['==', ['get', 'key'], '__none__'], layout: { 'text-field': ['get', 'badge'], 'text-font': state.glyphFont, 'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-optional': true }, paint: labelPaint });
+  map.addLayer({ id: 'veh-label', type: 'symbol', source: 'vehicle-labels', minzoom: 15.5, filter: ['==', ['get', 'key'], '__none__'], layout: { 'text-field': ['get', 'badge'], 'text-font': state.glyphFont, 'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-optional': true }, paint: labelPaint });
 
   applyMapState();
   renderVehicles();
@@ -645,11 +691,13 @@ function addTransitLayers() {
 }
 
 
-const ROUTE_LAYERS = ['tr-bus', 'tr-light', 'tr-heavy-casing', 'tr-heavy'];
-const STOP_LAYERS = ['st-bus', 'st-light', 'st-heavy', 'st-heavy-label', 'st-light-label'];
+const ROUTE_LAYERS = ['tr-bus-casing', 'tr-bus', 'tr-light-casing', 'tr-light', 'tr-heavy-casing', 'tr-heavy'];
+const STOP_LAYERS = ['st-bus', 'st-light', 'st-heavy', 'st-heavy-label', 'st-light-label', 'st-bus-label'];
 const VEHICLE_LAYERS = ['veh-rail', 'veh-bus'];
+const ROUTE_LAYER_CAT = { 'tr-bus-casing': 'bus', 'tr-bus': 'bus', 'tr-light-casing': 'light', 'tr-light': 'light', 'tr-heavy-casing': 'heavy', 'tr-heavy': 'heavy' };
+const LAYER_KIND = { 'st-bus': 'bus', 'st-bus-label': 'bus', 'veh-bus': 'bus' };
 
-/* Applies agency visibility, line selection, and journey focus to every layer. */
+/* Applies agency visibility, the Rail and Bus switches, line selection, and journey focus to every layer. */
 function applyMapState() {
   const map = state.map;
   if (!map?.getLayer('tr-heavy')) return;
@@ -659,48 +707,108 @@ function applyMapState() {
   const focusKey = state.selectedKey;
   const journeyActive = Boolean(state.journey);
   const dimmed = Boolean(focusKey) || journeyActive;
+  const kindShown = cat => (cat === 'bus' ? state.showBus : state.showRail);
 
-  const catFilter = { 'tr-bus': 'bus', 'tr-light': 'light', 'tr-heavy-casing': 'heavy', 'tr-heavy': 'heavy' };
-  for (const id of ROUTE_LAYERS) map.setFilter(id, ['all', ['==', ['get', 'cat'], catFilter[id]], inAgencies]);
+  for (const id of ROUTE_LAYERS) {
+    const cat = ROUTE_LAYER_CAT[id];
+    map.setFilter(id, ['all', ['==', ['get', 'cat'], cat], inAgencies]);
+    map.setLayoutProperty(id, 'visibility', kindShown(cat) ? 'visible' : 'none');
+  }
 
-  map.setPaintProperty('tr-bus', 'line-color', dimmed ? t.faded : t.bus);
-  map.setPaintProperty('tr-bus', 'line-opacity', dimmed ? 0.18 : ['interpolate', ['linear'], ['zoom'], 11.5, 0, 12.5, 0.38]);
+  map.setPaintProperty('tr-bus', 'line-color', dimmed ? t.faded : ['get', 'lc']);
+  map.setPaintProperty('tr-bus', 'line-opacity', dimmed ? ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.22] : BUS_OPACITY);
+  map.setPaintProperty('tr-bus-casing', 'line-opacity', dimmed ? 0 : ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, t.busCasingOpacity]);
   for (const id of ['tr-light', 'tr-heavy']) {
-    map.setPaintProperty(id, 'line-color', dimmed ? t.faded : ['get', 'color']);
-    map.setPaintProperty(id, 'line-opacity', dimmed ? (journeyActive ? 0.22 : 0.3) : (id === 'tr-light' ? 0.75 : 0.92));
+    map.setPaintProperty(id, 'line-color', dimmed ? t.faded : ['get', 'lc']);
+    map.setPaintProperty(id, 'line-opacity', dimmed ? (journeyActive ? 0.22 : 0.3) : (id === 'tr-light' ? 0.85 : 0.94));
   }
   map.setPaintProperty('tr-heavy-casing', 'line-opacity', dimmed ? 0 : 0.9);
+  map.setPaintProperty('tr-light-casing', 'line-opacity', dimmed ? 0 : 0.8);
 
   const selFilter = focusKey ? ['==', ['get', 'key'], focusKey] : ['==', ['get', 'key'], ''];
   map.setFilter('tr-selected-casing', selFilter);
   map.setFilter('tr-selected', selFilter);
 
-  const stopVisibility = journeyActive ? 'none' : 'visible';
   for (const id of STOP_LAYERS) {
-    map.setLayoutProperty(id, 'visibility', stopVisibility);
+    const kind = LAYER_KIND[id] || 'rail';
+    map.setLayoutProperty(id, 'visibility', !journeyActive && kindShown(kind) && !(focusKey && /label/.test(id)) ? 'visible' : 'none');
     const base = map.getFilter(id);
     const kept = (base?.[0] === 'all' ? base.slice(1) : [base]).filter(f => !(Array.isArray(f) && f[0] === 'in' && Array.isArray(f[1]) && f[1][1] === 'agency'));
     map.setFilter(id, ['all', ...kept, inAgencies]);
   }
-  for (const id of ['st-heavy', 'st-light', 'st-bus']) map.setPaintProperty(id, 'circle-opacity', focusKey ? 0.35 : 1);
-  for (const id of ['st-heavy-label', 'st-light-label']) map.setLayoutProperty(id, 'visibility', focusKey || journeyActive ? 'none' : 'visible');
+  for (const id of ['st-heavy', 'st-light']) map.setPaintProperty(id, 'circle-opacity', focusKey ? 0.35 : 1);
+  map.setPaintProperty('st-bus', 'circle-opacity', focusKey ? 0.35 : ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busStops, 0, MAP_ZOOM.busStops + 0.4, 1]);
 
   const selectedStops = focusKey ? ['all', ['in', `|${focusKey}|`, ['get', 'keys']], ['==', ['get', 'child'], 0]] : ['==', ['get', 'id'], '__none__'];
   map.setFilter('st-selected', selectedStops);
   map.setFilter('st-selected-label', selectedStops);
-  if (focusKey) map.setPaintProperty('st-selected', 'circle-stroke-color', idx.routes.get(focusKey)?.color || t.ink);
+  if (focusKey) map.setPaintProperty('st-selected', 'circle-stroke-color', mapLineColor(idx.routes.get(focusKey)?.color || t.ink));
 
-  const vehicleBase = ['all', inAgencies];
   const showVehicles = state.showVehicles && !journeyActive;
   for (const id of VEHICLE_LAYERS) {
-    map.setLayoutProperty(id, 'visibility', showVehicles && !focusKey ? 'visible' : 'none');
-    map.setFilter(id, ['all', id === 'veh-bus' ? ['==', ['get', 'cat'], 'bus'] : ['in', ['get', 'cat'], ['literal', ['heavy', 'light']]], vehicleBase]);
+    const kind = LAYER_KIND[id] || 'rail';
+    map.setLayoutProperty(id, 'visibility', showVehicles && !focusKey && kindShown(kind) ? 'visible' : 'none');
+    map.setFilter(id, ['all', id === 'veh-bus' ? ['==', ['get', 'cat'], 'bus'] : ['in', ['get', 'cat'], ['literal', ['heavy', 'light']]], inAgencies]);
   }
   const selectedVehicles = focusKey ? ['==', ['get', 'key'], focusKey] : ['==', ['get', 'key'], '__none__'];
   map.setFilter('veh-selected', selectedVehicles);
   map.setFilter('veh-label', selectedVehicles);
   map.setLayoutProperty('veh-selected', 'visibility', state.showVehicles ? 'visible' : 'none');
   map.setLayoutProperty('veh-label', 'visibility', state.showVehicles ? 'visible' : 'none');
+  updateLayersIndicator();
+}
+
+/* The layers button shows a dot while anything is hidden, so a saved filter is never a mystery. */
+function updateLayersIndicator() {
+  const total = state.network?.agencies?.length || 0;
+  const filtered = state.visible.size < total || !state.showBus || !state.showRail;
+  $('#layersButton')?.classList.toggle('filtered', filtered);
+  const reset = $('#layersReset');
+  if (reset) reset.hidden = !filtered;
+}
+
+/* A selected line draws itself in from its first stop (line-progress), then settles to a solid
+ * line. Skipped when the rider prefers reduced motion. */
+let revealFrame = 0;
+function revealSelectedRoute(key) {
+  const map = state.map;
+  cancelAnimationFrame(revealFrame);
+  if (!map?.getLayer('tr-selected')) return;
+  const info = idx.routes.get(key);
+  const clear = () => { map.setPaintProperty('tr-selected', 'line-gradient', null); map.setPaintProperty('tr-selected-casing', 'line-gradient', null); };
+  if (!info || prefersReducedMotion()) { clear(); return; }
+  const color = mapLineColor(info.color);
+  const casing = luminance(color) > 0.55 ? theme().brightCasing : theme().casing;
+  const start = performance.now();
+  const duration = 900;
+  const step = now => {
+    if (!map.getLayer('tr-selected')) return;
+    const p = Math.min(1, (now - start) / duration);
+    const e = 1 - (1 - p) ** 3;
+    if (p >= 1) { clear(); return; }
+    const head = Math.max(0.001, e);
+    map.setPaintProperty('tr-selected', 'line-gradient', ['step', ['line-progress'], color, head, 'rgba(0,0,0,0)']);
+    map.setPaintProperty('tr-selected-casing', 'line-gradient', ['step', ['line-progress'], casing, head, 'rgba(0,0,0,0)']);
+    revealFrame = requestAnimationFrame(step);
+  };
+  revealFrame = requestAnimationFrame(step);
+}
+
+/* A new trip fades onto the map instead of appearing all at once. */
+const JOURNEY_LINE_LAYERS = ['journey-casing', 'journey-transit', 'journey-approx', 'journey-drive-casing', 'journey-drive', 'journey-walk'];
+function revealJourney() {
+  const map = state.map;
+  if (!map?.getLayer('journey-transit') || prefersReducedMotion()) return;
+  const target = ['case', ['==', ['get', 'dim'], 1], 0.35, 1];
+  for (const id of JOURNEY_LINE_LAYERS) {
+    map.setPaintProperty(id, 'line-opacity-transition', { duration: 0, delay: 0 });
+    map.setPaintProperty(id, 'line-opacity', 0);
+    requestAnimationFrame(() => {
+      if (!map.getLayer(id)) return;
+      map.setPaintProperty(id, 'line-opacity-transition', { duration: 520, delay: 0 });
+      map.setPaintProperty(id, 'line-opacity', target);
+    });
+  }
 }
 
 function highlightPlace(place) {
@@ -715,14 +823,16 @@ function renderVehicles() {
   const stale = vehiclesStale();
   const features = liveVehicles().map(({ v, agencyId, route, label, headsign }) => {
     const a = idx.agencies.get(agencyId);
-    const color = route ? route.color : normalizeColor(a?.color);
+    const color = mapLineColor(route ? route.color : normalizeColor(a?.color));
     return {
       type: 'Feature',
       properties: { id: v.id, headsign: headsign ? displayName(headsign) : '', vehicle: v.label || v.id || '', key: route?.key || '', agency: agencyId, cat: route?.cat || (agencyId === 'caltrain' ? 'heavy' : 'bus'), color, badge: route?.badge || label || '', title: route?.title || label || '', ts: v.timestamp || 0, stale },
       geometry: { type: 'Point', coordinates: [v.lon, v.lat] }
     };
   });
-  source.setData({ type: 'FeatureCollection', features });
+  const data = { type: 'FeatureCollection', features };
+  source.setData(data);
+  state.map.getSource('vehicle-labels')?.setData(data);
 }
 
 function journeyFeatures(itinerary) {
@@ -733,7 +843,7 @@ function journeyFeatures(itinerary) {
     if (!Array.isArray(coords) || coords.length < 2) coords = [[leg.from?.lon, leg.from?.lat], [leg.to?.lon, leg.to?.lat]];
     coords = coords.filter(c => Number.isFinite(c?.[0]) && Number.isFinite(c?.[1]));
     if (coords.length < 2) return null;
-    const color = isTransit(leg) ? legInfo(leg).color : theme().ink;
+    const color = isTransit(leg) ? mapLineColor(legInfo(leg).color) : theme().ink;
     const casing = luminance(color) > 0.55 ? theme().brightCasing : theme().surface;
     return { type: 'Feature', properties: { mode: leg.mode, color, casing, stroke: luminance(color) > 0.55 ? theme().brightCasing : color, legIndex, approx: legShapeMissing(leg) ? 1 : 0, dim: focus != null && focus !== legIndex ? 1 : 0, focus: focus === legIndex ? 1 : 0 }, geometry: { type: 'LineString', coordinates: coords } };
   }).filter(Boolean);
@@ -747,7 +857,9 @@ function journeyFeatures(itinerary) {
 function renderJourney() {
   const map = state.map;
   map?.getSource('journey')?.setData(journeyFeatures(state.journey));
-  map?.getSource('journey-points')?.setData(journeyPointFeatures(state.journey));
+  const points = journeyPointFeatures(state.journey);
+  map?.getSource('journey-points')?.setData(points);
+  map?.getSource('journey-point-labels')?.setData(points);
 }
 
 
@@ -782,6 +894,7 @@ async function setMapMode(mode, persist = true) {
   document.body.classList.toggle('theme-dark', mode === 'dark');
   document.body.classList.toggle('map-satellite', mode === 'satellite');
   $$('[data-map-mode]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mapMode === mode)));
+  tileFailures = []; clearMapStatus('tiles');
   if (!state.map) return;
   const style = await fetchStyle(mode);
   if (state.mapMode !== mode) return;
@@ -1049,6 +1162,11 @@ function render() {
   const active = document.activeElement;
   const keep = active && body.contains(active) && active.id && active.tagName === 'INPUT' && !(active.dataset.planField && !state.plan.focus) ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
   body.innerHTML = (renderers[view.name] || viewHome)(view);
+  // A new view slides in gently; refreshing the same view never animates.
+  if (state.lastViewName !== view.name && !prefersReducedMotion()) {
+    body.classList.remove('view-enter'); void body.offsetWidth; body.classList.add('view-enter');
+  }
+  state.lastViewName = view.name;
   if (keep) {
     const again = document.getElementById(keep.id);
     if (again) { again.focus({ preventScroll: true }); try { again.setSelectionRange(keep.start, keep.end); } catch { /* not a text field */ } }
@@ -1280,9 +1398,12 @@ function openRoute(key) {
   state.journey = null;
   renderJourney();
   applyMapState();
+  revealSelectedRoute(key);
   clearSearchField();
   pushView({ name: 'route', key }, { detent: 'half' });
-  const coords = (info.r.shapes || []).flat();
+  // A line without a published shape (BART's temporary bus bridges) is framed by its stops instead.
+  let coords = (info.r.shapes || []).flat();
+  if (!coords.length) { const stopMap = idx.stopById.get(info.a.id); coords = info.r.stops.map(id => stopMap.get(id)?.p).filter(Boolean); }
   requestAnimationFrame(() => fitCoordinates(coords, 13.5));
 }
 
@@ -1314,6 +1435,7 @@ function viewRoute({ key }) {
       <h1 class="title-1">${esc(info.title)}</h1>
       <p class="caption">${esc(a.name)} · ${esc(mode)}${r.d ? ` · Toward ${esc(displayName(r.d))}` : ''}</p>
       <p class="caption" style="margin-top:4px">${liveLine}</p>
+      ${(r.shapes || []).some(sh => sh?.length > 1) ? '' : `<p class="area-note shape-missing">${esc(a.name)} has not published a route shape for this line, so the map shows its stops only.</p>`}
     </div>
     ${alertsHtml(alerts)}
     <section class="section"><h2 class="label"><span>Stops</span><span>${stops.length}</span></h2>
@@ -1605,7 +1727,7 @@ async function submitPlan() {
     state.focusLeg = null;
     state.journey = itineraries[plan.expanded];
     pushView({ name: 'results' }, { detent: 'half' });
-    renderJourney(); applyMapState(); updatePlanMarkers(); fitJourney(state.journey);
+    renderJourney(); revealJourney(); applyMapState(); updatePlanMarkers(); fitJourney(state.journey);
   } catch (error) {
     plan.loading = false;
     // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
@@ -1960,7 +2082,8 @@ function handleAction(el) {
       plan.expanded = plan.expanded === i ? -1 : i;
       const it = plan.results.itineraries[plan.expanded >= 0 ? plan.expanded : i];
       state.focusLeg = null;
-      state.journey = it; renderJourney(); applyMapState(); fitJourney(it);
+      const changed = state.journey !== it;
+      state.journey = it; renderJourney(); if (changed) revealJourney(); applyMapState(); fitJourney(it);
       render(); break;
     }
     case 'leg-focus': focusLeg(Number(el.dataset.leg)); break;
@@ -2107,8 +2230,21 @@ function bindChrome() {
       if (['home', 'search'].includes(currentView().name)) render();
     }
     if (e.target.id === 'vehiclesToggle') { state.showVehicles = e.target.checked; store.set(STORAGE.vehicles, state.showVehicles); applyMapState(); }
+    if (e.target.id === 'busToggle') { state.showBus = e.target.checked; store.set(STORAGE.busLines, state.showBus); applyMapState(); }
+    if (e.target.id === 'railToggle') { state.showRail = e.target.checked; store.set(STORAGE.railLines, state.showRail); applyMapState(); }
   });
   $('#vehiclesToggle').checked = state.showVehicles;
+  $('#busToggle').checked = state.showBus;
+  $('#railToggle').checked = state.showRail;
+  $('#layersReset').addEventListener('click', () => {
+    state.visible = new Set(state.network.agencies.map(a => a.id));
+    state.showBus = true; state.showRail = true;
+    persistAgencies(); store.set(STORAGE.busLines, true); store.set(STORAGE.railLines, true);
+    $('#busToggle').checked = true; $('#railToggle').checked = true;
+    renderAgencyToggles(); applyMapState();
+    if (['home', 'search'].includes(currentView().name)) render();
+    $('#layersPopover').querySelector('[aria-checked="true"]')?.focus();
+  });
 
   $('#menuButton').addEventListener('click', e => {
     e.stopPropagation();
@@ -2188,20 +2324,47 @@ function onPositionError(err) {
   toast(err?.code === 1 ? 'Location is off. Search for a stop or line to get started.' : 'Your location could not be found. Please try again.');
 }
 
+/* The introduction: four short cards, each with a small illustration that plays once.
+ * With reduced motion, the illustrations show their finished state and nothing moves. */
 const INTRO = [
-  ['Find any stop or line', 'Search covers BART, Muni, VTA, AC Transit, and Caltrain. Try a line number such as 38R, or a station name.'],
-  ['Tap a line to focus the map', 'Other lines fade so you can follow the one you ride. Stops and vehicles for that line come forward.'],
-  ['Live means live', 'Times with the live symbol come from vehicles in service. Anything else is clearly labeled as scheduled.']
+  {
+    title: 'Find any stop, line, or address',
+    text: 'One search covers BART, Muni, Caltrain, VTA, and AC Transit, plus Bay Area addresses and places. Try a line such as 38R or a station name.',
+    art: `<svg viewBox="0 0 280 120"><rect class="ia-field" x="20" y="14" width="240" height="30" rx="9"/><circle class="ia-ink-stroke" cx="37" cy="29" r="6"/><path class="ia-ink-stroke" d="m41.5 33.5 4 4"/><text class="ia-type" x="56" y="34">38R</text><rect class="ia-caret" x="83" y="21" width="1.6" height="16" rx=".8"/>
+      <g class="ia-row" style="--d:.55s"><rect x="20" y="56" width="240" height="26" rx="7" class="ia-card"/><rect x="30" y="62" width="34" height="14" rx="4" fill="#bf2b45"/><text x="38" y="73" class="ia-badge-text">38R</text><rect x="72" y="65" width="120" height="7" rx="3.5" class="ia-bar"/></g>
+      <g class="ia-row" style="--d:.75s"><rect x="20" y="88" width="240" height="26" rx="7" class="ia-card"/><circle cx="40" cy="101" r="6" class="ia-pin"/><rect x="72" y="97" width="150" height="7" rx="3.5" class="ia-bar"/></g></svg>`
+  },
+  {
+    title: 'Tap a line to follow it',
+    text: 'The line you choose draws itself on the map while the rest of the network steps back. Its stops and live vehicles come forward.',
+    art: `<svg viewBox="0 0 280 120"><path class="ia-faded" d="M10 30h80l40 40h140"/><path class="ia-faded" d="M10 95c60 0 80-60 140-60s70 30 120 30"/><path class="ia-faded" d="M60 5v110"/>
+      <path class="ia-draw" style="--c:#1675be" d="M10 70c40 0 50-40 100-40s60 55 160 55" pathLength="1"/><g class="ia-pop" style="--d:.9s"><circle cx="10" cy="70" r="5" class="ia-stop"/><circle cx="110" cy="30" r="5" class="ia-stop"/><circle cx="270" cy="85" r="5" class="ia-stop"/></g><circle class="ia-vehicle" r="5.5" fill="#1675be"><animateMotion dur="3.2s" repeatCount="indefinite" path="M10 70c40 0 50-40 100-40s60 55 160 55"/></circle></svg>`
+  },
+  {
+    title: 'Live means live',
+    text: 'Times marked with the live symbol come from vehicles in service. Trip plans use published schedules and are labeled Scheduled.',
+    art: `<svg viewBox="0 0 280 120"><rect x="20" y="16" width="240" height="88" rx="12" class="ia-card"/><text x="40" y="66" class="ia-big">4</text><text x="42" y="84" class="ia-small">min</text><rect x="96" y="38" width="44" height="16" rx="4" fill="#f5c100"/><text x="105" y="50" class="ia-badge-text dark">Yellow</text><rect x="96" y="62" width="120" height="7" rx="3.5" class="ia-bar"/><g class="ia-live"><circle cx="102" cy="84" r="3" class="ia-live-dot"/><circle cx="102" cy="84" r="3" class="ia-live-ring"/></g><text x="112" y="88" class="ia-live-text">Live · On time</text></svg>`
+  },
+  {
+    title: 'Plan door to door',
+    text: 'Choose Directions, then enter any two Bay Area addresses. Walk, drive to a park-and-ride lot, or get dropped off, with turn-by-turn steps.',
+    art: `<svg viewBox="0 0 280 120"><path class="ia-walk" d="M28 92h40" pathLength="1"/><path class="ia-draw" style="--c:#005b95;--d:.35s" d="M68 92c30 0 30-40 70-40" pathLength="1"/><path class="ia-draw" style="--c:#e4002b;--d:.85s" d="M138 52c40 0 50 26 92 26" pathLength="1"/><path class="ia-walk" style="--d:1.3s" d="M230 78h22" pathLength="1"/><circle cx="28" cy="92" r="6" class="ia-from"/><rect x="246" y="72" width="12" height="12" rx="2.5" class="ia-to"/><g class="ia-pop" style="--d:.7s"><circle cx="68" cy="92" r="4.5" class="ia-stop"/><circle cx="138" cy="52" r="5.5" class="ia-stop strong"/><circle cx="230" cy="78" r="4.5" class="ia-stop"/></g></svg>`
+  }
 ];
 function showIntro(i = 0) {
   state.introIndex = i;
-  const [title, text] = INTRO[i];
+  const step = INTRO[i];
   $('#introStep').textContent = `${i + 1} of ${INTRO.length}`;
-  $('#introTitle').textContent = title;
-  $('#introText').textContent = text;
-  $('#introNext').textContent = i === INTRO.length - 1 ? 'Done' : 'Next';
+  $('#introTitle').textContent = step.title;
+  $('#introText').textContent = step.text;
+  // Re-inserting the art restarts its animation for each card.
+  $('#introArt').innerHTML = prefersReducedMotion() ? step.art.replace(/<circle class="ia-vehicle"[^>]*>.*?<\/circle>/s, '<circle class="ia-vehicle" r="5.5" cx="185" cy="62" fill="#1675be"/>') : step.art;
+  $('#introProgress').innerHTML = INTRO.map((_, k) => `<span class="${k === i ? 'on' : k < i ? 'done' : ''}"></span>`).join('');
+  $('#introNext').textContent = i === INTRO.length - 1 ? 'Get started' : 'Next';
   $('#introSkip').hidden = i === INTRO.length - 1;
-  $('#intro').hidden = false;
+  const intro = $('#intro');
+  intro.hidden = false;
+  intro.classList.remove('intro-in'); void intro.offsetWidth; intro.classList.add('intro-in');
   $('#introNext').focus({ preventScroll: true });
 }
 function finishIntro() {
@@ -3120,6 +3283,32 @@ function setFirstMile(key) {
 }
 
 /* @@INSERT */
+/* ---------- Map status (offline, basemap outage) ---------- */
+const mapStatus = { tiles: null, offline: null };
+function showMapStatus() {
+  const el = $('#mapStatus');
+  if (!el) return;
+  const text = mapStatus.offline || mapStatus.tiles;
+  el.hidden = !text;
+  el.textContent = text || '';
+  el.classList.toggle('warn', Boolean(mapStatus.offline));
+}
+function clearMapStatus(kind) { if (mapStatus[kind]) { mapStatus[kind] = null; showMapStatus(); } }
+let tileFailures = [];
+function noteTileFailure() {
+  const now = Date.now();
+  tileFailures = tileFailures.filter(t => now - t < 15000).concat(now);
+  if (tileFailures.length < 3 || mapStatus.tiles) return;
+  mapStatus.tiles = state.mapMode === 'satellite' ? 'Satellite imagery is not loading. Transit lines and stops are still shown.' : 'Map details are not loading. Transit lines and stops are still shown.';
+  showMapStatus();
+}
+function updateOnlineStatus() {
+  mapStatus.offline = navigator.onLine ? null : 'You are offline. Saved places and loaded lines still work; live times and trip planning will return when you reconnect.';
+  showMapStatus();
+}
+window.addEventListener('offline', updateOnlineStatus);
+window.addEventListener('online', () => { updateOnlineStatus(); loadRealtime(); });
+
 async function init() {
   try {
     const response = await fetch('public/data/network.json');
@@ -3175,10 +3364,17 @@ async function init() {
       state.mapReady = true;
       $('#mapLoading').classList.add('done');
       setupMapInteractions();
+      // The introduction waits for the map, so its first card never sits on a loading screen.
+      if (!store.get(STORAGE.intro, null)) setTimeout(() => showIntro(0), 500);
     };
     state.map.on('load', markReady);
     setTimeout(() => { if (state.map.isStyleLoaded() || state.map.getSource('transit-routes')) markReady(); }, 8000);
-    state.map.on('error', e => { if (e?.error?.status !== 404) console.warn('Map error:', e?.error?.message || e); });
+    state.map.on('error', e => {
+      if (e?.error?.status !== 404) console.warn('Map error:', e?.error?.message || e);
+      // Basemap or imagery tiles failing (not fonts or Rove's own data) is said on the map, once.
+      if (e?.sourceId && !['transit-routes', 'transit-stops', 'transit-stop-labels', 'vehicles', 'vehicle-labels', 'journey', 'journey-points', 'journey-point-labels'].includes(e.sourceId)) noteTileFailure();
+    });
+    state.map.on('data', e => { if (e.dataType === 'source' && e.tile && !/^(transit|vehicle|journey)/.test(e.sourceId || '')) clearMapStatus('tiles'); });
   }
 
   if (navigator.permissions?.query) {
@@ -3187,10 +3383,10 @@ async function init() {
 
   $('#introSkip').addEventListener('click', finishIntro);
   $('#introNext').addEventListener('click', () => (state.introIndex < INTRO.length - 1 ? showIntro(state.introIndex + 1) : finishIntro()));
-  if (!store.get(STORAGE.intro, null)) setTimeout(() => showIntro(0), 600);
 
   loadRealtime();
   fetchPlanStatus();
+  updateOnlineStatus();
   state.realtimeTimer = setInterval(loadRealtime, 60000);
   setInterval(() => { if (!document.hidden) { prefetchVisibleArrivals(); refreshLiveViews(); } }, 30000);
   $('#mapPickCancel').addEventListener('click', () => endMapPick(null));

@@ -4,12 +4,14 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.mjs",
-    "check": "node --check server.mjs && node --check app.js && node --check scripts/audit-gtfs.mjs && node --check scripts/fetch-511-static.mjs && node --check scripts/check-secrets.mjs && node --check scripts/verify-realtime.mjs",
+    "check": "node --check server.mjs && node --check app.js && node --check scripts/audit-gtfs.mjs && node --check scripts/fetch-511-static.mjs && node --check scripts/check-secrets.mjs && node --check scripts/verify-realtime.mjs && node --check scripts/verify-map-render.mjs",
     "check-secrets": "node --env-file-if-exists=.env scripts/check-secrets.mjs",
     "audit-data": "node scripts/audit-gtfs.mjs",
     "verify-realtime": "node scripts/verify-realtime.mjs",
     "configure-511": "./scripts/configure-511-key.sh",
-    "refresh-data": "./scripts/refresh-data.sh"
+    "refresh-data": "./scripts/refresh-data.sh",
+    "test": "node --test test/*.test.mjs",
+    "verify-map-render": "node scripts/verify-map-render.mjs"
   },
   "dependencies": {
     "gtfs-realtime-bindings": "^1.1.1"

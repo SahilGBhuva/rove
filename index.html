@@ -9,14 +9,18 @@
   <meta name="description" content="Door-to-door transit directions and live times for the San Francisco Bay Area: BART, Muni, Caltrain, VTA, and AC Transit." />
   <link rel="preload" href="public/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=16" />
+  <link rel="stylesheet" href="styles.css?v=20" />
 </head>
 <body>
   <a class="skip-link" href="#panelBody">Skip to transit information</a>
 
   <main class="map-area" aria-label="Map">
     <div id="map" class="map" role="region" aria-label="Interactive map of Bay Area transit lines and stops"></div>
-    <div class="map-loading" id="mapLoading" role="status"><span class="spinner" aria-hidden="true"></span><span>Loading the Bay Area transit network</span></div>
+    <div class="map-loading" id="mapLoading" role="status">
+      <svg class="loader-art" viewBox="0 0 96 40" aria-hidden="true"><path class="loader-track" d="M6 30c14 0 16-20 30-20s16 20 30 20 14-16 24-16"/><path class="loader-line" d="M6 30c14 0 16-20 30-20s16 20 30 20 14-16 24-16"/><circle cx="6" cy="30" r="3.4"/><circle cx="90" cy="14" r="3.4"/></svg>
+      <span>Loading the Bay Area transit network</span>
+    </div>
+    <div class="map-status" id="mapStatus" role="status" aria-live="polite" hidden></div>
   </main>
 
   <aside class="panel" id="panel" aria-label="Transit information">
@@ -58,20 +62,24 @@
 
   <section class="layers-popover" id="layersPopover" aria-label="Map layers" hidden>
     <div class="popover-head"><h2>Map</h2><button class="icon-button" id="layersClose" aria-label="Close map layers"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15"/></svg></button></div>
-    <div class="segmented" role="radiogroup" aria-label="Map style">
-      <button role="radio" data-map-mode="standard">Standard</button>
-      <button role="radio" data-map-mode="satellite">Satellite</button>
-      <button role="radio" data-map-mode="dark">Dark</button>
+    <div class="segmented style-picker" role="radiogroup" aria-label="Map style">
+      <button role="radio" data-map-mode="standard"><span class="style-swatch standard" aria-hidden="true"></span>Standard</button>
+      <button role="radio" data-map-mode="satellite"><span class="style-swatch satellite" aria-hidden="true"></span>Satellite</button>
+      <button role="radio" data-map-mode="dark"><span class="style-swatch dark" aria-hidden="true"></span>Dark</button>
     </div>
-    <h3 class="label">Agencies</h3>
-    <div id="agencyToggles" class="toggle-list"></div>
     <h3 class="label">Show</h3>
     <div class="toggle-list">
+      <label class="toggle-row"><span>Rail lines<small>BART, Caltrain, Muni Metro, VTA light rail</small></span><input type="checkbox" id="railToggle" checked /><i aria-hidden="true"></i></label>
+      <label class="toggle-row"><span>Bus lines<small>Appear as you zoom in to a city</small></span><input type="checkbox" id="busToggle" checked /><i aria-hidden="true"></i></label>
       <label class="toggle-row"><span>Live vehicles</span><input type="checkbox" id="vehiclesToggle" checked /><i aria-hidden="true"></i></label>
     </div>
+    <h3 class="label label-row"><span>Agencies</span><button type="button" class="text-button small" id="layersReset" hidden>Show everything</button></h3>
+    <div id="agencyToggles" class="toggle-list"></div>
   </section>
 
   <div class="intro" id="intro" role="dialog" aria-modal="false" aria-labelledby="introTitle" hidden>
+    <div class="intro-art" id="introArt" aria-hidden="true"></div>
+    <div class="intro-progress" id="introProgress" aria-hidden="true"></div>
     <p class="intro-step" id="introStep"></p>
     <h2 id="introTitle"></h2>
     <p id="introText"></p>
@@ -89,6 +97,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
-  <script src="app.js?v=16"></script>
+  <script src="app.js?v=20"></script>
 </body>
 </html>
