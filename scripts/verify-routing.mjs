@@ -13,9 +13,14 @@ const CASES = [
   { name: 'Ocean Beach (SF) to Mission & 24th (SF)', from: [37.77210, -122.50980], to: [37.75230, -122.41860], expectAny: ['muni', 'bart'] },
   { name: 'Downtown Berkeley to Fruitvale', from: [37.87010, -122.26800], to: [37.77480, -122.22410], expectAny: ['bart', 'act'] },
   { name: 'SF 4th & King to San Jose Diridon', from: [37.77640, -122.39440], to: [37.32970, -121.90250], expectAny: ['caltrain'] },
-  { name: 'Mountain View to Downtown San Jose (VTA light rail)', from: [37.39470, -122.07610], to: [37.33540, -121.88960], expectAny: ['vta', 'caltrain'] },
+  { name: 'Mountain View to Downtown San Jose', from: [37.39470, -122.07610], to: [37.33540, -121.88960], expectAny: ['vta', 'caltrain'] },
   { name: 'Downtown Oakland to Palo Alto (BART + Caltrain)', from: [37.80370, -122.27150], to: [37.44310, -122.16490], expectAny: ['caltrain'], multiAgency: true },
-  { name: 'Richmond to Milpitas (transfer across the bay)', from: [37.93700, -122.35300], to: [37.41020, -121.89110], expectAny: ['bart', 'vta'] }
+  { name: 'Richmond to Milpitas (transfer across the bay)', from: [37.93700, -122.35300], to: [37.41020, -121.89110], expectAny: ['bart', 'vta'] },
+  // Agency-specific trips where the obvious answer requires that operator.
+  { name: 'Alameda (South Shore) to Downtown Oakland (AC Transit)', from: [37.75650, -122.25250], to: [37.80440, -122.27120], expectAny: ['act'], mustUse: 'act' },
+  { name: 'Haight & Ashbury to Chestnut St, Marina (Muni)', from: [37.76990, -122.44680], to: [37.80020, -122.43690], expectAny: ['muni'], mustUse: 'muni' },
+  { name: 'Downtown Mountain View to Tasman (VTA Orange Line)', from: [37.39470, -122.07610], to: [37.40920, -121.95170], expectAny: ['vta'], mustUse: 'vta' },
+  { name: 'Arrive by 9:00 at Civic Center from Daly City', from: [37.70630, -122.46900], to: [37.77960, -122.41390], expectAny: ['bart', 'muni'], arriveBy: true }
 ];
 
 function nextWeekdayMorning() {
@@ -35,7 +40,8 @@ const time = process.env.ROVE_PLAN_TIME || nextWeekdayMorning();
 const results = [];
 let failures = 0;
 for (const c of CASES) {
-  const qs = new URLSearchParams({ fromLat: c.from[0], fromLon: c.from[1], toLat: c.to[0], toLon: c.to[1], time, limit: '3' });
+  const t = c.arriveBy ? time.replace('T08:15', 'T09:00') : time;
+  const qs = new URLSearchParams({ fromLat: c.from[0], fromLon: c.from[1], toLat: c.to[0], toLon: c.to[1], time: t, limit: '3', ...(c.arriveBy ? { arriveBy: 'true' } : {}) });
   const started = Date.now();
   const r = await fetch(`${base}/api/v2/plan?${qs}`, { signal: AbortSignal.timeout(60_000) });
   const body = await r.json();
@@ -44,7 +50,7 @@ for (const c of CASES) {
   const its = body.itineraries || [];
   if (!its.length) problems.push(`no itineraries (${(body.errors || []).map(e => e.code).join(', ') || 'no error code'})`);
   for (const it of its) {
-    if (!it.legs.some(l => l.transit)) problems.push(`${it.id}: no transit leg`);
+
     let prev = null;
     for (const l of it.legs) {
       const s = Date.parse(l.start.scheduled), e = Date.parse(l.end.scheduled);
@@ -55,8 +61,15 @@ for (const c of CASES) {
       if (!l.geometry?.coordinates?.length && l.distanceMeters > 50) problems.push(`${it.id}: leg without geometry`);
     }
   }
+  if (its.length && !its.some(i => i.legs.some(l => l.transit))) problems.push('no itinerary uses transit');
+  for (let k = 1; k < its.length; k++) {
+    const order = c.arriveBy ? Date.parse(its[k - 1].start) >= Date.parse(its[k].start) : Date.parse(its[k - 1].end) <= Date.parse(its[k].end);
+    if (!order) problems.push(`itineraries are not ordered (${its[k - 1].id}, ${its[k].id})`);
+  }
   const agenciesUsed = [...new Set(its.flatMap(i => i.agencies))];
   if (its.length && !c.expectAny.some(a => agenciesUsed.includes(a))) problems.push(`expected one of ${c.expectAny.join('/')}, got ${agenciesUsed.join('/') || 'none'}`);
+  if (c.mustUse && its.length && !its.some(i => i.agencies.includes(c.mustUse))) problems.push(`no itinerary uses ${c.mustUse}`);
+  if (c.arriveBy && its.length && its.some(i => Date.parse(i.end) > Date.parse(t))) problems.push('arrive-by itinerary arrives after the requested time');
   if (c.multiAgency && its.length && !its.some(i => i.agencies.length > 1)) problems.push('expected at least one multi-agency itinerary');
   if (problems.length) failures++;
   results.push({

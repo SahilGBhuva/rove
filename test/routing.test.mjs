@@ -5,7 +5,7 @@ import path from 'node:path';
 import { buildSchema, parse, validate } from 'graphql';
 import { getVariableValues } from 'graphql/execution/values.js';
 import {
-  HEALTH_QUERY, OtpClient, PLAN_QUERY, PlanRequestError, buildPlanVariables, decodePolyline,
+  HEALTH_QUERY, OtpClient, PLAN_QUERY, PlanRequestError, buildPlanVariables, decodePolyline, sortItineraries,
   isoDurationToSeconds, normalizeItinerary, parsePlanParams, splitGtfsId, toPacificOffsetDateTime
 } from '../lib/routing/otp.mjs';
 
@@ -138,4 +138,12 @@ test('OtpClient: an unreachable engine is a 503 ROUTING_UNAVAILABLE', async () =
 test('OtpClient: HTTP and GraphQL failures are 502s', async () => {
   await assert.rejects(new OtpClient({ fetchImpl: async () => jsonResponse({}, 500) }).plan(parsePlanParams(params(sfToOakland), NOW)), e => e.status === 502);
   await assert.rejects(new OtpClient({ fetchImpl: async () => jsonResponse({ errors: [{ message: 'Validation error' }] }) }).plan(parsePlanParams(params(sfToOakland), NOW)), e => e.code === 'ROUTING_QUERY_ERROR');
+});
+
+test('itineraries are ordered by arrival (or by latest departure for arrive-by), so a slow walk-only option is not listed first', () => {
+  const walk = { start: '2026-10-20T08:15:00-07:00', end: '2026-10-20T09:16:00-07:00', legs: [] };
+  const bus = { start: '2026-10-20T08:20:00-07:00', end: '2026-10-20T08:49:00-07:00', legs: [] };
+  const later = { start: '2026-10-20T08:30:00-07:00', end: '2026-10-20T08:59:00-07:00', legs: [] };
+  assert.deepEqual(sortItineraries([walk, later, bus]).map(n => n.end.slice(11, 16)), ['08:49', '08:59', '09:16']);
+  assert.deepEqual(sortItineraries([walk, bus, later], true).map(n => n.start.slice(11, 16)), ['08:30', '08:20', '08:15']);
 });

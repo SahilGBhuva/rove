@@ -18,7 +18,7 @@ Requires Java 21 and roughly 2 GB of disk. Clipping uses `osmium` if installed (
 cd ~/rove-claude
 npm install
 npm run otp:setup     # downloads and checksum-verifies the OTP jar and OSM, clips OSM, installs GTFS
-npm run otp:build     # builds data/otp/graph/graph.obj (several minutes; OTP_HEAP=6g by default)
+npm run otp:build     # builds data/otp/graph/graph.obj (about 6 minutes in two steps; OTP_HEAP=5g by default)
 ```
 
 ## Running

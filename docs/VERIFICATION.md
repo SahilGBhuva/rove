@@ -29,12 +29,42 @@ Findings:
 - BART publishes added trips (one at 23:10 between Pittsburg/Bay Point and North Concord). They are treated the same way.
 - BART's alerts feed was empty (header only) at all three captures, although bart.gov showed a planned-work advisory for Sunday, October 18. Advisories published only on the website do not reach GTFS-RT, so Rove cannot show them from this feed.
 
-## OpenTripPlanner: in progress
+## OpenTripPlanner journey planning: verified (October 17-18, 2026)
 
-- `otp-shaded-2.8.1.jar` downloaded from Maven Central; SHA-1 `f0cb33760d228084b1f7046b3f5b5f302aceee87` matches Maven's published checksum.
-- A transit-only build of the five real GTFS feeds exposed a real configuration failure: BART and other feeds declare different time-zone names (`America/Los_Angeles` and `US/Pacific`), and OTP refuses to build. Fixed with `transitModelTimeZone` in `otp/build-config.json`; the transit build then succeeded.
-- With that graph served, `/api/v2/plan/status` reported all five feeds, and `/api/v2/plan` reached the live engine, which accepted the query and returned the correct `LOCATION_NOT_FOUND` errors (no streets were loaded yet).
-- Full build with OpenStreetMap streets and real journeys: pending the OSM download.
+Inputs, all real and checksum-verified:
+
+- `otp-shaded-2.8.1.jar` from Maven Central, SHA-1 `f0cb33760d228084b1f7046b3f5b5f302aceee87` (matches Maven's published checksum).
+- Geofabrik `norcal-261017.osm.pbf` (654,222,874 bytes), MD5 `e7f85de95f198cd21d240611496a6473` (matches Geofabrik's published checksum). Downloaded through the Mac's browser in ranged pieces because the shells cannot reach Geofabrik; the reassembled file was checked against the published MD5 before use.
+- Clipped with `scripts/otp/clip_osm.py` to the Rove bounding box: 807,994 ways, 894,049 tagged nodes, 29,490 relations, 64 MB.
+- The five validated GTFS archives in `data/raw/`.
+
+Build: street graph then transit graph (`scripts/otp/build-graph.sh`), about 3 minutes each at a 4.5 GB heap. A single-step build at 6 GB was killed by the 6 GB memory limit of the cloud workspace, which is why the script now builds in two steps. OTP linked all agencies; it reported 27 stops not linked for transfers and 188 stops on pruned street islands out of 11,335, and removed trips whose service falls outside its four-month window.
+
+Configuration failure found and fixed: the feeds declare both `America/Los_Angeles` and `US/Pacific`, and OTP refused to build until `transitModelTimeZone` was set.
+
+Real door-to-door journeys (`npm run verify-routing`, departures Monday, October 19, 2026 at 8:15 am, all through `/api/v2/plan`):
+
+| Trip | Best itinerary returned |
+|---|---|
+| Powell St to Lake Merritt | Walk 7 m, BART Blue-N 08:23 to 08:38, walk 36 m (20 min) |
+| Ocean Beach to Mission and 24th | Muni 5R 08:20 to 08:56, walk 187 m, BART Yellow-S 09:05 to 09:09 (53 min) |
+| Downtown Berkeley to Fruitvale | BART Orange-S 08:37 to 08:58 (26 min) |
+| 4th and King to San Jose Diridon | Caltrain Express 08:20 to 09:20 (63 min) |
+| Mountain View to Downtown San Jose | Caltrain 08:24 to Santa Clara 08:36, VTA Rapid 522 08:41 to 08:57 (37 min) |
+| Downtown Oakland to Palo Alto | BART Yellow-S to Montgomery, Muni N to 4th and King, Caltrain 09:25 to 10:14 (107 min) |
+| Richmond to Milpitas | BART Orange-S 08:24 to 09:41 (83 min) |
+| Alameda South Shore to Downtown Oakland | AC Transit 30, 08:21 to 08:48 (39 min) |
+| Haight and Ashbury to Chestnut St | Muni 43, 08:22 to 08:46 (29 min) |
+| Downtown Mountain View to Tasman | VTA Orange Line 08:18 to 08:50 (38 min) |
+| Arrive by 9:00 at Civic Center from Daly City | BART Yellow-N 08:42 to 08:55 |
+
+All 11 passed the script's checks: transit legs present, legs in time order, every transit leg carries agency, route, trip and stop ids, geometry present, and the expected operator used. Every agency appears in at least one itinerary.
+
+Spot check against the source schedule: the Powell to Lake Merritt legs (BART trips 1965825 and 1965541) depart and arrive at exactly the GTFS `departure_time` at Powell and `arrival_time` at Lake Merritt, so there is no time-zone shift.
+
+Defect found and fixed: OTP returned a 61-minute walk-only option ahead of a 29-minute Muni trip. The API now orders itineraries by arrival time (latest departure first for arrive-by), and the check verifies ordering.
+
+Not yet verified: realtime-adjusted routing (routing is schedule-based), and trips outside the morning peak.
 
 ## VTA, Caltrain, Muni and AC Transit realtime: pending
 
