@@ -35,3 +35,16 @@ export const ROWS = [
   { kind: 'poi', name: 'University of California, Berkeley', address: 'Oakland', city: 'Oakland', lat: 37.8755, lon: -122.239069, rank: 6, osm: 'r2814221', category: 'University', alt: 'UC Berkeley' },
   { kind: 'address', name: '1 Doctor Carlton B Goodlett Place', address: 'San Francisco, CA', city: 'San Francisco', lat: 37.7793, lon: -122.4193, housenumber: '1', street: 'Doctor Carlton B Goodlett Place' }
 ];
+
+// Rows copied from the real index (October 2026) for the landmark-ranking test.
+export const LANDMARK_ROWS = [
+  { kind: 'area', name: 'Berkeley', address: 'City', lat: 37.870839, lon: -122.272863, rank: 9 },
+  { kind: 'poi', name: 'Berkeley City Club', address: 'Berkeley', city: 'Berkeley', lat: 37.867645, lon: -122.262852, rank: 6, category: 'Hotel', alt: "Berkeley Women's City Club", osm: 'r4183940' },
+  { kind: 'poi', name: 'Berkeley Conference Center', address: 'Berkeley', city: 'Berkeley', lat: 37.867859, lon: -122.267332, rank: 5, category: 'Building', alt: 'Berkeley Masonic Temple', osm: 'w43150623' },
+  { kind: 'poi', name: 'University of California, Berkeley', address: 'Oakland', city: 'Oakland', lat: 37.8755, lon: -122.239069, rank: 6, category: 'University', alt: 'UC Berkeley', osm: 'r2814221' },
+  { kind: 'poi', name: 'Stanford University', address: '450 Jane Stanford Way, Stanford', city: 'Stanford', lat: 37.429512, lon: -122.170969, rank: 5, category: 'University', alt: 'Leland Stanford Junior University', osm: 'w29268613' },
+  { kind: 'poi', name: 'Stanford Stadium', address: 'Stanford', city: 'Stanford', lat: 37.434526, lon: -122.161987, rank: 6, category: 'Stadium', osm: 'r18564360' },
+  { kind: 'poi', name: 'The Dish', address: 'Ladera', city: 'Ladera', lat: 37.408549, lon: -122.179601, rank: 5, category: 'Place', alt: 'The Stanford Dish', osm: 'w232396550' },
+  { kind: 'poi', name: 'San Francisco International Airport', address: 'San Mateo County', city: null, lat: 37.6213, lon: -122.379, rank: 5, category: 'Airport', alt: 'SFO' },
+  { kind: 'poi', name: 'SFO Medical Clinic', address: 'San Mateo County', city: null, lat: 37.62, lon: -122.38, rank: 2, category: 'Clinic' }
+];

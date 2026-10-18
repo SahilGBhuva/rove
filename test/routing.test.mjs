@@ -156,6 +156,10 @@ test('walking instructions read naturally for named streets and generic paths', 
   const { stepInstruction } = await import('../lib/routing/otp.mjs');
   assert.equal(stepInstruction({ relativeDirection: 'DEPART', absoluteDirection: 'EAST', streetName: 'Lily Avenue' }), 'Head east on Lily Avenue');
   assert.equal(stepInstruction({ relativeDirection: 'LEFT', streetName: 'Toyon Avenue' }), 'Turn left onto Toyon Avenue');
+  assert.equal(stepInstruction({ relativeDirection: 'RIGHT', streetName: 'link' }), 'Turn right onto the ramp', 'an OSM link is a highway ramp');
+  assert.equal(stepInstruction({ relativeDirection: 'RIGHT', streetName: 'open area', area: true }), 'Turn right across the open area');
+  assert.equal(stepInstruction({ relativeDirection: 'DEPART', absoluteDirection: 'NORTH', streetName: 'corridor' }), 'Head north through the corridor');
+  assert.equal(stepInstruction({ relativeDirection: 'CONTINUE', streetName: 'underpass' }), 'Continue through the underpass');
   assert.equal(stepInstruction({ relativeDirection: 'SLIGHTLY_RIGHT', streetName: 'path', bogusName: true }), 'Bear right onto the path');
   assert.equal(stepInstruction({ relativeDirection: 'LEFT', streetName: 'escalator', bogusName: false }), 'Take the escalator');
   assert.equal(stepInstruction({ relativeDirection: 'CONTINUE', streetName: 'Market Street', stayOn: true }), 'Continue on Market Street');

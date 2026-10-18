@@ -25,7 +25,7 @@ run "Syntax check" npm run -s check
 run "Secret scan" npm run -s check-secrets
 run "Live realtime matching (511 + BART)" npm run -s verify-realtime
 run "Schedule-based routing (11 trips)" npm run -s verify-routing
-run "Place search and door-to-door (23 checks)" npm run -s verify-places
+run "Place search and door-to-door" npm run -s verify-places
 run "Launch scenarios" node scripts/verify-scenarios.mjs
 printf '\nReports: %s\n' "$(ls data/reports | tr '\n' ' ')"
 exit $status

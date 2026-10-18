@@ -176,3 +176,32 @@ test('hourly match log records each distinct snapshot once and rolls over by hou
   assert.equal(report.completedHours.length, 1);
   assert.equal(report.completedHours[0].agencies.muni.tripMatchPct, 100);
 });
+
+test('live arrival state: configuration, feed failure, old data and the quality gate each give a plain reason', async () => {
+  const { liveArrivalState, MAX_LIVE_AGE_SECONDS } = await import('../lib/realtime/service.mjs');
+  const now = Date.UTC(2026, 9, 20, 16, 0, 0);
+  const fresh = { headerTimestamp: now / 1000 - 40, fetchedAt: now - 5_000, stale: false };
+  const ok = { arrivalsVerified: true, gateReasons: [] };
+  const base = { configured: { feed511: true, bartDirect: true }, feeds: { updates: fresh, bartUpdates: fresh }, errors: [], quality: { bart: ok, muni: ok } };
+
+  assert.deepEqual(liveArrivalState(base, 'bart', now), { verified: true, ageSeconds: 40, stale: false, reasons: [] });
+  const no511 = liveArrivalState({ ...base, configured: { feed511: false, bartDirect: true } }, 'muni', now);
+  assert.equal(no511.verified, false);
+  assert.match(no511.reasons[0], /511 is not configured/);
+  assert.equal(liveArrivalState({ ...base, configured: { feed511: false, bartDirect: true } }, 'bart', now).verified, true, 'BART does not need 511');
+
+  const down = liveArrivalState({ ...base, feeds: { ...base.feeds, bartUpdates: null }, errors: [{ feed: 'bartUpdates', message: 'HTTP 503' }] }, 'bart', now);
+  assert.equal(down.verified, false);
+  assert.match(down.reasons[0], /BART live feed could not be reached \(HTTP 503\)/);
+
+  const old = liveArrivalState({ ...base, feeds: { ...base.feeds, bartUpdates: { ...fresh, headerTimestamp: now / 1000 - MAX_LIVE_AGE_SECONDS - 60, stale: true } } }, 'bart', now);
+  assert.equal(old.verified, false);
+  assert.match(old.reasons[0], /newest BART live data is 16 minutes old/);
+
+  const slightlyOld = liveArrivalState({ ...base, feeds: { ...base.feeds, bartUpdates: { ...fresh, headerTimestamp: now / 1000 - 300, stale: true } } }, 'bart', now);
+  assert.deepEqual([slightlyOld.verified, slightlyOld.stale], [true, true], 'a few minutes old: shown, marked stale');
+
+  const gated = liveArrivalState({ ...base, quality: { ...base.quality, muni: { arrivalsVerified: false, gateReasons: ['trip match 88.7% is below 99%'] } } }, 'muni', now);
+  assert.deepEqual(gated.reasons, ['trip match 88.7% is below 99%']);
+  assert.match(liveArrivalState({ ...base, quality: {} }, 'muni', now).reasons[0], /no data for this agency/);
+});

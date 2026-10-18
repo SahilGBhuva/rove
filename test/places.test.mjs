@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PlaceIndex, normalizePlaceText } from '../lib/places.mjs';
-import { ROWS, fixtureDb } from './helpers-places.mjs';
+import { LANDMARK_ROWS, ROWS, fixtureDb } from './helpers-places.mjs';
 
 
 
@@ -63,4 +63,13 @@ test('a missing index reports why instead of failing', async () => {
   const r = await PlaceIndex.open('/nonexistent/places.sqlite');
   assert.equal(r.index, null);
   assert.match(r.reason, /not found/);
+});
+
+test('landmarks: a city name finds the city first, and a campus beats shops and hotels that share the word', async () => {
+  const { index: real } = await PlaceIndex.open(fixtureDb(LANDMARK_ROWS));
+  const names = q => real.search(q, { limit: 4 }).map(r => r.name);
+  assert.deepEqual(names('berkeley').slice(0, 2), ['Berkeley', 'University of California, Berkeley']);
+  assert.equal(names('stanford')[0], 'Stanford University');
+  assert.equal(names('uc berkeley')[0], 'University of California, Berkeley');
+  assert.equal(names('sfo')[0], 'San Francisco International Airport', 'airport codes in alternate names still count as exact');
 });

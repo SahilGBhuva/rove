@@ -15,10 +15,12 @@ npm run rove
 
 1. Checks Node and dependencies.
 2. Reuses OpenTripPlanner if it already answers on port 8080. Otherwise starts it from the saved graph (`--load`, no rebuild; about 30 to 60 seconds; log in `data/logs/otp.log`).
-3. Starts Rove on port 4173. If a port is taken, it prints the process that holds it (PID, command, start time, folder) and tries the next port, up to 4193. It never stops another process.
+3. Starts Rove on port 4173, reachable from this computer only. If a port is taken, it prints the process that holds it (PID, command, start time, folder) and tries the next port, up to 4193. It never stops another process.
 4. Prints the address, for example `Rove: http://localhost:4174`.
 
-Options: `PORT=4180 npm run rove`, `OTP_PORT=8081 npm run rove`, `OTP_HEAP=6g npm run rove`.
+Options: `PORT=4180 npm run rove`, `OTP_PORT=8081 npm run rove`, `OTP_HEAP=6g npm run rove`, `HOST=0.0.0.0 npm run rove` (reachable from other devices on the network; the default is this Mac only).
+
+Before the first run on a Mac, check: `java -version` (21 or newer; install with `brew install openjdk@21` if missing, then follow the PATH note Homebrew prints), `node -v` (22.5 or newer), and free memory (OTP uses a 5 GB heap; close memory-heavy apps).
 
 Stop Rove with Ctrl+C. OpenTripPlanner keeps running so the next start is instant; stop it with `npm run otp:stop` (stops only the process recorded in `data/logs/otp.pid`, and only if it is OpenTripPlanner).
 

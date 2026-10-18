@@ -157,3 +157,55 @@ Live arrivals (scenario 7) were skipped in the cloud workspace because it cannot
 - Walking directions come from OpenStreetMap. Unnamed ways are described as "the path" or "the sidewalk".
 - Drive times use speed limits, not live traffic. Parking availability is never known; lot capacity is shown only where OSM maps it. Drop-off ends at the nearest drivable street, not a designated zone.
 - Sunnyvale has partial OSM address coverage (about 15,000 addresses). Unmapped house numbers fall back to the street, labeled approximate.
+
+## Combined frontend and backend (October 18, 2026)
+
+Frontend `claude-frontend` at `9521bb0` (its `index.html`, `app.js`, `styles.css` and fonts) served by this backend with the real OpenTripPlanner graph and place index, driven in a headless browser at 390 x 844 through the real interface: search box, suggestions, Walk/Drive/Drop-off, Depart at Monday, October 19, 8:00 am, Find routes. Run in the cloud workspace (Linux, 8 GB). Map tiles were blocked there, which does not affect planning.
+
+| Trip | Result in the interface |
+|---|---|
+| 1105 Lily Avenue, Sunnyvale → SFO, Walk | 8:16–9:37 (1 hr 21 min): walk to Lawrence, Caltrain 8:39, BART Red; 12 walking steps |
+| Same, Drive | 8:22–9:17 (55 min): drive 2.5 mi (7 min) to the Sunnyvale Caltrain lot, Caltrain Express, BART; 7 driving steps |
+| Same, Drop-off | 8:20–9:17 (57 min): walk 310 ft, drive 2.4 mi to Sunnyvale station, Caltrain, BART |
+| UC Berkeley → Ferry Building | 8:04–9:07 (1 hr 2 min): walk to Downtown Berkeley, BART Red, no transfers (after the campus-location fix below) |
+| Stanford → San Jose Diridon | 8:03–8:59: walk to Palo Alto, Caltrain Limited, no transfers |
+| Oakland City Hall → Palo Alto City Hall | 8:02–9:38: BART Yellow, Muni 45, Caltrain Limited, 2 transfers |
+
+Every result was labeled "Scheduled times". No page errors and no horizontal overflow.
+
+Routing outage, also seen through the interface: with OpenTripPlanner stopped, `/api/v2/status` reported `routing.available: false` and `access: []`, and the interface hid Find routes and disabled Drive rather than offering trips it could not plan.
+
+Two frontend issues were found and handed to the frontend (details in `API_CONTRACT.md`): drop-off results are worded as park-and-ride, and drive results do not say that traffic is not included.
+
+## Live, stale and failed realtime through the API (October 18, 2026)
+
+The real BART capture from 16:33 UTC was replayed to the running server from a local test server (`BART_TRIP_UPDATES_URL`). For the first state, every timestamp was moved forward so the feed looked current; that copy is test data derived from the real capture.
+
+| Feed state | `/api/v2/arrivals` (Powell Street) | `/api/v2/status` (BART) |
+|---|---|---|
+| Current (shifted test copy) | `live`, 33 arrivals, matching the board computed from the original capture | `verified` |
+| The real capture as sent, 136 minutes old | `unverified`: "The newest BART live data is 136 minutes old." | `unverified`, same reason |
+| Feed returning HTTP 503, within BART's 2-minute grace | last good data with its age | same |
+| Feed still failing after the grace period | `unverified`: "The BART live feed could not be reached (BART trip updates returned HTTP 503)." | same |
+| 511 agencies without a key | `unverified`: "Live data from 511 is not configured on this server." | same |
+
+Defects found and fixed: before this change, a two-hour-old feed returned `no-predictions` (shown to riders as "no live predictions for the next three hours") while the status said BART was verified; and a feed that failed with nothing cached returned `unknown-agency` for BART. Both now report `unverified` with the reason, and the board and the status share one decision (`liveArrivalState`). BART is now fetched over HTTPS.
+
+## Search ranking and campus location (October 18, 2026)
+
+60 real searches compared before and after (top three results each). Four first results changed, all improvements; none got worse:
+
+| Search | Before | After |
+|---|---|---|
+| berkeley | Berkeley City Club (a hotel) | Berkeley (the city), then the University of California, Berkeley |
+| san jose airport | San Jose Airport Sign Shop | San José Mineta International Airport |
+| ucsf | UCSF Mount Zion Campus | University of California, San Francisco |
+| embarcadero | Embarcadero Center 1 | Embarcadero station |
+
+"uc berkeley", "stanford", "stanford university", "san jose state", "sfo" and the addresses kept their first result. Cause: a one-word query got the exact-match bonus when the word appeared anywhere in a place's alternate names, which is meant for codes such as "SFO". It now does so only when the word is not already in the main name, and universities, colleges, airports and stadiums get a small boost when the word is in their name.
+
+UC Berkeley's location: OSM's campus outline includes the Berkeley Hills, so its center was 1.8 km east of central campus and inside the Oakland boundary. Fixed in `8e293e9` (committed to this branch by the frontend session): `config/place-anchors.json` places the campus at the Campanile (Sather Tower), and those coordinates match the OSM feature `w24024507` in the installed index exactly. UC Berkeley → Ferry Building went from 83 minutes (a 1.2-mile walk from the hills, AC Transit, BART) to 62 minutes (walk 1.1 km to Downtown Berkeley BART, BART Red-S), with directions starting on Campanile Way.
+
+Walking and driving wording: a survey of every instruction from 30 real trips found "onto the link" (OSM's word for a highway ramp) 30 times; it now says "the ramp". Open areas are "across", underpasses and corridors "through".
+
+Drive cap: the scenario checks now fail any drive longer than 20 minutes. A park-and-ride trip from Santa Teresa (south San Jose) to Salesforce Tower drove 15.6 km to Tamien Caltrain and passed.

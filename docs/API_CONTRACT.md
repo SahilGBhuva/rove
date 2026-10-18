@@ -7,6 +7,8 @@ The browser never talks to 511, BART, or OpenTripPlanner directly, and no respon
 Times: realtime values are Unix seconds. Planner values are ISO 8601 with a Pacific offset (`2026-10-20T08:15:00-07:00`).
 Agency ids everywhere: `bart`, `muni`, `caltrain`, `vta`, `act`.
 
+**Live and scheduled data.** Journey planning (`/api/v2/plan`, `POST /api/journeys`) uses the published GTFS schedules only; `routing.realtime` is always `"scheduled"` and no itinerary is adjusted for live delays. Live data is used only by stop arrival boards (`/api/v2/arrivals`), vehicle positions and alerts. Label planned times as scheduled and never describe routing as live-delay-adjusted.
+
 ## Integration quick start (frontend)
 
 All data is for the San Francisco Bay Area only (BART, Muni, Caltrain, VTA, AC Transit).
@@ -27,8 +29,8 @@ Serving and origins:
 
 ```json
 { "region": "San Francisco Bay Area",
-  "agencies": [ { "id": "bart", "name": "BART", "arrivals": "verified", "vehicles": "not-published" },
-                { "id": "muni", "name": "Muni", "arrivals": "verified", "vehicles": "live" } ],
+  "agencies": [ { "id": "bart", "name": "BART", "arrivals": "verified", "arrivalsReasons": [], "liveAgeSeconds": 25, "vehicles": "not-published" },
+                { "id": "muni", "name": "Muni", "arrivals": "unverified", "arrivalsReasons": ["Live data from 511 is not configured on this server."], "liveAgeSeconds": null, "vehicles": "not-configured" } ],
   "search": { "stations": true, "addresses": true, "counts": { "address": 880197, "poi": 95057, "street": 79392, "area": 885 } },
   "routing": { "available": true, "access": ["WALK","CAR_PARKING","CAR_DROP_OFF"], "walkSteps": true, "driveTraffic": false, "maxDriveMinutes": 20,
                "bounds": { "minLat": 36.9, "maxLat": 38.2, "minLon": -122.75, "maxLon": -121.4 },
@@ -38,7 +40,7 @@ Serving and origins:
 
 `routing.access` lists the first-mile options the planner accepts (`[]` while routing is down); `walkSteps` says walking legs carry turn-by-turn steps; `driveTraffic: false` means drive times come from speed limits, not live traffic; `maxDriveMinutes` is the cap on the drive to a station; `bounds` is the service area every coordinate must fall inside.
 
-`arrivals` is `verified` only while the live feed passes the 99% matching gate; otherwise `unverified`. `vehicles` is `live`, `none`, `not-configured` (no 511 key) or `not-published` (BART publishes no vehicle positions).
+`arrivals` is `verified` only while the live feed is reachable, its newest data is at most 15 minutes old, and it passes the 99% matching gate; otherwise `unverified`. `arrivalsReasons` says why in a sentence that can be shown as is (for example "Live data from 511 is not configured on this server." or "The newest BART live data is 136 minutes old."), and `liveAgeSeconds` is the age of the newest live data, or `null`. `vehicles` is `live`, `none`, `not-configured` (no 511 key) or `not-published` (BART publishes no vehicle positions).
 
 ## Journey planning
 
@@ -202,7 +204,8 @@ Returns `{query, results:[{agency, agencyName, id, name, station, stopIds:[...],
   "stale": false, "feed": {"headerTimestamp":..., "fetchedAt":..., "stale":false, "cache":"fresh", "error":null}, "generatedAt": 1792280000000 }
 ```
 
-- `unverified` means live matching for that agency is below the 99% gate right now. Show "Live arrivals unavailable" and the scheduled data; do not show an empty board as if no service runs.
+- `unverified` means live arrivals for that agency cannot be trusted right now. `reasons` gives the cause in plain words: 511 is not configured, the feed could not be reached, the newest live data is more than 15 minutes old, or live matching is below the 99% gate. Show "Live arrivals unavailable" and the scheduled data; never show an empty board as if no service runs. `/api/v2/status` reports the same decision per agency, so the two always agree.
+- `ageSeconds` is the age of the newest live data. When `stale` is true but the status is still `live` (data a few minutes old, or the feed briefly failing), show the arrivals with their age.
 - `no-predictions` means the agency is verified but nothing is predicted for this stop in the next three hours.
 - `canceled` lists canceled trips and skipped stops for this stop. Show them as canceled; they never appear in `arrivals`.
 - For a station id (BART `POWL`), predictions for all of its platforms are included.
@@ -253,5 +256,8 @@ Remaining differences:
 - Landmark ranking (request 14): "uc berkeley", "stanford" and "stanford university" return the campus first. The bare word "berkeley" returns the Berkeley City Club first and the University of California second, because the index has no popularity signal. Riders get the campus with any second word.
 - Realtime in routing (request 10): planning is schedule-based. Live arrivals are shown on stop boards, not folded into itineraries. This is a follow-up that needs verification against live feeds before it is enabled.
 - Also resolved from the frontend's list: `.woff2` fonts are served as `font/woff2`; `public/data/network.json` now keeps GTFS route type `0`, so Muni Metro, the F line and VTA light rail are typed as light rail instead of bus (the frontend's `RAIL_ROUTE_IDS` workaround is no longer needed but does no harm); OTP's `routingErrors[].code` values pass through unchanged in `errors[].code`; all five feeds include `shapes.txt`, so transit legs follow the real route shape.
+- Found in the combined test of frontend `9521bb0` with backend `7e1c2f2` (for the frontend to fix; the backend data is correct):
+  - Drop-off results say "Drive … to the park-and-ride lot at Sunnyvale Station" and the map marker says "Park and ride". `parkingLabel()` and the map marker run for every drive leg. For drop-off, the itinerary has `access: "drop-off"` and the drive leg has no `to.parking`; it should read as a drop-off near the station.
+  - Results do not say that drive times exclude traffic. `routing.notes` carries that sentence (and, for park-and-ride, that parking availability is unknown); show it with Drive and Drop-off results.
 - Not done (optional requests 1 and 2): `/api/v2/arrivals` takes one stop per call, so a place with several same-named stops needs one call per stop; 511 alert entities keep their prefixed ids (`SF:38R`) while BART alerts use static ids.
 - The frontend falls back to Stadia and then Photon for geocoding when `/api/v2/places/search` is unavailable. Those calls go from the browser to third parties, outside this backend; with the backend running, Rove's own index answers.

@@ -58,6 +58,7 @@ function checkItinerary(it) {
       }
     }
     if (l.realtime && !l.start.estimated) p.push('leg marked realtime without an estimate');
+    if (l.mode === 'CAR' && l.durationSeconds > 20 * 60 + 60) p.push(`drive of ${Math.round(l.durationSeconds / 60)} min exceeds the 20-minute cap`);
   }
   if (Math.abs(prevEnd - end) > 60_000) p.push('last leg does not end at the itinerary end');
   return p;
@@ -91,6 +92,7 @@ console.log(`Rove launch scenarios against ${base}, weekday ${DAY}\n`);
 await plan('Sunnyvale residential address → SFO (walk to transit)', '1105 Lily Avenue Sunnyvale', 'SFO', { time: '08:00', expect: { agency: ['caltrain', 'bart', 'vta'] } });
 await plan('Sunnyvale residential address → SFO (park and ride)', '1105 Lily Avenue Sunnyvale', 'SFO', { time: '08:00', access: 'park-and-ride', expect: { access: 'park-and-ride' } });
 await plan('Sunnyvale residential address → SFO (drop-off)', '1105 Lily Avenue Sunnyvale', 'SFO', { time: '08:00', access: 'drop-off', expect: { access: 'drop-off' } });
+await plan('South San Jose → San Francisco (park and ride, long trip: drive cap applies)', 'Santa Teresa Station', 'Salesforce Tower', { time: '07:30', access: 'park-and-ride', expect: { access: 'park-and-ride' } });
 await plan('UC Berkeley → Ferry Building', 'University of California, Berkeley', 'Ferry Building', { time: '09:00', expect: { agency: ['bart', 'act', 'muni'] } });
 await plan('Stanford → San Jose Diridon', 'Stanford University', 'San Jose Diridon', { time: '10:00', expect: { agency: ['caltrain', 'vta'] } });
 await plan('Oakland → Palo Alto', 'Oakland City Hall', 'Palo Alto City Hall', { time: '07:45', expect: { agency: ['caltrain'] } });
@@ -128,7 +130,7 @@ await plan('Walk, board, transfer, walk (Haight St → Chase Center)', 'Haight a
       ? `${b.stop?.name || stop}: ${b.arrivals.slice(0, 4).map(x => `${x.routeName || 'BART'} ${x.headsign || ''} in ${Math.round((x.time - Date.now() / 1000) / 60)} min`).join('; ')}`
       : `${b.stop?.name || stop}: ${b.status}${b.reasons?.length ? ` (${b.reasons.join('; ')})` : ''}`;
     // With no live feed reachable there is nothing to verify; count it as skipped, not passed.
-    const noFeed = b.status === 'unverified' && (b.reasons || []).some(x => x.startsWith('no trip updates'));
+    const noFeed = b.status === 'unverified' && (b.reasons || []).some(x => /no trip updates|not configured|could not be reached|minutes old|no data for this agency/.test(x));
     record(`Live arrivals: ${agency.name}`, 'live', p, detail, noFeed);
   }
 }

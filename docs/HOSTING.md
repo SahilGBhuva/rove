@@ -27,6 +27,32 @@ Researched in October 2026. Prices and limits change; recheck them before buying
 5. **Realtime cache:** with one API instance the in-memory cache is enough. If the API is ever scaled to several instances, move the 511 and BART polling into one worker that writes to a shared cache (Redis, for example Upstash or Fly's Redis) and have the API instances read from it, so the 511 request budget is not multiplied.
 6. **Health checks:** `GET /api/v2/status` for the load balancer; alert when `routing.available` is false or an agency drops to `unverified`.
 
+## The October 23 demo
+
+**Recommended: run the demo on Sahil's Mac with `npm run rove`.**
+
+| | Mac (Apple Silicon, 8 cores, about 16 GB of memory as reported by its browser) | Hosted machine (8 GB) |
+|---|---|---|
+| Memory | Enough for OTP's 5 GB heap plus the API (about 7 GB in total), if heavy apps are closed | Enough, with little to spare |
+| Data | Already there: graph, schedules, place index, `.env` | Needs about 1.5 GB copied up (graph, street graph, place index, GTFS) and the 511 key set as a secret |
+| Network | Reaches 511 and BART directly | Same |
+| Cost and setup | None | About $50 to $70 a month on Fly.io; a Dockerfile, a volume and a deploy, none of which exist yet |
+| Risk | The Mac must stay awake, plugged in and online during the demo | A new deployment four days before the demo |
+| Reachable from | The Mac's browser at `http://localhost:4173` (another device on the same Wi-Fi only if the server is started with a LAN address, see below) | Any browser, over HTTPS |
+
+Not yet verified on the Mac itself: no session has run `npm run rove` there, because the tools available to Claude cannot run commands on the Mac host (the Mac's Linux sandbox has only 3 GB of memory). Java 21 must be installed (`java -version`). Run the checks in `LOCAL_STARTUP.md` once before the demo day.
+
+Demo-day checklist (Mac):
+
+1. Plug in the Mac, turn off sleep for the session (`caffeinate -dims` in a spare Terminal window), close memory-heavy apps.
+2. `cd ~/rove-claude && npm run rove`. Wait for "Rove: http://localhost:…" (OTP takes 30 to 90 seconds).
+3. In a second window: `ROVE_URL=http://localhost:<port> npm run verify-all`. Every line should be PASS. Live realtime should PASS on the Mac; SKIPPED means 511 or BART was unreachable.
+4. Open the address in the browser and run the demo trips once.
+
+Fallback if the Mac cannot run OTP: the hosted plan above (one machine with 8 GB or more, persistent disk, OTP and the API together). It needs a Dockerfile and a deploy, which need approval and about half a day of work plus the data upload.
+
+Showing it on a phone: by default the server listens on `localhost` only. To reach it from a phone on the same Wi-Fi, start it with `HOST=0.0.0.0 npm run rove` and open `http://<the Mac's LAN address>:<port>`; only do this on a trusted network. Geolocation in mobile browsers requires HTTPS, so "Current location" will not work over a plain LAN address.
+
 ## Why not run the routing service on Vercel
 
 From Vercel's published function limits (updated August 2026):

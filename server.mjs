@@ -27,8 +27,10 @@ const { index: places, reason: placesReason } = await PlaceIndex.open(placesFile
 if (!places) console.warn(`Address search unavailable: ${placesReason}`);
 const handler = createHandler({ root, realtime, otp, stops: new StopSearch(network), places, placesUnavailableReason: placesReason });
 
-http.createServer(handler).listen(port, () => {
-  console.log(`Rove running at http://localhost:${port}`);
+// Local only unless HOST says otherwise (HOST=0.0.0.0 to reach it from another device on a trusted network).
+const host = process.env.HOST || '127.0.0.1';
+http.createServer(handler).listen(port, host, () => {
+  console.log(`Rove running at http://localhost:${port}${host === '127.0.0.1' ? '' : ` (listening on ${host})`}`);
   console.log(`  static index: ${indexes.size}/${Object.keys(AGENCIES).length} agencies in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   console.log(`  511 realtime: ${apiKey ? 'configured' : 'not configured'} · BART direct realtime: ${bartDirect ? 'on' : 'off'}`);
   console.log(`  address search: ${places ? Object.entries(places.meta.counts || {}).map(([k, v]) => `${v.toLocaleString()} ${k}`).join(', ') : 'unavailable'}`);
