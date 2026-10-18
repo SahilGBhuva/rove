@@ -1235,14 +1235,13 @@ function alertsHtml(alerts, max = 2) {
 /* ---------- Home ---------- */
 function viewHome() {
   const parts = [];
-  const introDone = store.get(STORAGE.intro, null);
   const places = savedPlaces();
   const home = places.find(p => p.label === 'Home'), work = places.find(p => p.label === 'Work');
   const quick = [`<button type="button" class="quick" data-action="plan">${MODE_ICONS.directions}<span>Directions</span></button>`];
   if (home) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Home">${MODE_ICONS.home}<span>Home</span></button>`);
   if (work) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Work">${MODE_ICONS.work}<span>Work</span></button>`);
   if (!state.userLocation) quick.push(`<button type="button" class="quick" data-action="locate"><svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" stroke="none" d="M10 2.5 16.5 16 10 12.8 3.5 16Z" transform="rotate(45 10 10)"/></svg><span>Near me</span></button>`);
-  parts.push(`${introDone ? '' : '<p class="welcome-line">Door-to-door transit directions and live times for BART, Muni, Caltrain, VTA, and AC Transit.</p>'}<div class="quick-row">${quick.join('')}</div>`);
+  parts.push(`<div class="home-heading"><span class="home-eyebrow">BAY AREA / TRANSIT</span><h1>Go somewhere.</h1><p>Every line. One map.</p></div><div class="quick-row">${quick.join('')}</div>`);
 
   const others = places.filter(p => p.label !== 'Home' && p.label !== 'Work');
   if (others.length) {
@@ -3365,7 +3364,7 @@ async function init() {
       $('#mapLoading').classList.add('done');
       setupMapInteractions();
       // The introduction waits for the map, so its first card never sits on a loading screen.
-      if (!store.get(STORAGE.intro, null)) setTimeout(() => showIntro(0), 500);
+      // Help remains available on demand; do not interrupt the map on first visit.
     };
     state.map.on('load', markReady);
     setTimeout(() => { if (state.map.isStyleLoaded() || state.map.getSource('transit-routes')) markReady(); }, 8000);
