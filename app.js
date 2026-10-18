@@ -740,9 +740,7 @@ function journeyFeatures(itinerary) {
   return { type: 'FeatureCollection', features };
 }
 
-/* Boarding, exit, transfer, and parking points for the journey on the map. */
-
-/* Boarding, exit, and transfer stops for the journey on the map. */
+/* Boarding, exit, transfer, parking and drop-off points for the journey on the map. */
 
 
 
@@ -1337,6 +1335,14 @@ function openStop(agencyId, stopId) {
   if (map) requestAnimationFrame(() => map.easeTo({ center: place.s.p, zoom: Math.max(map.getZoom(), 15), padding: cameraPadding(), duration: motionMs(700) }));
 }
 
+/* The server's reason live arrivals are withheld, when it is a sentence a rider can read
+ * ("Live data from 511 is not configured on this server."). Technical detail in parentheses is
+ * dropped; internal gate notes ("too few stop predictions to verify (0)") are not shown. */
+function liveUnavailableReason(reasons) {
+  const sentence = (Array.isArray(reasons) ? reasons : []).find(r => typeof r === 'string' && /^[A-Z].*\.$/.test(r.trim()));
+  return sentence ? sentence.trim().replace(/\s*\((?:[^()]|\([^()]*\))*\)\.$/, '.') : '';
+}
+
 function viewStop({ agency, stop }) {
   const place = placeFor(agency, stop);
   if (!place) return `${backHeader()}<p class="empty">This stop is no longer in the schedule data.</p>`;
@@ -1351,7 +1357,8 @@ function viewStop({ agency, stop }) {
   if (!rtConfigured()) {
     departures = '<p class="empty">Live arrivals are not connected on this server. The lines that serve this stop are listed below.</p>';
   } else if (!cov.arrivals || arrivals?.status === 'unverified') {
-    departures = `<p class="empty">Live arrivals for ${esc(AGENCY_SHORT[a.id])} are unavailable right now. Rove only shows predictions it can match to the schedule. The lines that serve this stop are listed below.</p>`;
+    const why = liveUnavailableReason(arrivals?.reasons?.length ? arrivals.reasons : state.planStatus?.liveReasons?.[a.id]);
+    departures = `<p class="empty">Live arrivals for ${esc(AGENCY_SHORT[a.id])} are unavailable right now. ${esc(why || 'Rove only shows predictions it can match to the schedule.')} The lines that serve this stop are listed below.</p>`;
   } else if (!arrivals) {
     departures = '<p class="empty" aria-busy="true">Loading live arrivals.</p>';
   } else if (arrivals.status === 'error') {
@@ -1488,7 +1495,7 @@ function viewPlan() {
   if (status && !status.available) submit = '';
   else if (coverage) submit = `<p class="plan-coverage" role="status">${esc(coverage.text)}</p>`;
   else if (hasFrom && hasTo) submit = `<button type="submit" class="button primary block plan-submit" ${plan.loading ? 'aria-busy="true" disabled' : ''}>${plan.loading ? 'Finding routes' : 'Find routes'}</button>`;
-  else submit = `<p class="caption plan-hint">${hasFrom ? 'Enter a destination to see routes.' : 'Enter a starting point to see routes.'}</p>`;
+  else submit = `<p class="caption plan-hint">${hasFrom ? 'Enter a destination address, place, or stop to see routes.' : hasTo ? 'Enter a starting address, place, or stop to see routes.' : 'Enter a starting point and a destination. Any Bay Area address, place, or stop works.'}</p>`;
   const modeButton = (key, icon, label) => `<button type="button" class="seg-option mode-option" data-action="first-mile" data-first-mile="${key}" aria-pressed="${access === key}" ${key === 'CAR_PARKING' && !driveOk ? 'aria-disabled="true" aria-describedby="driveNote"' : ''}>${icon}<span>${label}</span></button>`;
   return `${backHeader()}
     <div class="hero" style="padding-bottom:8px"><h1 class="title-2">Directions</h1></div>
@@ -1585,11 +1592,13 @@ async function submitPlan() {
     if (!response.ok) {
       const err = planErrorMessage(response.status, body);
       if (err.offline) state.planStatus = { available: false, reason: response.status === 404 ? 'missing' : 'ROUTING_UNAVAILABLE', checkedAt: Date.now() };
-      throw new PlanError(err.text, err.which);
+      throw new PlanError(err.text, err.which, Boolean(err.offline));
     }
     const itineraries = (body?.itineraries || []).map(normalizeItinerary).filter(it => it.legs.length);
     if (!itineraries.length) throw new PlanError(noRouteMessage(body));
-    plan.results = { itineraries, notes: Array.isArray(body.routing?.notes) ? body.routing.notes.filter(n => typeof n === 'string') : [], request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
+    // Driving notes only apply when an option actually includes a drive (a short trip may be walk-only).
+    const hasDrive = itineraries.some(it => it.legs.some(l => l.mode === 'CAR'));
+    plan.results = { itineraries, notes: Array.isArray(body.routing?.notes) ? body.routing.notes.filter(n => typeof n === 'string' && (hasDrive || !/driv|parking|drop-off/i.test(n))) : [], request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
     plan.sort = 'fastest';
     plan.expanded = sortedItineraryIndexes()[0];
     plan.loading = false;
@@ -1599,7 +1608,8 @@ async function submitPlan() {
     renderJourney(); applyMapState(); updatePlanMarkers(); fitJourney(state.journey);
   } catch (error) {
     plan.loading = false;
-    if (error instanceof PlanError) { plan.error = error.message; plan.errorField = error.field || null; }
+    // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
+    if (error instanceof PlanError) { plan.error = error.offline ? null : error.message; plan.errorField = error.field || null; }
     else plan.error = error?.name === 'TimeoutError' ? 'The trip planner took too long to respond. Please try again.' : 'Rove could not reach the trip planner. Check your connection and try again.';
     if (currentView().name === 'plan') render();
   }
@@ -1607,7 +1617,7 @@ async function submitPlan() {
 
 
 class PlanError extends Error {
-  constructor(message, field = null) { super(message); this.field = field; }
+  constructor(message, field = null, offline = false) { super(message); this.field = field; this.offline = offline; }
 }
 
 
@@ -2317,7 +2327,8 @@ async function fetchPlanStatus(force = false) {
     if (response.ok) {
       const body = await response.json().catch(() => ({}));
       const routing = body.routing || {};
-      next = { available: routing.available !== false, reason: routing.available === false ? routing.code || 'ROUTING_UNAVAILABLE' : null, access: Array.isArray(routing.access) ? routing.access : ['WALK'], walkSteps: Boolean(routing.walkSteps), maxDriveMinutes: Number.isFinite(routing.maxDriveMinutes) ? routing.maxDriveMinutes : null };
+      next = { available: routing.available !== false, reason: routing.available === false ? routing.code || 'ROUTING_UNAVAILABLE' : null, access: Array.isArray(routing.access) ? routing.access : ['WALK'], walkSteps: Boolean(routing.walkSteps), maxDriveMinutes: Number.isFinite(routing.maxDriveMinutes) ? routing.maxDriveMinutes : null,
+        liveReasons: Object.fromEntries((Array.isArray(body.agencies) ? body.agencies : []).map(x => [x.id, Array.isArray(x.arrivalsReasons) ? x.arrivalsReasons : []])) };
       if (body.search && body.search.addresses === false) geocodeBackend = 'missing';
     } else {
       response = await fetch('/api/v2/plan/status', { cache: 'no-store' });
@@ -2955,11 +2966,12 @@ function journeyPointFeatures(itinerary) {
   const add = (p, kind, color, legIndex, name) => {
     if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
     const near = out.find(f => distanceMeters(f.geometry.coordinates, [p.lon, p.lat]) < 40);
-    if (near) { if (near.properties.kind !== 'parking') near.properties.kind = 'transfer'; return; }
+    if (near) { if (near.properties.kind !== 'parking' && near.properties.kind !== 'dropoff') near.properties.kind = 'transfer'; return; }
     out.push({ type: 'Feature', properties: { kind, color, name: name || p.name || '', legIndex }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } });
   };
   legs.forEach((leg, i) => {
-    if (leg.mode === 'CAR') { add(leg.to, 'parking', theme().ink, i, 'Park and ride'); return; }
+    // Park and ride ends at a mapped lot; a drop-off ends at a street near the station.
+    if (leg.mode === 'CAR') { add(leg.to, leg.to?.parking ? 'parking' : 'dropoff', theme().ink, i, leg.to?.parking ? 'Park and ride' : 'Drop-off'); return; }
     if (!isTransit(leg)) return;
     const color = legInfo(leg).color;
     if (!leg.staySeated) add(leg.from, 'board', color, i);
@@ -3178,6 +3190,7 @@ async function init() {
   if (!store.get(STORAGE.intro, null)) setTimeout(() => showIntro(0), 600);
 
   loadRealtime();
+  fetchPlanStatus();
   state.realtimeTimer = setInterval(loadRealtime, 60000);
   setInterval(() => { if (!document.hidden) { prefetchVisibleArrivals(); refreshLiveViews(); } }, 30000);
   $('#mapPickCancel').addEventListener('click', () => endMapPick(null));

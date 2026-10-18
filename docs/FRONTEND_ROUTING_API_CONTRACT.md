@@ -1,6 +1,6 @@
 # Frontend use of the backend API
 
-Updated October 18, 2026. The authoritative contract is `docs/API_CONTRACT.md` on the backend branch (`claude-development`, commit `7e1c2f2`). This file records how the frontend on `claude-frontend` uses it, and what the frontend asks the backend to change.
+Updated October 18, 2026. The authoritative contract is `docs/API_CONTRACT.md` on the backend branch (`claude-development`, commit `76bfe8b`). This file records how the frontend on `claude-frontend` uses it, and what the frontend asks the backend to change.
 
 The earlier `POST /api/journeys` proposal is withdrawn. The frontend now uses the backend's real endpoints.
 
@@ -47,7 +47,20 @@ Rove covers the San Francisco Bay Area only. `SERVICE_AREA` in `app.js` matches 
 - Arrivals with status `unverified` show "Live arrivals are unavailable right now" instead of an empty board. `canceled` entries are listed separately as "Canceled" or "Not stopping here". `stale` arrivals show their age and "Live times may be out of date."
 - Vehicles are drawn only when `routeId` is not null. BART never has vehicles.
 
-## Compatibility with the backend at `7e1c2f2` (checked October 18, 2026)
+## Compatibility with the backend at `76bfe8b` (checked October 18, 2026)
+
+Everything in the `7e1c2f2` table below still holds. Added for `76bfe8b`:
+
+| Backend feature | Frontend status |
+| --- | --- |
+| `arrivalsReasons` in `/api/v2/status`, `reasons` in `/api/v2/arrivals` | Shown on stop pages when live arrivals are withheld ("The BART live feed could not be reached."). Only full sentences are shown; technical detail in parentheses and internal gate notes are left out. |
+| `ageSeconds` on arrivals | Not used; the frontend already shows the feed age from `feed.headerTimestamp`. |
+| `platform` on arrivals (`8e293e9`) | Not shown on the departure board yet. Trip legs and navigation already show `stop.platform`. |
+| Drop-off legs without `to.parking` | The map marker now says "Drop-off" (it said "Park and ride"). |
+| `routing.notes` | Shown with Drive and Drop-off results. Driving notes are left out when no option includes a drive. |
+| `HOST` (local only by default) | No change needed; the frontend uses relative URLs. |
+
+### Compatibility with the backend at `7e1c2f2`
 
 `7e1c2f2` is the latest commit on `claude-development`. Tested end to end: this frontend served by the backend's own `server.mjs` at `7e1c2f2`, real OpenTripPlanner 2.8.1 with the backend's `router-config.json`, and the backend's full place index (880,197 addresses). See `FRONTEND_NOTES.md` for results.
 

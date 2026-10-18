@@ -190,3 +190,28 @@ Fixed in this pass:
 - Drop-off drives were labeled as park-and-ride.
 - The backend's step `instruction`, parking capacity and `routing.notes` are now shown, and the Drive and Drop-off hints state the drive limit from `/api/v2/status`.
 - Unscheduled BART arrivals now say whether they are an Antioch line train or an extra train, from the backend's `note`.
+
+## Final frontend pass against backend `76bfe8b` (October 18, 2026)
+
+Setup: this frontend served by the backend's own server at `76bfe8b` (a `git archive` of that commit), real OpenTripPlanner 2.8.1 with the backend's router config, and the full place index. Live feeds are blocked in this test environment, so live arrival boards were tested with simulated responses in the backend's shape; the backend's own live verification on the Mac covers the feeds.
+
+Fixed:
+
+- Drop-off trips showed a "Park and ride" map marker. The marker now says "Drop-off" unless the drive ends at a mapped parking lot. The timeline and navigation already said "drop-off point near <station>".
+- The directions screen showed "Trip planning is offline" twice during an outage. The notice with Check again is now the only message.
+- Stop pages now give the backend's reason when live arrivals are withheld, instead of always saying predictions could not be matched.
+- Driving notes ("without live traffic", parking availability) are left out when every option is walk-only.
+- The planner hint now says any Bay Area address, place, or stop works for either end of the trip.
+
+Checked, no change needed:
+
+- The traffic warning: "Driving times use mapped roads and speed limits without live traffic." appears with every Drive and Drop-off result, and the Drive and Drop-off hints say drives do not include traffic.
+- The planner entry point: the home screen's first button is Directions (a real button, 44 px tall, reached in five or six Tab presses and opened with Enter). Place and stop pages also have Directions and Leave from here. The old server on port 4173 is the October 17 prototype from `~/rove`, which has no trip planner.
+- Labels: every trip shows "Scheduled times" and each transit leg says "Scheduled"; the only "live" wording in results is "Check live departures at your stop before you leave" and the no-traffic note. Live arrival boards say Live, minutes late or on time, and the feed age.
+
+Tests (all passed; no page errors, horizontal overflow, small tap targets, or controls under the panel):
+
+- Real journeys at 390 x 844 and 1440 x 900: UC Berkeley to Ferry Building, Stanford University to San Jose Diridon, Sunnyvale Station to SFO, and 1105 Lily Avenue to SFO by walking, park and ride, and drop-off. Each checks walking directions, boarding, transfers (Caltrain to BART at Millbrae, AC Transit to BART), choosing the second option (the map follows it), and the first five navigation steps.
+- No service at 2:30 am, Muni N and VTA Green shown as light rail, home and planner entry point with keyboard.
+- Simulated: planner outage, network loss, address search down; live, stale, and unavailable arrival boards.
+- Screen review of home, address search, place, stop, planner, results, and map layers on phone and desktop.
