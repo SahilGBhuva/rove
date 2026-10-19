@@ -7,4 +7,4 @@ JAR="$ROOT/data/otp/bin/otp-shaded-${OTP_VERSION}.jar"
 GRAPH="$ROOT/data/otp/graph"
 [[ -s "$GRAPH/graph.obj" ]] || { echo "No graph found. Run npm run otp:build first." >&2; exit 1; }
 # Bind to localhost only: OTP has no authentication and must not be reachable from the network.
-exec java -Xmx"${OTP_HEAP:-5g}" -jar "$JAR" --load --bindAddress 127.0.0.1 --port "${OTP_PORT:-8080}" "$GRAPH"
+exec java -Xmx"${OTP_HEAP:-2g}" -jar "$JAR" --load --bindAddress 127.0.0.1 --port "${OTP_PORT:-8080}" "$GRAPH"
