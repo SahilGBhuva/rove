@@ -964,3 +964,10 @@ body.theme-dark .search-field:hover:not(:focus-within) { background: #30465f; }
 body.theme-dark .maplibregl-ctrl-attrib { background: rgba(25,39,57,.84) !important; color: #d1deea !important; }
 body.theme-dark .home-eyebrow { color: #9ac6ff; }
 body.theme-dark .quick:first-child { background: #e5f0ff; color: #162638; }
+
+
+/* A specific next-service action rather than a dead-end planning error. */
+.plan-error-group { padding: 0 var(--pad) 12px; }
+.plan-error-group .plan-error { padding: 8px 0; margin: 0 0 10px; }
+.plan-later { width: 100%; justify-content: center; border: 1px solid var(--rule); background: var(--fill); color: var(--ink); }
+.plan-later:hover { background: var(--fill-strong); }

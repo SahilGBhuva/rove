@@ -119,3 +119,15 @@ test('the only lines without a drawable shape are the documented BART bus bridge
   assert.deepEqual(missing.sort(), ['bart:BB-A', 'bart:BB-B']);
   assert.match(source, /has not published a route shape for this line/);
 });
+
+
+test('late-night no-service flow offers a correctly labeled later search', () => {
+  assert.match(source, /NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW/);
+  assert.match(source, /Try tomorrow at 8:15 AM/);
+  assert.match(source, /case 'plan-next-morning'/);
+  assert.match(source, /plan.timeMode = 'depart'/);
+});
+
+test('ending navigation releases location tracking before clearing state', () => {
+  assert.match(source, /case 'nav-end': releaseWakeLock\(\); state.nav = null; goHome\(\); break;/);
+});

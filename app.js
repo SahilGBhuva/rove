@@ -1643,7 +1643,7 @@ function viewPlan() {
         ${access === 'CAR_DROP_OFF' ? `<p class="caption plan-hint">Rove plans a drive to a street near the station, where you are dropped off, then transit from there. ${driveLimitText()}</p>` : ''}`}
         ${submit}
         ${plan.loading ? '<ul class="itineraries skeleton-list" aria-hidden="true">' + '<li><div class="itinerary"><span class="sk sk-line"></span><span class="sk sk-bar"></span><span class="sk sk-line short"></span></div></li>'.repeat(3) + '</ul>' : ''}
-        ${plan.error ? `<p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>` : ''}
+        ${plan.error ? `<div class="plan-error-group"><p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>${plan.noServiceWindow && plan.timeMode === 'now' ? '<button class="button secondary plan-later" type="button" data-action="plan-next-morning">Try tomorrow at 8:15 AM</button>' : ''}</div>` : ''}
       </div>
     </form>`;
 }
@@ -1682,7 +1682,7 @@ async function submitPlan() {
   if (plan.timeMode !== 'now') plan.dateTime = $('#planDateTime')?.value || plan.dateTime || localInputValue(new Date());
   plan.focus = null;
   document.activeElement?.blur?.();
-  plan.loading = true; plan.error = null; plan.errorField = null;
+  plan.loading = true; plan.error = null; plan.errorField = null; plan.noServiceWindow = false;
   render();
   try {
     for (const which of ['from', 'to']) {
@@ -1709,14 +1709,14 @@ async function submitPlan() {
     const response = await fetch(`/api/v2/plan?${params}`, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(35000) : undefined });
     const body = await response.json().catch(() => null);
     // The planner answers 404 with an empty itinerary list when there is no route; that is not an outage.
-    if (response.status === 404 && Array.isArray(body?.itineraries)) throw new PlanError(noRouteMessage(body));
+    if (response.status === 404 && Array.isArray(body?.itineraries)) throw new PlanError(noRouteMessage(body), null, false, body?.errors?.[0]?.code);
     if (!response.ok) {
       const err = planErrorMessage(response.status, body);
       if (err.offline) state.planStatus = { available: false, reason: response.status === 404 ? 'missing' : 'ROUTING_UNAVAILABLE', checkedAt: Date.now() };
       throw new PlanError(err.text, err.which, Boolean(err.offline));
     }
     const itineraries = (body?.itineraries || []).map(normalizeItinerary).filter(it => it.legs.length);
-    if (!itineraries.length) throw new PlanError(noRouteMessage(body));
+    if (!itineraries.length) throw new PlanError(noRouteMessage(body), null, false, body?.errors?.[0]?.code);
     // Driving notes only apply when an option actually includes a drive (a short trip may be walk-only).
     const hasDrive = itineraries.some(it => it.legs.some(l => l.mode === 'CAR'));
     plan.results = { itineraries, notes: Array.isArray(body.routing?.notes) ? body.routing.notes.filter(n => typeof n === 'string' && (hasDrive || !/driv|parking|drop-off/i.test(n))) : [], request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
@@ -1730,7 +1730,7 @@ async function submitPlan() {
   } catch (error) {
     plan.loading = false;
     // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
-    if (error instanceof PlanError) { plan.error = error.offline ? null : error.message; plan.errorField = error.field || null; }
+    if (error instanceof PlanError) { plan.error = error.offline ? null : error.message; plan.errorField = error.field || null; plan.noServiceWindow = error.code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW'; }
     else plan.error = error?.name === 'TimeoutError' ? 'The trip planner took too long to respond. Please try again.' : 'Rove could not reach the trip planner. Check your connection and try again.';
     if (currentView().name === 'plan') render();
   }
@@ -1738,7 +1738,7 @@ async function submitPlan() {
 
 
 class PlanError extends Error {
-  constructor(message, field = null, offline = false) { super(message); this.field = field; this.offline = offline; }
+  constructor(message, field = null, offline = false, code = null) { super(message); this.field = field; this.offline = offline; this.code = code; }
 }
 
 
@@ -2068,6 +2068,16 @@ function handleAction(el) {
     case 'plan-locate': locate({ thenPick: plan.focus }); break;
     case 'plan-map': startMapPick(plan.focus || (plan.to ? 'from' : 'to')); break;
     case 'plan-recheck': fetchPlanStatus(true); break;
+    case 'plan-next-morning': {
+      // The alternate journey is explicitly labeled as tomorrow, never as 'Leave now'.
+      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      plan.timeMode = 'depart';
+      plan.dateTime = localInputValue(tomorrow).slice(0, 11) + '08:15';
+      plan.error = null; plan.noServiceWindow = false;
+      render();
+      submitPlan();
+      break;
+    }
     case 'search-place': openPlace(placeFromRow(el)); break;
     case 'place-directions': openPlan({ to: { ...view.place }, from: currentLocationPlace() || (plan.from && placeKey(plan.from) !== placeKey(view.place) ? plan.from : null) }); break;
     case 'place-from': openPlan({ from: { ...view.place }, to: plan.to && placeKey(plan.to) !== placeKey(view.place) ? plan.to : null }); break;
@@ -2089,7 +2099,7 @@ function handleAction(el) {
     case 'nav-start': startNavigation(Number(el.dataset.index)); break;
     case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; render(); focusStep(); } break;
     case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; render(); focusStep(); } break;
-    case 'nav-end': state.nav = null; releaseWakeLock(); goHome(); break;
+    case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
     default: break;
   }
 }
@@ -3063,7 +3073,8 @@ function noRouteMessage(body) {
   if (code === 'OUTSIDE_SERVICE_PERIOD') return 'Schedules are not available for that date. Choose a date closer to today.';
   if (code === 'OUTSIDE_BOUNDS') return 'One of these places is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.';
   if (code === 'NO_STOPS_IN_RANGE' || code === 'LOCATION_NOT_FOUND') return 'One of these places is too far from a transit stop to plan a trip. Try a nearby address or stop.';
-  if (code === 'NO_TRANSIT_CONNECTION' || code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW' || !body?.errors?.[0]?.message) return 'No transit route was found for this time. Try a different time, or start from a nearby stop.';
+  if (code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW') return 'No transit departures were found near the selected time. Service may be limited right now. Try a later departure to see scheduled options.';
+  if (code === 'NO_TRANSIT_CONNECTION' || !body?.errors?.[0]?.message) return 'No transit connection was found. Try a different departure time or a nearby transit stop.';
   return body.errors[0].message;
 }
 
