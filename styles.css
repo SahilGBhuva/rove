@@ -955,3 +955,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 @media (min-width: 768px) { .panel { max-height: calc(100dvh - 36px); } .panel-body { scrollbar-width: thin; scrollbar-color: var(--rule) transparent; } }
 @media (max-width: 767px) { .brand-caption { font-size: 8px; margin-left: 9px; padding-left: 9px; max-width: 65px; } }
 @media (prefers-reduced-transparency: reduce) { .panel { backdrop-filter: none; -webkit-backdrop-filter: none; } }
+
+/* Night map: coordinated ink-blue surfaces instead of near-black land and brown roads. */
+body.theme-dark { --ink: #f1f6fc; --ink-2: #c5d3e2; --ink-3: #a1b4c9; --rule: #34475e; --surface: #192739; --paper: #202b38; --fill: #24374c; --fill-strong: #30475e; --you: #8abaff; }
+body.theme-dark .panel { border-color: rgba(115,145,180,.38); box-shadow: 0 14px 48px rgba(5,13,24,.34), 0 2px 8px rgba(5,13,24,.18); }
+body.theme-dark .search-field { background: #26394f; }
+body.theme-dark .search-field:hover:not(:focus-within) { background: #30465f; }
+body.theme-dark .maplibregl-ctrl-attrib { background: rgba(25,39,57,.84) !important; color: #d1deea !important; }
+body.theme-dark .home-eyebrow { color: #9ac6ff; }
+body.theme-dark .quick:first-child { background: #e5f0ff; color: #162638; }

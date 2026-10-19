@@ -512,11 +512,11 @@ const BASEMAP = {
     boundary: '#bdb5a6', label: '#2c2e33', labelSoft: '#5f636a', roadLabel: '#6f685c', waterLabel: '#4f7491', halo: 'rgba(246, 243, 236, 0.92)'
   },
   dark: {
-    land: '#15171a', residential: '#181a1e', park: '#1a241f', wood: '#1b2620', ice: '#1d1f22',
-    water: '#0f2130', waterway: '#16304a', building: '#1d2024', aeroway: '#1c1e22', runway: '#26292e',
-    path: '#24272b', minor: '#2a2d32', majorCasing: '#26241f', major: '#2f2d28', majorSubtle: 'rgba(80, 72, 55, 0.45)',
-    motorwayCasing: '#363024', motorway: '#423a2b', motorwaySubtle: 'rgba(95, 82, 58, 0.45)', rail: '#33363b', railDash: '#15171a',
-    boundary: '#4a4c51', label: '#dcd9d2', labelSoft: '#a9a6a0', roadLabel: '#9c978c', waterLabel: '#86a9c2', halo: 'rgba(21, 23, 26, 0.9)'
+    land: '#202b38', residential: '#25313e', park: '#243d38', wood: '#25413a', ice: '#344451',
+    water: '#132e43', waterway: '#214d63', building: '#2a3745', aeroway: '#303a47', runway: '#394553',
+    path: '#3a4654', minor: '#344353', majorCasing: '#273542', major: '#435161', majorSubtle: 'rgba(103, 128, 148, 0.22)',
+    motorwayCasing: '#394350', motorway: '#62606a', motorwaySubtle: 'rgba(133, 133, 150, 0.26)', rail: '#465362', railDash: '#202b38',
+    boundary: '#536170', label: '#edf4fb', labelSoft: '#bdcad7', roadLabel: '#b4c0cd', waterLabel: '#8cb9d3', halo: 'rgba(26, 38, 52, 0.95)' 
   }
 };
 
