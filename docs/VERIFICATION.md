@@ -227,3 +227,27 @@ OpenTripPlanner on the Mac itself (paths under `/Users/Sahil/rove-claude`, Java 
 Seen in the Mac's browser on the same server: live BART arrivals at Powell Street with platforms from the feed (Green-N, platform 2, 69 seconds late).
 
 Combined site in the cloud workspace with the final code: backend `76bfe8b` plus `ROVE_FRONTEND_DIR`, serving frontend `ba21fce` (its `app.js` byte-identical to the Mac's). All six trips through the interface passed, with no page errors; drop-off now reads "the drop-off point near Sunnyvale Station", and park-and-ride shows "439 spaces mapped. Space availability is not known."
+
+## Security and bug test (October 19, 2026)
+
+Backend `e1dc417` with frontend `407218e` (`ROVE_FRONTEND_DIR`), real OpenTripPlanner graph and place index, in the cloud workspace; secret checks on the Mac.
+
+Server probes (`1,113` checks, 332 hostile requests): secrets, Git metadata, backend code, `data/`, `node_modules` and docs are never served, including through `..`, encoded and double-encoded traversal, backslashes, null bytes and overlong UTF-8; foreign origins get no CORS headers (loopback dev origins do, without credentials); every API answer is JSON with `nosniff`, no stack trace, path or key; SQL and FTS5 syntax, HTML, template strings, lone surrogates, 5,000-character values, duplicated and non-numeric parameters and oversized limits never produce a 500; limits are capped (15 places, 6 itineraries); 16 malformed `POST /api/journeys` bodies (including 5,000-deep nesting, prototype-pollution keys and a 2 MB body) were refused cleanly; 40 concurrent trip plans and 200 concurrent searches all succeeded and a stalled upload did not block other requests. `npm audit`: 0 vulnerabilities.
+
+Fixed in this pass:
+
+- A malformed percent-encoding in a page URL (`/..%c0%af.env`) made the handler return 500; it now returns 400. Nothing leaked.
+- Page files answered PUT, DELETE and POST with the file; they now return 405 (`Allow: GET, HEAD`).
+- A symbolic link inside the served folders could have pointed outside them; files are now served only if their real path is inside the folder.
+- Pages now send `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and `Referrer-Policy: strict-origin-when-cross-origin`. A full script policy was not added before the demo, to avoid breaking the map.
+- `POST /api/journeys` now requires `Content-Type: application/json` (415 otherwise), so another site cannot make a visitor's browser start trip plans with a form or `text/plain` post.
+- **511 key inside the downloaded schedules.** 511's schedule download appends an HTML page after the zip that repeats the request URL with `api_key=`. It was found in the Muni and AC Transit archives (`data/raw/muni.zip`, `data/raw/act.zip` and their copies in `data/otp/graph/`), 680 bytes after the end of each zip. These files are git-ignored and never served, and the key is not in either repository's history, the graph, the place index, `network.json` or the logs. `scripts/fetch-511-static.mjs` now cuts each download at the end of the zip and refuses to save a file that still contains the key. Cleaning the four existing files needs approval (the cleaned copies were verified: same 17 files, identical contents).
+
+Frontend (hostile text injected into every API field it renders, through the real page): place names, addresses, headsigns, route names, notes, step instructions, error messages and alert headers, descriptions and links were all shown as plain text. Nothing executed, no element was injected, and no `javascript:` link was created.
+
+Found for the frontend (not changed here):
+
+- `pacificIso()` sends the summer offset for trips on November 1 between 2:00 and 8:59 am (the morning daylight saving time ends), so those plans are one hour off. The backend handles both offsets correctly.
+- MapLibre is loaded from jsDelivr without integrity hashes. Verified against both npm and jsDelivr: `maplibre-gl.js` `sha384-/L1njH4bbgNt9Uk3HwJ272N9fxJzRBQCxhtwGkZiqgl+Nxpq2ETUNZhNMNV1RgyW`, `maplibre-gl.css` `sha384-Nq6PQ+9vJPvw7U/VfDELyrWoGQMsy0gi6QShhaSrGzkpF5KkM40csg2leky+YMTd` (add with `crossorigin="anonymous"`).
+
+Bug tests: 87 of 87 fixture tests; schedule-based routing 11 of 11; place search and door-to-door all passed; launch scenarios 11 of 11 (live checks skipped in the cloud); the six interface trips passed with no page errors; trips across the November 1 time change keep their true duration; arrive-by works.

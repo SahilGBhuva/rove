@@ -133,3 +133,36 @@ test('HTTP: a separate frontend checkout serves the page files, while data and s
     for (const p of ['/.env', '/server.mjs', '/public/../.env', '/public/%2e%2e/.env']) assert.equal((await get(p)).status, 404, p);
   });
 });
+
+test('HTTP: static files accept only GET and HEAD, bad encodings are 400, symlinks cannot escape, and the page cannot be framed', async () => {
+  const os = await import('node:os');
+  const fe = fs.mkdtempSync(path.join(os.tmpdir(), 'rove-fe-'));
+  fs.writeFileSync(path.join(fe, 'index.html'), '<!doctype html><title>x</title>');
+  fs.mkdirSync(path.join(fe, 'public'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'rove-outside-'));
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'outside the site');
+  fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(fe, 'public', 'link.txt'));
+  await withServer({ frontendRoot: fe }, async get => {
+    assert.equal((await get('/public/link.txt')).status, 404, 'a symlink out of the folder is not followed');
+    assert.equal((await get('/..%c0%af.env')).status, 400);
+    assert.equal((await get('/public/%E0%A4%A')).status, 400);
+  });
+  const server = http.createServer(createHandler({ root, realtime: null, otp: null, stops: new StopSearch(network), log: { error() {} } }));
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    for (const m of ['PUT', 'DELETE', 'POST', 'PATCH']) {
+      const r = await fetch(`${base}/index.html`, { method: m, body: m === 'DELETE' ? undefined : 'x' });
+      assert.equal(r.status, 405, m);
+      assert.equal(r.headers.get('allow'), 'GET, HEAD');
+    }
+    const page = await fetch(`${base}/`);
+    assert.equal(page.headers.get('x-frame-options'), 'DENY');
+    assert.equal(page.headers.get('content-security-policy'), "frame-ancestors 'none'");
+    assert.equal(page.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+    const plain = await fetch(`${base}/api/journeys`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"from":{"lat":37.78,"lon":-122.41},"to":{"lat":37.79,"lon":-122.39}}' });
+    assert.equal(plain.status, 415, 'a text/plain post (what a cross-site form can send) is refused');
+    const form = await fetch(`${base}/api/journeys`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'a=1' });
+    assert.equal(form.status, 415);
+  } finally { server.close(); }
+});
