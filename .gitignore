@@ -32,3 +32,5 @@ npm-debug.log*
 coverage/
 tmp/
 temp/
+
+/experiments/bay-router/out/
