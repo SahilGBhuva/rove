@@ -951,7 +951,11 @@ function setupMapInteractions() {
     else if (keys.length > 1) showRouteChooser(e.lngLat, keys);
   });
 
-  map.on('dragstart', () => { if (isMobile() && state.detent !== 'peek' && !['plan'].includes(currentView().name)) setDetent('peek'); closePopovers(); });
+  map.on('dragstart', () => {
+    if (state.nav) { state.nav.follow = false; state.nav.status = 'Exploring map · tap Follow to recenter'; render(); }
+    if (isMobile() && state.detent !== 'peek' && !['plan', 'navigate'].includes(currentView().name)) setDetent('peek');
+    closePopovers();
+  });
 
   map.on('contextmenu', e => {
     const point = placeFromPoint(e.lngLat);
@@ -2042,26 +2046,150 @@ function buildSteps(it) {
 
 
 
+/* Navigation session UI, camera, and cautious replanning.
+ * Foreground-only web navigation: browsers can suspend tracking while locked. */
+let navMarker = null;
+function updateNavMarker(fix, heading) {
+  const map = state.map;
+  if (!map || typeof maplibregl === 'undefined') return;
+  if (!navMarker) {
+    const el = document.createElement('div');
+    el.className = 'rove-nav-avatar';
+    el.setAttribute('aria-label', 'Your live location');
+    el.innerHTML = '<span class="rove-nav-halo"></span><span class="rove-nav-direction"></span><span class="rove-nav-dot"></span>';
+    navMarker = new maplibregl.Marker({ element: el, anchor: 'center', rotationAlignment: 'map' }).setLngLat(fix.point).addTo(map);
+  }
+  navMarker.setLngLat(fix.point);
+  // Marker rotation follows heading independently from the map's rotating camera.
+  if (Number.isFinite(heading)) navMarker.setRotation(heading);
+}
+function navFollowCamera() {
+  const nav = state.nav, map = state.map;
+  if (!nav?.follow || !nav.fix || !map || document.hidden) return;
+  const bearing = nav.headingUp && Number.isFinite(nav.heading) ? nav.heading : 0;
+  map.easeTo({ center: nav.fix.point, bearing, pitch: nav.headingUp ? 38 : 0,
+    zoom: Math.max(map.getZoom(), 15.5), padding: cameraPadding(), duration: motionMs(500), essential: true });
+}
+function navChangeFollow(what) {
+  const nav = state.nav;
+  if (!nav) return;
+  if (what === 'overview') { nav.follow = false; nav.status = 'Map overview. Tap Follow to recenter.'; fitJourney(nav.it); }
+  else if (what === 'bearing') { nav.headingUp = !nav.headingUp; nav.follow = true; navFollowCamera(); }
+  else { nav.follow = true; nav.status = 'Following your location'; navFollowCamera(); }
+  render();
+}
+function routeLegDistance(nav, point) {
+  const step = nav.steps[nav.i];
+  if (!step || !['walk', 'drive'].includes(step.type)) return null;
+  const coords = step.leg.geometry?.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2 || (step.leg.mode === 'TRANSIT' && legShapeMissing(step.leg))) return null;
+  return RoveNavigation.distanceToPolyline(point, coords);
+}
+function maybeAdvanceNavigation(nav, fix) {
+  const step = nav.steps[nav.i];
+  if (!step?.leg || step.type === 'arrive') return;
+  const here = fix.point;
+  const target = [step.leg.to?.lon, step.leg.to?.lat];
+  if (!target.every(Number.isFinite)) return;
+  const radius = step.type === 'walk' ? 28 + Math.min(fix.accuracy, 25) :
+    step.type === 'drive' ? 65 + Math.min(fix.accuracy, 30) : 100 + Math.min(fix.accuracy, 30);
+  // A low-accuracy GPS point should never silently advance an itinerary.
+  if (fix.accuracy > 55) return;
+  const rideNearArrival = step.type !== 'ride' || Date.now() >= legEnd(step.leg).getTime() - 3 * 60000;
+  if ((step.type === 'walk' || step.type === 'drive' || step.type === 'ride') && rideNearArrival &&
+      RoveNavigation.meters(here, target) < radius) {
+    nav.i = Math.min(nav.i + 1, nav.steps.length - 1);
+    render();
+  }
+  // Boarding cannot be inferred merely because a train departed on the schedule.
+}
+async function navReroute(nav) {
+  if (state.nav !== nav || nav.rerouting || !nav.destination || !nav.fix || !navigator.onLine) return;
+  const destination = nav.destination;
+  nav.rerouting = true;
+  nav.rerouteAt = Date.now();
+  nav.offRouteFixes = 0;
+  nav.status = 'Calculating a new route from your location…';
+  const controller = new AbortController();
+  nav.controller = controller;
+  render();
+  try {
+    const query = new URLSearchParams({
+      fromLat: nav.fix.point[1].toFixed(6), fromLon: nav.fix.point[0].toFixed(6), fromName: 'Your location',
+      toLat: Number(destination.lat).toFixed(6), toLon: Number(destination.lon).toFixed(6),
+      toName: destination.name || 'Destination', limit: '3'
+    });
+    if (nav.access !== 'WALK') query.set('access', nav.access);
+    const response = await fetch('/api/v2/plan?' + query, { signal: controller.signal, cache: 'no-store' });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body?.itineraries?.length) throw new Error('No replacement route available');
+    const alternatives = body.itineraries.map(normalizeItinerary).filter(it => it.legs.length && !it.hasCancellation);
+    if (!alternatives.length) throw new Error('No usable replacement route available');
+    if (state.nav !== nav) return;
+    nav.it = alternatives[0];
+    nav.steps = buildSteps(nav.it);
+    nav.i = 0;
+    state.journey = nav.it;
+    nav.status = 'Route updated from your current location';
+    nav.error = null;
+    renderJourney(); applyMapState();
+    render();
+    navFollowCamera();
+  } catch (error) {
+    if (state.nav !== nav || error.name === 'AbortError') return;
+    nav.error = 'Unable to recalculate now. Check the map and choose an available route.';
+    nav.status = 'Off route · ' + nav.error;
+    render();
+  } finally {
+    if (state.nav === nav) { nav.rerouting = false; nav.controller = null; }
+  }
+}
+
 async function startNavigation(index) {
   const it = state.plan.results?.itineraries?.[index];
   if (!it) return;
+  releaseWakeLock();
   state.journey = it;
-  state.nav = { it, steps: buildSteps(it), i: 0, tracking: false, watchId: null };
+  const nav = {
+    it, steps: buildSteps(it), i: 0, tracking: false, watchId: null,
+    destination: { ...state.plan.to }, access: state.plan.results?.request?.access || 'WALK',
+    follow: true, headingUp: true, voice: false, fix: null, heading: null,
+    offRouteFixes: 0, lastOffRouteAt: 0, rerouteAt: 0, rerouting: false,
+    status: 'Waiting for GPS permission…', error: null, controller: null
+  };
+  state.nav = nav;
   renderJourney(); applyMapState();
   pushView({ name: 'navigate' }, { detent: 'half' });
   focusStep();
-  try { if ('wakeLock' in navigator) state.wakeLock = await navigator.wakeLock.request('screen'); } catch { /* wake lock refused */ }
-  if (state.userLocation && 'geolocation' in navigator) {
-    state.nav.watchId = navigator.geolocation.watchPosition(onNavPosition, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
-    state.nav.tracking = true;
-    render();
-  }
+  // Request a fix on Start even when the rider never tapped the location button.
+  if ('geolocation' in navigator && window.isSecureContext) {
+    nav.watchId = navigator.geolocation.watchPosition(onNavPosition, error => {
+      if (state.nav !== nav) return;
+      nav.tracking = false;
+      nav.status = error?.code === 1 ? 'Location denied. Enable browser location permissions to follow your trip.' :
+        'Waiting for a usable GPS signal. Map following is paused.';
+      render();
+    }, { enableHighAccuracy: true, maximumAge: 1500, timeout: 20000 });
+    nav.tracking = true;
+  } else nav.status = 'Live navigation needs location permission and HTTPS (or localhost).';
+  render();
+  try {
+    if ('wakeLock' in navigator) {
+      const lock = await navigator.wakeLock.request('screen');
+      if (state.nav === nav) state.wakeLock = lock;
+      else lock.release();
+    }
+  } catch { /* screen wake lock unavailable; tracking still runs in foreground */ }
 }
 
 function releaseWakeLock() {
   try { state.wakeLock?.release(); } catch { /* already released */ }
   state.wakeLock = null;
-  if (state.nav?.watchId != null) { navigator.geolocation.clearWatch(state.nav.watchId); state.nav.watchId = null; state.nav.tracking = false; }
+  const nav = state.nav;
+  nav?.controller?.abort();
+  if (nav?.watchId != null) { navigator.geolocation.clearWatch(nav.watchId); nav.watchId = null; nav.tracking = false; }
+  navMarker?.remove(); navMarker = null;
+  if (state.map) state.map.easeTo({ bearing: 0, pitch: 0, duration: 0 });
 }
 
 function focusStep() {
@@ -2078,7 +2206,14 @@ function viewNavigate() {
   const step = nav.steps[nav.i];
   const total = nav.steps.length - 1;
   const head = `<div class="view-head"><button class="back-button" data-action="nav-end">${ICONS.back}<span>End trip</span></button></div>
-    <div class="nav-head"><div class="title-2">Arrive ${esc(clock(new Date(nav.it.endTime)))}</div><div class="caption">${esc(durationLabel((new Date(nav.it.endTime) - Date.now()) / 1000))} remaining${nav.it.usesRealtime ? '' : ' · Scheduled times'}${nav.tracking ? ' · Following your location' : ''}</div></div>`;
+    <div class="nav-head"><div class="title-2">Arrive ${esc(clock(new Date(nav.it.endTime)))}</div><div class="caption">${esc(durationLabel((new Date(nav.it.endTime) - Date.now()) / 1000))} remaining${nav.it.usesRealtime ? '' : ' · Scheduled times'}</div>
+    <p class="nav-gps-status" role="status">${esc(nav.status || 'Waiting for location')}</p>
+    <div class="nav-camera-controls" role="group" aria-label="Navigation map controls">
+      <button type="button" class="button secondary" data-action="nav-follow" aria-pressed="${nav.follow}">Follow</button>
+      <button type="button" class="button secondary" data-action="nav-bearing" aria-pressed="${nav.headingUp}">${nav.headingUp ? 'Heading up' : 'North up'}</button>
+      <button type="button" class="button secondary" data-action="nav-overview">Overview</button>
+      <button type="button" class="button secondary" data-action="nav-replan" ${!nav.fix || nav.rerouting ? 'disabled' : ''}>${nav.rerouting ? 'Recalculating…' : 'New route'}</button>
+    </div></div>`;
   if (step.type === 'arrive') {
     return `${head}<div class="arrived"><h2 class="title-1">${esc(step.title)}</h2><p class="caption" style="margin-top:8px">${esc(clock(new Date()))}</p><div style="margin-top:20px"><button class="button primary" data-action="nav-end">Done</button></div></div>`;
   }
@@ -2204,6 +2339,10 @@ function handleAction(el) {
     }
     case 'leg-focus': focusLeg(Number(el.dataset.leg)); break;
     case 'nav-start': startNavigation(Number(el.dataset.index)); break;
+    case 'nav-follow': navChangeFollow('follow'); break;
+    case 'nav-bearing': navChangeFollow('bearing'); break;
+    case 'nav-overview': navChangeFollow('overview'); break;
+    case 'nav-replan': if (state.nav?.fix) navReroute(state.nav); break;
     case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; render(); focusStep(); } break;
     case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; render(); focusStep(); } break;
     case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
@@ -2384,7 +2523,7 @@ function bindChrome() {
 
   $('#zoomIn').addEventListener('click', () => state.map?.zoomIn());
   $('#zoomOut').addEventListener('click', () => state.map?.zoomOut());
-  $('#locateButton').addEventListener('click', () => locate());
+  $('#locateButton').addEventListener('click', () => state.nav ? navChangeFollow('follow') : locate());
 
   document.addEventListener('keydown', e => {
     const typing = /input|select|textarea/i.test(document.activeElement?.tagName || '');
@@ -2716,19 +2855,32 @@ function legAlertsHtml(leg) {
 function onNavPosition(pos) {
   const nav = state.nav;
   if (!nav) return;
-  const here = [pos.coords.longitude, pos.coords.latitude];
-  state.userLocation = here;
-  const step = nav.steps[nav.i];
-  if (!step?.leg || step.type === 'arrive') return;
-  const target = [step.leg.to?.lon, step.leg.to?.lat];
-  const accuracy = Math.min(pos.coords.accuracy || 50, 100);
-  const radius = step.type === 'walk' ? 35 + accuracy : step.type === 'drive' ? 80 + accuracy : 120 + accuracy;
-  if ((step.type === 'walk' || step.type === 'drive' || step.type === 'ride') && distanceMeters(here, target) < radius) {
-    nav.i = Math.min(nav.i + 1, nav.steps.length - 1);
-    render(); focusStep();
-  } else if (step.type === 'wait' && Date.now() > step.departs.getTime() && distanceMeters(here, [step.leg.from?.lon, step.leg.from?.lat]) > 300) {
-    nav.i += 1; render(); focusStep();
-  }
+  const fix = { point: [pos.coords.longitude, pos.coords.latitude],
+    accuracy: pos.coords.accuracy, time: pos.timestamp || Date.now(),
+    speed: pos.coords.speed, heading: pos.coords.heading };
+  if (Date.now() - fix.time > 30000 || !RoveNavigation.validFix(nav.fix, fix)) return;
+  if (!inServiceArea({ lon: fix.point[0], lat: fix.point[1] })) return;
+  const previous = nav.fix;
+  nav.fix = fix;
+  nav.tracking = true;
+  state.userLocation = fix.point;
+  const seconds = previous ? (fix.time - previous.time) / 1000 : 0;
+  // When actual sensor heading is unavailable, infer heading only after real movement.
+  const moved = previous ? RoveNavigation.meters(previous.point, fix.point) : 0;
+  const heading = Number.isFinite(fix.heading) && fix.speed > 1.2 ? fix.heading :
+    moved >= Math.max(8, fix.accuracy) && seconds > 0 ? RoveNavigation.bearing(previous.point, fix.point) : nav.heading;
+  if (Number.isFinite(heading)) nav.heading = heading;
+  nav.status = nav.follow ? 'Following your location' : 'Tracking GPS · map exploration paused following';
+  updateNavMarker(fix, nav.heading);
+  navFollowCamera();
+  maybeAdvanceNavigation(nav, fix);
+  const distance = routeLegDistance(nav, fix.point);
+  if (distance != null && fix.accuracy <= 75 && distance > Math.max(85, fix.accuracy * 2.5)) {
+    nav.offRouteFixes = seconds < 20 ? nav.offRouteFixes + 1 : 1;
+  } else nav.offRouteFixes = 0;
+  if (RoveNavigation.shouldReroute(fix, distance, nav.offRouteFixes, Date.now() - nav.rerouteAt)) {
+    navReroute(nav);
+  } else if (currentView().name === 'navigate') render();
 }
 
 /* Small start and end markers for the trip being planned. */

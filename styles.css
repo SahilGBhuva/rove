@@ -981,3 +981,14 @@ body.theme-dark .quick:first-child { background: #e5f0ff; color: #162638; }
 }
 .search-correction { margin: 8px var(--pad) 0; padding: 9px 11px; color: var(--ink-2); background: var(--fill); border-radius: 8px; font-size: 13px; line-height: 19px; }
 .search-correction strong { font-weight: 750; color: var(--ink); }
+
+/* Live navigation: a distinct Rove avatar, not the map provider's blue-dot UI. */
+.rove-nav-avatar { width: 46px; height: 46px; display: grid; place-items: center; position: relative; pointer-events: none; }
+.rove-nav-halo { position: absolute; width: 42px; height: 42px; border: 2px solid rgba(37,103,211,.28); background: rgba(37,103,211,.12); border-radius: 50%; }
+.rove-nav-dot { width: 17px; height: 17px; background: #2567d3; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 2px 8px rgba(9,40,77,.35); position: relative; z-index: 2; }
+.rove-nav-direction { position: absolute; top: 0; left: 13px; width: 20px; height: 25px; background: #2567d3; clip-path: polygon(50% 0%,100% 100%,50% 74%,0% 100%); filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); z-index: 1; }
+.nav-gps-status { margin: 9px 0 6px; font-size: 13px; line-height: 18px; color: var(--ink-2); }
+.nav-camera-controls { display: flex; flex-wrap: wrap; gap: 7px; margin: 9px 0 3px; }
+.nav-camera-controls .button { flex: 1 1 85px; min-height: 44px; padding: 7px 10px; font-size: 12px; white-space: nowrap; }
+.nav-camera-controls [aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+@media (max-width: 359px) { .nav-camera-controls .button { flex-basis: 90px; } }
