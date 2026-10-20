@@ -35,3 +35,19 @@ Measured on the Mac, for **Tuesday 2026-10-20**:
 8. GTFS snapshot data may have provider licensing/attribution conditions; review before public redistribution.
 
 **Decision:** The Bay Area timetable can be reduced enough to make a browser-delivered routing engine promising. However, this is a research proof of concept—not a substitute for Rove's already verified OTP navigation backend yet.
+
+## Adjacent service days (October 19)
+
+`combine-days.mjs` merges consecutive service-date snapshots into one chronologically
+sorted timetable, shifting each service date by 86,400 seconds. GTFS trips using
+24:xx and 25:xx remain attached to their original service day, so overnight
+searches can see both yesterday's late trips and today's early trips. It
+validates that stop indexes are identical and offsets trip indexes to prevent
+collisions. The additional tests cover a real overnight-time ordering scenario.
+
+Build both service dates first, then import `combineServiceDays` and `findJourney`.
+The returned `departureSeconds` input to `findJourney` is measured from the
+**first** service date's local midnight (e.g., 01:00 the following day is
+90,000 seconds). This is not yet integrated into the frontend or a public
+routing endpoint. Date-specific schedule loading and timezone/DST conversion
+remain to be implemented and verified before public use.

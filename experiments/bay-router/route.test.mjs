@@ -37,3 +37,20 @@ test('returns zero-duration journey for same stop',()=>{
   assert.equal(j.durationSeconds,0);
   assert.deepEqual(j.legs,[]);
 });
+
+test('after-midnight GTFS times from yesterday and today coexist correctly', async () => {
+  const { combineServiceDays } = await import('./combine-days.mjs');
+  const yesterday = { ...base, date: '2026-10-19', connections: [[0, 1, 86400 + 900, 86400 + 1100, 0, 3]] };
+  const today = { ...base, date: '2026-10-20', connections: [[0, 1, 1200, 1300, 0, 3]] };
+  const both = combineServiceDays([today, yesterday]);
+  assert.equal(both.trips.length, 4);
+  assert.equal(both.connections[0][2], 87300);
+  assert.equal(both.connections[1][2], 87600);
+  const trip = findJourney(both, 0, 1, 87000);
+  assert.equal(trip.arrivalSeconds, 87500);
+  assert.equal(trip.legs[0].tripId, 'ride1');
+});
+test('combined timetable rejects inconsistent stop indexes', async () => {
+  const { combineServiceDays } = await import('./combine-days.mjs');
+  assert.throws(() => combineServiceDays([{...base}, {...base, date:'2026-10-21', stops: []}]), /stop indexes differ/);
+});
