@@ -27,7 +27,7 @@ vm.runInContext([
   slice('function luminance(hex) {', 'const ICONS = {'),
   slice('const THEME = {', '/* Rove\'s basemap palettes'),
   slice('const MAP_ZOOM = ', 'function addTransitLayers() {')
-].join('\n') + '\nthis.api = { luminance, contrast, normalizeColor, mixHex, mapLineColor, THEME, MAP_ZOOM, BUS_OPACITY, BUS_WIDTH };', sandbox);
+].join('\n') + '\nthis.api = { luminance, contrast, normalizeColor, mixHex, mapLineColor, THEME, MAP_ZOOM, BUS_OPACITY, BUS_WIDTH, NIGHT_BUS_OPACITY };', sandbox);
 const { luminance, contrast, mapLineColor, THEME, MAP_ZOOM, BUS_OPACITY, BUS_WIDTH } = sandbox.api;
 
 /** Evaluates a MapLibre ['interpolate', ['linear'], ['zoom'], z0, v0, z1, v1, ...] at a zoom. */
@@ -130,4 +130,12 @@ test('late-night no-service flow offers a correctly labeled later search', () =>
 
 test('ending navigation releases location tracking before clearing state', () => {
   assert.match(source, /case 'nav-end': releaseWakeLock\(\); state.nav = null; goHome\(\); break;/);
+});
+
+
+test('night mode quiets bus route density without changing selected agency colors', () => {
+  assert.match(source, /const NIGHT_BUS_OPACITY =/);
+  assert.ok(atZoom(sandbox.api.NIGHT_BUS_OPACITY || ['interpolate', ['linear'], ['zoom'], 10, 0, 14, .48], 14) <= .5);
+  assert.match(source, /state.mapMode === 'dark' \? NIGHT_BUS_OPACITY : BUS_OPACITY/);
+  assert.match(source, /const mode = .* : 'standard';/);
 });

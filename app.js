@@ -608,6 +608,8 @@ function stopFeatures() {
  * drawn at every zoom. The Bus lines switch in the layers panel says so ("Appear as you zoom in to a city"). */
 const MAP_ZOOM = Object.freeze({ busRoutes: 10, busStops: 14.5, busStopLabels: 16.3, busVehicles: 12.5, lightRail: 9.5, lightStops: 13, lightLabels: 14, heavyStops: 9.5, heavyLabels: 11.5, railVehicles: 10.5 });
 const BUS_OPACITY = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.5, 12, 0.64, 14, 0.82];
+// Night mode uses a quieter network overview. A selected bus line keeps its full agency color.
+const NIGHT_BUS_OPACITY = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.28, 12, 0.38, 14, 0.48];
 const BUS_WIDTH = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0.8, 12, 1.4, 14, 2.2, 17, 3.6];
 
 function addTransitLayers() {
@@ -636,7 +638,7 @@ function addTransitLayers() {
   const line = { type: 'line', source: 'transit-routes', layout: { 'line-cap': 'round', 'line-join': 'round' } };
   const widen = (expr, by) => ['interpolate', ['linear'], ['zoom'], ...expr.slice(3).map((v, i) => (i % 2 ? v + by : v))];
   map.addLayer({ ...line, id: 'tr-bus-casing', minzoom: MAP_ZOOM.busRoutes, filter: ['==', ['get', 'cat'], 'bus'], paint: { 'line-color': t.casing, 'line-width': widen(BUS_WIDTH, 2), 'line-opacity': ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, t.busCasingOpacity] } }, before);
-  map.addLayer({ ...line, id: 'tr-bus', minzoom: MAP_ZOOM.busRoutes, filter: ['==', ['get', 'cat'], 'bus'], paint: { 'line-color': ['get', 'lc'], 'line-width': BUS_WIDTH, 'line-opacity': BUS_OPACITY } }, before);
+  map.addLayer({ ...line, id: 'tr-bus', minzoom: MAP_ZOOM.busRoutes, filter: ['==', ['get', 'cat'], 'bus'], paint: { 'line-color': ['get', 'lc'], 'line-width': BUS_WIDTH, 'line-opacity': state.mapMode === 'dark' ? NIGHT_BUS_OPACITY : BUS_OPACITY } }, before);
   const lightWidth = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.lightRail, 1.1, 13, 2.4, 16, 4];
   map.addLayer({ ...line, id: 'tr-light-casing', minzoom: MAP_ZOOM.lightRail, filter: ['==', ['get', 'cat'], 'light'], paint: { 'line-color': t.casing, 'line-width': widen(lightWidth, 2.2), 'line-opacity': 0.8 } }, before);
   map.addLayer({ ...line, id: 'tr-light', minzoom: MAP_ZOOM.lightRail, filter: ['==', ['get', 'cat'], 'light'], paint: { 'line-color': ['get', 'lc'], 'line-width': lightWidth, 'line-opacity': 0.85 } }, before);
@@ -716,7 +718,7 @@ function applyMapState() {
   }
 
   map.setPaintProperty('tr-bus', 'line-color', dimmed ? t.faded : ['get', 'lc']);
-  map.setPaintProperty('tr-bus', 'line-opacity', dimmed ? ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.22] : BUS_OPACITY);
+  map.setPaintProperty('tr-bus', 'line-opacity', dimmed ? ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.22] : (state.mapMode === 'dark' ? NIGHT_BUS_OPACITY : BUS_OPACITY));
   map.setPaintProperty('tr-bus-casing', 'line-opacity', dimmed ? 0 : ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, t.busCasingOpacity]);
   for (const id of ['tr-light', 'tr-heavy']) {
     map.setPaintProperty(id, 'line-color', dimmed ? t.faded : ['get', 'lc']);
@@ -3338,7 +3340,7 @@ async function init() {
   render();
 
   const savedMode = store.get(STORAGE.mapMode, null);
-  const mode = ['standard', 'satellite', 'dark'].includes(savedMode) ? savedMode : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'standard');
+  const mode = ['standard', 'satellite', 'dark'].includes(savedMode) ? savedMode : 'standard';
   state.mapMode = mode;
   document.body.classList.toggle('theme-dark', mode === 'dark');
   document.body.classList.toggle('map-satellite', mode === 'satellite');
