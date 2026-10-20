@@ -2099,6 +2099,7 @@ function maybeAdvanceNavigation(nav, fix) {
   if ((step.type === 'walk' || step.type === 'drive' || step.type === 'ride') && rideNearArrival &&
       RoveNavigation.meters(here, target) < radius) {
     nav.i = Math.min(nav.i + 1, nav.steps.length - 1);
+    nav.maneuver = null; nav.spokenKey = null;
     render();
   }
   // Boarding cannot be inferred merely because a train departed on the schedule.
@@ -2112,6 +2113,7 @@ async function navReroute(nav) {
   nav.status = 'Calculating a new route from your location…';
   const controller = new AbortController();
   nav.controller = controller;
+  const timeout = setTimeout(() => controller.abort(), 25000);
   render();
   try {
     const query = new URLSearchParams({
@@ -2128,7 +2130,7 @@ async function navReroute(nav) {
     if (state.nav !== nav) return;
     nav.it = alternatives[0];
     nav.steps = buildSteps(nav.it);
-    nav.i = 0;
+    nav.i = 0; nav.maneuver = null; nav.spokenKey = null;
     state.journey = nav.it;
     nav.status = 'Route updated from your current location';
     nav.error = null;
@@ -2136,12 +2138,72 @@ async function navReroute(nav) {
     render();
     navFollowCamera();
   } catch (error) {
-    if (state.nav !== nav || error.name === 'AbortError') return;
+    if (state.nav !== nav) return;
     nav.error = 'Unable to recalculate now. Check the map and choose an available route.';
     nav.status = 'Off route · ' + nav.error;
     render();
   } finally {
+    clearTimeout(timeout);
     if (state.nav === nav) { nav.rerouting = false; nav.controller = null; }
+  }
+}
+
+/* Spoken directions are off by default, and announce only grounded OTP steps. */
+function speakNav(text) {
+  const nav = state.nav;
+  if (!nav?.voice || !nav.speechAllowed || !('speechSynthesis' in window) ||
+      !('SpeechSynthesisUtterance' in window) || document.hidden) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.95;
+    utterance.lang = 'en-US';
+    window.speechSynthesis.speak(utterance);
+  } catch { nav.voice = false; }
+}
+function toggleNavVoice() {
+  const nav = state.nav;
+  if (!nav) return;
+  if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
+    nav.status = 'Voice guidance is not supported by this browser.';
+    render();
+    return;
+  }
+  nav.voice = !nav.voice;
+  nav.speechAllowed = nav.voice;
+  nav.spokenKey = null;
+  if (!nav.voice) window.speechSynthesis.cancel();
+  else {
+    const next = nav.maneuver;
+    if (next?.step && next.metersAhead <= 350) {
+      speakNav('In ' + Math.max(10, Math.round(next.metersAhead / 10) * 10) + ' meters, ' + stepText(next.step));
+      nav.spokenKey = String(nav.i) + ':' + next.index;
+    } else speakNav('Voice guidance on.');
+  }
+  render();
+}
+function updateNavManeuver(nav, fix) {
+  const step = nav.steps[nav.i];
+  if (!step || !['walk', 'drive'].includes(step.type) ||
+      fix.accuracy > 55 || !Array.isArray(step.leg.geometry?.coordinates)) {
+    nav.maneuver = null;
+    return;
+  }
+  const next = RoveNavigation.nextManeuver(
+    fix.point, step.leg.geometry.coordinates, step.leg.steps || []
+  );
+  if (!next || next.offRouteMeters > Math.max(65, fix.accuracy * 2)) {
+    nav.maneuver = null;
+    return;
+  }
+  nav.maneuver = next;
+  if (!next.step) return;
+  const key = String(nav.i) + ':' + next.index;
+  if (nav.voice && key !== nav.spokenKey && next.metersAhead <= 170) {
+    const lead = next.metersAhead >= 25
+      ? 'In ' + Math.round(next.metersAhead / 10) * 10 + ' meters, ' : '';
+    speakNav(lead + stepText(next.step));
+    nav.spokenKey = key;
   }
 }
 
@@ -2155,6 +2217,7 @@ async function startNavigation(index) {
     destination: { ...state.plan.to }, access: state.plan.results?.request?.access || 'WALK',
     follow: true, headingUp: true, voice: false, fix: null, heading: null,
     offRouteFixes: 0, lastOffRouteAt: 0, rerouteAt: 0, rerouting: false,
+    maneuver: null, spokenKey: null, speechAllowed: false, lastUiAt: 0,
     status: 'Waiting for GPS permission…', error: null, controller: null
   };
   state.nav = nav;
@@ -2183,6 +2246,7 @@ async function startNavigation(index) {
 }
 
 function releaseWakeLock() {
+  try { window.speechSynthesis?.cancel(); } catch { /* speech unavailable */ }
   try { state.wakeLock?.release(); } catch { /* already released */ }
   state.wakeLock = null;
   const nav = state.nav;
@@ -2212,6 +2276,7 @@ function viewNavigate() {
       <button type="button" class="button secondary" data-action="nav-follow" aria-pressed="${nav.follow}">Follow</button>
       <button type="button" class="button secondary" data-action="nav-bearing" aria-pressed="${nav.headingUp}">${nav.headingUp ? 'Heading up' : 'North up'}</button>
       <button type="button" class="button secondary" data-action="nav-overview">Overview</button>
+      <button type="button" class="button secondary" data-action="nav-voice" aria-pressed="${nav.voice}" ${!('speechSynthesis' in window) ? 'disabled' : ''}>${nav.voice ? 'Mute voice' : 'Voice guidance'}</button>
       <button type="button" class="button secondary" data-action="nav-replan" ${!nav.fix || nav.rerouting ? 'disabled' : ''}>${nav.rerouting ? 'Recalculating…' : 'New route'}</button>
     </div></div>`;
   if (step.type === 'arrive') {
@@ -2225,13 +2290,15 @@ function viewNavigate() {
   }
   const color = step.li?.color || 'var(--ink)';
   const glyph = step.leg ? modeIcon(step.leg) : '';
+  const activeManeuver = nav.maneuver && (step.type === 'walk' || step.type === 'drive') ? nav.maneuver : null;
   const turns = (step.type === 'walk' || step.type === 'drive') && step.leg.steps?.length > 1
     ? `<ol class="turns-now">${step.leg.steps.map(s => `<li><span>${esc(stepText(s))}</span>${s.distanceMeters ? `<span class="caption">${esc(distanceLabel(s.distanceMeters))}</span>` : ''}</li>`).join('')}</ol>` : '';
   const list = nav.steps.slice(0, total).map((s, i) => `<li class="${i < nav.i ? 'done' : ''}" ${i === nav.i ? 'aria-current="step" style="color:var(--ink);font-weight:600"' : ''}>${i < nav.i ? ICONS.check : ICONS.circle}<span>${esc(s.title)}</span></li>`).join('');
   return `${head}
     <div class="step-card" style="--leg-color:${esc(color)}">
       <p class="label step-label">${glyph}<span>Step ${nav.i + 1} of ${total}</span></p>
-      <h2>${esc(step.title)}</h2>
+      <h2>${esc(activeManeuver?.step ? stepText(activeManeuver.step) : step.title)}</h2>
+      ${activeManeuver ? `<p class="nav-maneuver-distance">${esc(distanceLabel(activeManeuver.metersAhead))} ${activeManeuver.step ? 'to next instruction' : 'left on this leg'}</p>` : ''}
       <div class="big${step.leg?.canceled ? ' status-canceled' : ''}">${esc(big)}</div>
       ${meta ? `<p class="caption" style="margin:6px 0 0">${esc(meta)}</p>` : ''}
       ${step.leg ? legAlertsHtml(step.leg) : ''}
@@ -2340,11 +2407,12 @@ function handleAction(el) {
     case 'leg-focus': focusLeg(Number(el.dataset.leg)); break;
     case 'nav-start': startNavigation(Number(el.dataset.index)); break;
     case 'nav-follow': navChangeFollow('follow'); break;
+    case 'nav-voice': toggleNavVoice(); break;
     case 'nav-bearing': navChangeFollow('bearing'); break;
     case 'nav-overview': navChangeFollow('overview'); break;
     case 'nav-replan': if (state.nav?.fix) navReroute(state.nav); break;
-    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; render(); focusStep(); } break;
-    case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; render(); focusStep(); } break;
+    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); } break;
+    case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); } break;
     case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
     default: break;
   }
@@ -2537,7 +2605,17 @@ function bindChrome() {
     }
   });
 
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadRealtime(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { try { window.speechSynthesis?.cancel(); } catch { /* unavailable */ } }
+    else {
+      loadRealtime();
+      if (state.nav) {
+        if (state.nav.fix && Date.now() - state.nav.fix.time > 30000) state.nav.status = 'Refreshing GPS after returning to Rove…';
+        navFollowCamera();
+        render();
+      }
+    }
+  });
 }
 
 let geolocateControl = null;
@@ -2878,9 +2956,10 @@ function onNavPosition(pos) {
   if (distance != null && fix.accuracy <= 75 && distance > Math.max(85, fix.accuracy * 2.5)) {
     nav.offRouteFixes = seconds < 20 ? nav.offRouteFixes + 1 : 1;
   } else nav.offRouteFixes = 0;
+  updateNavManeuver(nav, fix);
   if (RoveNavigation.shouldReroute(fix, distance, nav.offRouteFixes, Date.now() - nav.rerouteAt)) {
     navReroute(nav);
-  } else if (currentView().name === 'navigate') render();
+  } else if (currentView().name === 'navigate' && Date.now() - nav.lastUiAt >= 1400) { nav.lastUiAt = Date.now(); render(); }
 }
 
 /* Small start and end markers for the trip being planned. */

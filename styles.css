@@ -992,3 +992,4 @@ body.theme-dark .quick:first-child { background: #e5f0ff; color: #162638; }
 .nav-camera-controls .button { flex: 1 1 85px; min-height: 44px; padding: 7px 10px; font-size: 12px; white-space: nowrap; }
 .nav-camera-controls [aria-pressed="true"] { background: var(--ink); color: var(--surface); }
 @media (max-width: 359px) { .nav-camera-controls .button { flex-basis: 90px; } }
+.nav-maneuver-distance { margin-top: 9px; color: var(--ink-2); font-size: 15px; font-weight: 650; }
