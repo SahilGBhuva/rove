@@ -5,7 +5,7 @@ import vm from 'node:vm';
 
 const context = {};
 vm.createContext(context);
-vm.runInContext(fs.readFileSync(new URL('../navigation-core.js', import.meta.url), 'utf8') + '\nthis.Nav=RoveNavigation;', context);
+vm.runInContext(fs.readFileSync(new URL('../public/js/navigation-core.js', import.meta.url), 'utf8') + '\nthis.Nav=RoveNavigation;', context);
 const { Nav } = context;
 
 test('route geometry measures off-route position, not distance to last stop', () => {
