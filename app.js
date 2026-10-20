@@ -2288,6 +2288,13 @@ function viewNavigate() {
     big = m.value === 'Now' ? 'Now' : m.unit ? `${m.value} min` : m.value;
     meta = step.leg.canceled ? 'This trip is canceled. Plan again for another option.' : `Departs ${clock(step.departs)}${step.leg.realtime ? '' : ' · Scheduled'}`;
   }
+  // GPS alone cannot prove whether a rider boarded. Never silently mark a
+  // train or bus as missed; offer an explicit replanning action instead.
+  const transitProblem = step.leg && (step.type === 'wait' || step.type === 'ride') &&
+    (step.leg.canceled || (step.type === 'wait' && step.departs && Date.now() > step.departs.getTime() + 90000));
+  const transitRecovery = transitProblem
+    ? `<div class="nav-transit-recovery" role="status"><strong>${step.leg.canceled ? 'Service canceled' : 'Did you miss this departure?'}</strong><p>Rove cannot confirm boarding from GPS alone. If you are still waiting, recalculate from your current location.</p><button type="button" class="button secondary" data-action="nav-missed" ${!nav.fix || nav.rerouting ? 'disabled' : ''}>Find another route</button></div>`
+    : '';
   const color = step.li?.color || 'var(--ink)';
   const glyph = step.leg ? modeIcon(step.leg) : '';
   const activeManeuver = nav.maneuver && (step.type === 'walk' || step.type === 'drive') ? nav.maneuver : null;
@@ -2302,6 +2309,7 @@ function viewNavigate() {
       <div class="big${step.leg?.canceled ? ' status-canceled' : ''}">${esc(big)}</div>
       ${meta ? `<p class="caption" style="margin:6px 0 0">${esc(meta)}</p>` : ''}
       ${step.leg ? legAlertsHtml(step.leg) : ''}
+      ${transitRecovery}
       ${turns}
     </div>
     <div class="action-bar">
@@ -2411,6 +2419,7 @@ function handleAction(el) {
     case 'nav-bearing': navChangeFollow('bearing'); break;
     case 'nav-overview': navChangeFollow('overview'); break;
     case 'nav-replan': if (state.nav?.fix) navReroute(state.nav); break;
+    case 'nav-missed': if (state.nav?.fix) navReroute(state.nav); break;
     case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); } break;
     case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); } break;
     case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;

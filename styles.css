@@ -993,3 +993,6 @@ body.theme-dark .quick:first-child { background: #e5f0ff; color: #162638; }
 .nav-camera-controls [aria-pressed="true"] { background: var(--ink); color: var(--surface); }
 @media (max-width: 359px) { .nav-camera-controls .button { flex-basis: 90px; } }
 .nav-maneuver-distance { margin-top: 9px; color: var(--ink-2); font-size: 15px; font-weight: 650; }
+.nav-transit-recovery { margin: 14px 0 4px; border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 13px; line-height: 1.5; }
+.nav-transit-recovery p { margin: 5px 0 10px; color: var(--ink-2); }
+.nav-transit-recovery .button { min-height: 44px; }
