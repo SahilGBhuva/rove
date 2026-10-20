@@ -34,3 +34,5 @@ tmp/
 temp/
 
 /experiments/bay-router/out/
+
+/experiments/bay-router/__pycache__/
