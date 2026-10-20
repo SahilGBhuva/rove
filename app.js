@@ -158,7 +158,9 @@ const idx = {
   stopById: new Map(),     // agencyId -> Map(stopId -> stop)
   stopRoutes: new Map(),   // stopKey -> [routeKey]
   children: new Map(),     // stopKey (parent) -> [stop]
-  searchable: []
+  searchable: [],
+  wordFrequency: new Map(),
+  correctionCache: new Map()
 };
 const routeKey = (agencyId, routeId) => `${agencyId}::${routeId}`;
 const stopKey = (agencyId, stopId) => `${agencyId}::${stopId}`;
@@ -241,7 +243,11 @@ function buildIndexes(network) {
       const nameKey = `${a.id}|${s.n.toLowerCase()}|${Math.round(s.p[1] * 300)}|${Math.round(s.p[0] * 240)}`;
       if (seen.has(nameKey)) continue;
       seen.set(nameKey, true);
-      idx.searchable.push({ a, s, haystack: normalizeSearch(`${s.n} ${a.name}`) });
+      const name = normalizeSearch(s.n);
+      idx.searchable.push({ a, s, name, haystack: normalizeSearch(`${s.n} ${a.name}`) });
+      for (const word of new Set(name.split(' ').filter(x => x.length >= 4))) {
+        idx.wordFrequency.set(word, (idx.wordFrequency.get(word) || 0) + (s.k ? 4 : 1));
+      }
     }
   }
 }
@@ -664,6 +670,12 @@ function addTransitLayers() {
   map.addLayer({ id: 'st-bus', type: 'circle', source: 'transit-stops', minzoom: MAP_ZOOM.busStops, filter: ['all', ['==', ['get', 'cat'], 'bus'], ['==', ['get', 'child'], 0]], paint: { ...stopPaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busStops, 2.2, 17, 4.5], 1.4), 'circle-stroke-color': t.bus, 'circle-opacity': ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busStops, 0, MAP_ZOOM.busStops + 0.4, 1], 'circle-stroke-opacity': ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busStops, 0, MAP_ZOOM.busStops + 0.4, 1] } }, 'journey-casing');
   map.addLayer({ id: 'st-light', type: 'circle', source: 'transit-stops', minzoom: MAP_ZOOM.lightStops, filter: ['all', ['==', ['get', 'cat'], 'light'], ['==', ['get', 'child'], 0]], paint: stopPaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.lightStops, 2.5, 16, 5], 1.6) }, 'journey-casing');
   map.addLayer({ id: 'st-heavy', type: 'circle', source: 'transit-stops', minzoom: MAP_ZOOM.heavyStops, filter: ['all', ['==', ['get', 'cat'], 'heavy'], ['==', ['get', 'child'], 0]], paint: stopPaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.heavyStops, 2.6, 12, 4, 16, 6.5], 2) }, 'journey-casing');
+  // At close zoom, show GTFS boarding platform / stop points at their published coordinates,
+  // not just a station-centroid pin. This lets phone users tap the correct platform.
+  map.addLayer({ id: 'st-platform', type: 'circle', source: 'transit-stops', minzoom: 16.5,
+    filter: ['==', ['get', 'child'], 1],
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 16.5, 3.4, 19, 5.4],
+      'circle-color': t.surface, 'circle-stroke-color': t.ink, 'circle-stroke-width': 1.6 } }, 'journey-casing');
   map.addLayer({ id: 'st-selected', type: 'circle', source: 'transit-stops', filter: ['==', ['get', 'id'], '__none__'], paint: { ...stopPaint(['interpolate', ['linear'], ['zoom'], 9, 1.8, 12, 3.2, 14, 5.5], ['interpolate', ['linear'], ['zoom'], 9, 1.4, 12, 2, 14, 2.4]), 'circle-stroke-color': t.ink } });
   map.addLayer({ id: 'st-place', type: 'circle', source: 'transit-stops', filter: ['==', ['get', 'id'], '__none__'], paint: { 'circle-radius': 9, 'circle-color': t.ink, 'circle-stroke-color': t.surface, 'circle-stroke-width': 3 } });
 
@@ -694,7 +706,7 @@ function addTransitLayers() {
 
 
 const ROUTE_LAYERS = ['tr-bus-casing', 'tr-bus', 'tr-light-casing', 'tr-light', 'tr-heavy-casing', 'tr-heavy'];
-const STOP_LAYERS = ['st-bus', 'st-light', 'st-heavy', 'st-heavy-label', 'st-light-label', 'st-bus-label'];
+const STOP_LAYERS = ['st-bus', 'st-light', 'st-heavy', 'st-platform', 'st-heavy-label', 'st-light-label', 'st-bus-label'];
 const VEHICLE_LAYERS = ['veh-rail', 'veh-bus'];
 const ROUTE_LAYER_CAT = { 'tr-bus-casing': 'bus', 'tr-bus': 'bus', 'tr-light-casing': 'light', 'tr-light': 'light', 'tr-heavy-casing': 'heavy', 'tr-heavy': 'heavy' };
 const LAYER_KIND = { 'st-bus': 'bus', 'st-bus-label': 'bus', 'veh-bus': 'bus' };
@@ -733,10 +745,16 @@ function applyMapState() {
 
   for (const id of STOP_LAYERS) {
     const kind = LAYER_KIND[id] || 'rail';
-    map.setLayoutProperty(id, 'visibility', !journeyActive && kindShown(kind) && !(focusKey && /label/.test(id)) ? 'visible' : 'none');
+    map.setLayoutProperty(id, 'visibility', !journeyActive && (id === 'st-platform' ? (state.showBus || state.showRail) : kindShown(kind)) && !(focusKey && /label/.test(id)) ? 'visible' : 'none');
     const base = map.getFilter(id);
-    const kept = (base?.[0] === 'all' ? base.slice(1) : [base]).filter(f => !(Array.isArray(f) && f[0] === 'in' && Array.isArray(f[1]) && f[1][1] === 'agency'));
-    map.setFilter(id, ['all', ...kept, inAgencies]);
+    const kept = (base?.[0] === 'all' ? base.slice(1) : [base]).filter(f => !(
+      Array.isArray(f) && f[0] === 'in' && Array.isArray(f[1]) &&
+      (f[1][1] === 'agency' || (id === 'st-platform' && f[1][1] === 'cat'))
+    ));
+    const categoryFilter = id === 'st-platform' ? [['in', ['get', 'cat'], ['literal', [
+      ...(state.showBus ? ['bus'] : []), ...(state.showRail ? ['light', 'heavy'] : [])
+    ]]]] : [];
+    map.setFilter(id, ['all', ...kept, ...categoryFilter, inAgencies]);
   }
   for (const id of ['st-heavy', 'st-light']) map.setPaintProperty(id, 'circle-opacity', focusKey ? 0.35 : 1);
   map.setPaintProperty('st-bus', 'circle-opacity', focusKey ? 0.35 : ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busStops, 0, MAP_ZOOM.busStops + 0.4, 1]);
@@ -1321,6 +1339,82 @@ function normalizeSearch(text) {
   return String(text).toLowerCase().replace(/&/g, ' and ').replace(/\bst\b\.?/g, 'street').replace(/\bave\b\.?/g, 'avenue').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/* Fast local typeahead: exact matches lead, then prefixes, then bounded typos.
+ * Our GTFS station names and stop coordinates are local, so this works offline,
+ * uses no paid geocoder, and responds even while the address service is loading.
+ * A single adjacent transposition counts as one mistake ("berkely" -> "berkeley"). */
+function typoDistance(a, b, limit) {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > limit) return limit + 1;
+  let prevPrev = null;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const curr = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      let cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let distance = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        distance = Math.min(distance, prevPrev[j - 2] + 1);
+      }
+      curr.push(distance);
+      rowMin = Math.min(rowMin, distance);
+    }
+    if (rowMin > limit) return limit + 1;
+    prevPrev = prev;
+    prev = curr;
+  }
+  return prev[b.length];
+}
+
+function transitSearchScore(needle, candidate) {
+  const q = normalizeSearch(needle), name = normalizeSearch(candidate);
+  if (!q || !name) return 0;
+  if (q === name) return 130;
+  if (name.startsWith(q)) return 108;
+  if (name.includes(q)) return 87;
+  const terms = name.split(' ');
+  let total = 0;
+  for (const word of q.split(' ')) {
+    let best = 0;
+    for (const term of terms) {
+      if (term === word) { best = 70; break; }
+      if (word.length >= 2 && term.startsWith(word)) best = Math.max(best, 58);
+      else if (word.length >= 3 && term.includes(word)) best = Math.max(best, 43);
+      else if (word.length >= 4 && term.length >= 4) {
+        const threshold = word.length >= 7 ? 2 : 1;
+        const edits = typoDistance(word, term, threshold);
+        if (edits <= threshold) best = Math.max(best, edits === 1 ? 37 : 25);
+      }
+    }
+    if (!best) return 0;
+    total += best;
+  }
+  return total / q.split(' ').length;
+}
+
+/* Correct only genuinely unmatched stop words, using a compact vocabulary built at startup.
+ * This avoids running expensive edit-distance against 11,000+ stops on every keystroke. */
+function correctedTransitQuery(query) {
+  const words = normalizeSearch(query).split(' ');
+  const vocabulary = idx.wordFrequency || new Map();
+  return words.map(word => {
+    if (word.length < 4 || vocabulary.has(word)) return word;
+    if (idx.correctionCache?.has(word)) return idx.correctionCache.get(word);
+    const limit = word.length >= 7 ? 2 : 1;
+    let best = word, bestScore = -Infinity;
+    for (const [candidate, frequency] of vocabulary) {
+      if (candidate[0] !== word[0] || Math.abs(candidate.length - word.length) > limit) continue;
+      const edits = typoDistance(word, candidate, limit);
+      if (edits > limit) continue;
+      const score = -edits * 100 + Math.log2(frequency + 1) * 3;
+      if (score > bestScore) { best = candidate; bestScore = score; }
+    }
+    idx.correctionCache?.set(word, best);
+    return best;
+  }).join(' ');
+}
+
 function searchNetwork(query, { routes = true, stopLimit = 8, routeLimit = 6 } = {}) {
   const q = normalizeSearch(query);
   if (!q) return { routes: [], stops: [] };
@@ -1335,22 +1429,32 @@ function searchNetwork(query, { routes = true, stopLimit = 8, routeLimit = 6 } =
       if (badge === q || name === q) score = 100;
       else if (badge.startsWith(q) || name.startsWith(q)) score = 60;
       else if (words.every(w => hay.includes(w))) score = 20;
+      else if (q.length >= 3) score = Math.max(transitSearchScore(q, info.badge), transitSearchScore(q, info.r.n || ''), transitSearchScore(q, info.title)) * 0.65;
       if (score) routeResults.push({ info, score: score + CATEGORY_RANK[info.cat] });
     }
     routeResults.sort((x, y) => y.score - x.score || x.info.badge.localeCompare(y.info.badge, 'en', { numeric: true }));
   }
   const stopResults = [];
-  if (q.length >= 2) {
+  const collectStops = (terms, correction = false) => {
+    const wanted = terms.split(' ');
     for (const entry of idx.searchable) {
-      if (!state.visible.has(entry.a.id)) continue;
-      if (!words.every(w => entry.haystack.includes(w))) continue;
-      const name = normalizeSearch(entry.s.n);
-      const score = (name === q ? 100 : name.startsWith(q) ? 50 : 10) + CATEGORY_RANK[stopCategory(entry.a.id, entry.s.id)] * 5;
+      if (!state.visible.has(entry.a.id) || !wanted.every(w => entry.haystack.includes(w))) continue;
+      const name = entry.name || normalizeSearch(entry.s.n);
+      const score = (name === terms ? 130 : name.startsWith(terms) ? 108 : name.includes(terms) ? 87 : 45)
+        + CATEGORY_RANK[stopCategory(entry.a.id, entry.s.id)] * 5 - (correction ? 24 : 0);
       stopResults.push({ entry, score });
+    }
+  };
+  let correction = null;
+  if (q.length >= 2) {
+    collectStops(q);
+    if (stopResults.length === 0 && q.length >= 4) {
+      const fixed = correctedTransitQuery(q);
+      if (fixed !== q) { collectStops(fixed, true); if (stopResults.length) correction = fixed; }
     }
     stopResults.sort((x, y) => y.score - x.score || x.entry.s.n.localeCompare(y.entry.s.n));
   }
-  return { routes: routeResults.slice(0, routeLimit).map(x => x.info), stops: stopResults.slice(0, stopLimit).map(x => x.entry) };
+  return { routes: routeResults.slice(0, routeLimit).map(x => x.info), stops: stopResults.slice(0, stopLimit).map(x => x.entry), correction };
 }
 
 function highlight(text, query) {
@@ -1363,7 +1467,7 @@ function highlight(text, query) {
 
 function viewSearch() {
   const q = state.searchQuery;
-  const { routes, stops } = searchNetwork(q);
+  const { routes, stops, correction } = searchNetwork(q);
   const personal = matchingPersonalPlaces(q, 3);
   const forSearch = autocomplete.target === 'search';
   const places = forSearch ? autocompleteSectionHtml('search-place') : '';
@@ -1373,6 +1477,7 @@ function viewSearch() {
     return `<p class="empty" style="padding-top:16px">No Bay Area results for “${esc(q)}”. Check the spelling, or try a Bay Area address, a station, or a line such as 38R or 51A.</p>`;
   }
   const parts = [];
+  if (correction) parts.push(`<p class="search-correction" role="status">Showing stop results for <strong>${esc(correction)}</strong></p>`);
   if (personal.length) parts.push(`<section class="section" style="margin-top:8px"><h2 class="label">Your places</h2><ul class="rows">${personal.map(([p, icon]) => placeOptionRow(p, 'search-place', icon)).join('')}</ul></section>`);
   const linesHtml = routes.length ? `<section class="section"><h2 class="label">Lines</h2><ul class="rows">${routes.map(info => `<li><button class="row result" data-action="route" data-key="${esc(info.key)}">${badgeHtml(info)}<span class="row-main"><span class="row-title">${highlight(info.title, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[info.a.id])} · ${esc(modeName(info))}</span></span>${ICONS.chevron}</button></li>`).join('')}</ul></section>` : '';
   const stopsHtml = stops.length ? `<section class="section"><h2 class="label">Stops and stations</h2><ul class="rows">${stops.slice(0, 6).map(({ a, s }) => {
@@ -1383,7 +1488,7 @@ function viewSearch() {
   }).join('')}</ul></section>` : '';
   // A query that starts with a house number is almost always an address.
   if (/^\d+\s+\S/.test(q.trim())) parts.push(places, linesHtml, stopsHtml);
-  else if (stationsLead(q, stops)) parts.push(linesHtml, stopsHtml, places);
+  else if (correction || stationsLead(q, stops)) parts.push(linesHtml, stopsHtml, places);
   else parts.push(linesHtml, places, stopsHtml);
   return `<div class="search-results">${parts.filter(Boolean).join('')}</div>`;
 }
@@ -3015,7 +3120,9 @@ function updatePlanSuggestions() {
   if (top.length) sections.push(`<ul class="rows">${top.join('')}</ul>`);
   let stops = [];
   if (q.length >= 2) {
-    stops = searchNetwork(q, { routes: false, stopLimit: 4 }).stops;
+    const localMatches = searchNetwork(q, { routes: false, stopLimit: 4 });
+    stops = localMatches.stops;
+    if (localMatches.correction) sections.push(`<p class="search-correction" role="status">Showing stops for <strong>${esc(localMatches.correction)}</strong></p>`);
     if (stops.length) sections.push(`<section class="section suggest-section"><h2 class="label">Stops and stations</h2><ul class="rows">${stops.map(({ a, s }) => `<li><button type="button" class="row result" data-action="plan-pick" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">${badgesFor(sortRoutes(routesForStop(a.id, s.id)), 3)}<span class="row-main"><span class="row-title">${highlight(s.n, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[a.id])}</span></span></button></li>`).join('')}</ul></section>`);
   }
   const places = autocomplete.target === plan.focus ? autocompleteSectionHtml('plan-place') : '';

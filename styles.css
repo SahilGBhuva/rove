@@ -971,3 +971,13 @@ body.theme-dark .quick:first-child { background: #e5f0ff; color: #162638; }
 .plan-error-group .plan-error { padding: 8px 0; margin: 0 0 10px; }
 .plan-later { width: 100%; justify-content: center; border: 1px solid var(--rule); background: var(--fill); color: var(--ink); }
 .plan-later:hover { background: var(--fill-strong); }
+
+/* Phone search: 16px prevents Safari's input-focus autozoom; rows stay thumb-friendly. */
+@media (max-width: 767px) {
+  .search-field input, .plan-field input { font-size: 16px; }
+  .search-results .row, .plan-suggest .row { min-height: 48px; }
+  .search-results .row-main, .plan-suggest .row-main { min-width: 0; }
+  .search-results .row-title, .plan-suggest .row-title { overflow-wrap: anywhere; }
+}
+.search-correction { margin: 8px var(--pad) 0; padding: 9px 11px; color: var(--ink-2); background: var(--fill); border-radius: 8px; font-size: 13px; line-height: 19px; }
+.search-correction strong { font-weight: 750; color: var(--ink); }
