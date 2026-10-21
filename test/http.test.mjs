@@ -87,7 +87,10 @@ test('HTTP: stop search groups platforms into stations', async () => {
 test('HTTP: arrivals endpoint distinguishes live, unverified and bad requests', async () => {
   await withServer({}, async get => {
     const live = JSON.parse((await get('/api/v2/arrivals?agency=muni&stop=15550')).text);
-    assert.ok(['live', 'no-predictions'].includes(live.status));
+    // The fixture feed is dated October 20. Once stale, the safety gate must
+    // mark it unverified rather than falsely presenting old data as live.
+    assert.ok(['live', 'no-predictions', 'unverified'].includes(live.status));
+    if (live.status === 'unverified') assert.ok(Array.isArray(live.reasons) && live.reasons.length > 0);
     const vta = JSON.parse((await get('/api/v2/arrivals?agency=vta&stop=4737')).text);
     assert.equal(vta.status, 'unverified');
     assert.equal((await get('/api/v2/arrivals?agency=nope&stop=1')).status, 400);
