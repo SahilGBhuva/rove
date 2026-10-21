@@ -71,3 +71,16 @@ test('preview route includes transparent endpoint walking legs when places diffe
   assert.equal(it.start,it.legs[0].start.scheduled);
   assert.equal(it.end,it.legs.at(-1).end.scheduled);
 });
+
+test('404 South Murphy Avenue to Berkeley city center finds a scheduled itinerary',()=>{
+ const result=planExperimental({fromLat:37.372448,fromLon:-122.031308,toLat:37.870839,toLon:-122.272863,time:'2026-10-20T21:00:00-07:00'},new Date('2026-10-20T21:00:00-07:00'));
+ assert.equal(result.status,200);
+ assert.ok(result.body.itineraries.length>0);
+ assert.ok(result.body.itineraries[0].legs.some(l=>l.transit));
+});
+
+test('seven regional origin/destination pairs find transit on weekday mornings',()=>{
+ const points={sunnyvale:[37.372448,-122.031308],berkeley:[37.870839,-122.272863],powell:[37.78461,-122.40734],downtownBerkeley:[37.79740,-122.26510],paloAlto:[37.4432,-122.1644],mountainView:[37.3945,-122.076],oakland:[37.8047,-122.271],fremont:[37.5575,-121.9765],sanjose:[37.3299,-121.903]};
+ const pairs=[['sunnyvale','berkeley'],['powell','downtownBerkeley'],['paloAlto','mountainView'],['oakland','powell'],['fremont','downtownBerkeley'],['sanjose','sunnyvale'],['berkeley','oakland']];
+ for(const [a,b] of pairs){const [fl,fn]=points[a],[tl,tn]=points[b];const r=planExperimental({fromLat:fl,fromLon:fn,toLat:tl,toLon:tn,time:'2026-10-21T08:15:00-07:00'},now);assert.equal(r.status,200,`${a} → ${b} HTTP`);assert.ok(r.body.itineraries.length,`${a} → ${b} must have a route`);}
+});

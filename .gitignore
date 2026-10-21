@@ -36,3 +36,5 @@ temp/
 /experiments/bay-router/out/
 
 /experiments/bay-router/__pycache__/
+.vercel
+.env*

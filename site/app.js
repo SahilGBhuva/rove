@@ -469,21 +469,39 @@ const SATELLITE_STYLE = {
   glyphs: OPENFREEMAP_GLYPHS,
   sources: {
     imagery: { type: 'raster', tileSize: 256, maxzoom: 19, tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], attribution: 'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community' },
-    labels: { type: 'raster', tileSize: 256, maxzoom: 19, tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], attribution: 'Labels: Esri, HERE, Garmin, © OpenStreetMap contributors' }
+    labels: { type: 'raster', tileSize: 192, maxzoom: 19, tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], attribution: 'Labels: Esri, HERE, Garmin, © OpenStreetMap contributors' }
   },
   layers: [
-    { id: 'imagery', type: 'raster', source: 'imagery', paint: { 'raster-saturation': -0.35, 'raster-brightness-max': 0.7, 'raster-contrast': 0.08 } },
-    { id: 'reference-labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 0.85 } }
+    { id: 'imagery', type: 'raster', source: 'imagery', paint: { 'raster-saturation': 0.05, 'raster-brightness-min': 0.05, 'raster-brightness-max': 1, 'raster-contrast': 0.08, 'raster-fade-duration': 180 } },
+    { id: 'reference-labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 1, 'raster-contrast': 0.25, 'raster-fade-duration': 180 } }
   ]
 };
-const fallbackStyle = dark => ({ version: 8, glyphs: OPENFREEMAP_GLYPHS, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': dark ? '#15171a' : '#f4f1ea' } }] });
+const fallbackStyle = dark => ({
+  version: 8,
+  glyphs: OPENFREEMAP_GLYPHS,
+  sources: {
+    // Independent raster fallback when the primary vector-style endpoint is unavailable.
+    // OSM tile usage policy applies; this is a low-volume demo fallback, not a production CDN.
+    streets: { type: 'raster', tileSize: 256, maxzoom: 19,
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      attribution: '© OpenStreetMap contributors' }
+  },
+  layers: [
+    { id: 'background', type: 'background', paint: { 'background-color': dark ? '#15171a' : '#f4f1ea' } },
+    { id: 'streets', type: 'raster', source: 'streets', paint: {
+      'raster-opacity': dark ? 0.6 : 1,
+      'raster-saturation': dark ? -0.75 : -0.12,
+      'raster-brightness-max': dark ? 0.72 : 1
+    } }
+  ]
+});
 
 /* Map palettes for Rove's three styles. `casing` outlines lines and stops so they read over any
  * basemap; satellite uses dark casings and light labels because imagery is dark and busy. */
 const THEME = {
   light: { brightCasing: '#8a7d4a', surface: '#ffffff', ink: '#111214', bus: '#7b8088', faded: '#b3b7bd', stopStroke: '#111214', journeyWalk: '#2f6bff', journeyDrive: '#4b5260', halo: '#ffffff', label: '#111214', casing: '#ffffff', busCasingOpacity: 0.75 },
   dark: { brightCasing: '#16171a', surface: '#16171a', ink: '#f2f1ee', bus: '#8b9099', faded: '#43464c', stopStroke: '#f2f1ee', journeyWalk: '#6b96ff', journeyDrive: '#c3c6cc', halo: '#16171a', label: '#f2f1ee', casing: '#0f1012', busCasingOpacity: 0.7 },
-  satellite: { brightCasing: '#0d0f12', surface: '#ffffff', ink: '#111214', bus: '#e6e8eb', faded: '#9aa0a8', stopStroke: '#111214', journeyWalk: '#8fb2ff', journeyDrive: '#ffffff', halo: 'rgba(8, 10, 14, 0.88)', label: '#ffffff', casing: '#0b0d10', busCasingOpacity: 0.8 }
+  satellite: { brightCasing: '#0d0f12', surface: '#ffffff', ink: '#111214', bus: '#c9d0d5', faded: '#8c979d', stopStroke: '#111214', journeyWalk: '#8fb2ff', journeyDrive: '#ffffff', halo: 'rgba(8, 10, 14, 0.88)', label: '#ffffff', casing: '#101b22', busCasingOpacity: 0.9 }
 };
 const theme = () => THEME[state.mapMode === 'dark' ? 'dark' : state.mapMode === 'satellite' ? 'satellite' : 'light'];
 
@@ -573,7 +591,7 @@ async function fetchStyle(mode) {
     if (!response.ok) throw new Error(`Style returned ${response.status}`);
     return restyleBasemap(await response.json(), mode === 'dark');
   } catch (error) {
-    console.warn('Basemap unavailable, using a plain background:', error.message);
+    console.warn('Primary basemap unavailable; using raster fallback:', error.message);
     return fallbackStyle(mode === 'dark');
   }
 }
@@ -650,8 +668,8 @@ function addTransitLayers() {
   map.addLayer({ ...line, id: 'tr-light', minzoom: MAP_ZOOM.lightRail, filter: ['==', ['get', 'cat'], 'light'], paint: { 'line-color': ['get', 'lc'], 'line-width': lightWidth, 'line-opacity': 0.85 } }, before);
   map.addLayer({ ...line, id: 'tr-heavy-casing', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.casing], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 8], 'line-opacity': 0.9 } }, before);
   map.addLayer({ ...line, id: 'tr-heavy', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['get', 'lc'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.6, 12, 3, 16, 5], 'line-opacity': 0.94 } }, before);
-  map.addLayer({ ...line, id: 'tr-selected-casing', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.casing], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 5, 12, 8, 16, 11] } }, before);
-  map.addLayer({ ...line, id: 'tr-selected', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['get', 'lc'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 7] } }, before);
+  map.addLayer({ ...line, id: 'tr-selected-casing', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.casing], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4.5, 12, 7, 16, 9] } }, before);
+  map.addLayer({ ...line, id: 'tr-selected', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['get', 'lc'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.8, 12, 4.5, 16, 6] } }, before);
 
   const jl = { type: 'line', source: 'journey', layout: { 'line-cap': 'round', 'line-join': 'round' } };
   const jOpacity = ['case', ['==', ['get', 'dim'], 1], 0.35, 1];
@@ -661,8 +679,9 @@ function addTransitLayers() {
   map.addLayer({ ...jl, id: 'journey-approx', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 1]], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': ['get', 'stroke'], 'line-width': jWidth(4, 6), 'line-opacity': jOpacity, 'line-dasharray': [2, 1.5] } });
   map.addLayer({ ...jl, id: 'journey-drive-casing', filter: ['==', ['get', 'mode'], 'CAR'], paint: { 'line-color': t.casing, 'line-width': jWidth(8, 11), 'line-opacity': jOpacity } });
   map.addLayer({ ...jl, id: 'journey-drive', filter: ['==', ['get', 'mode'], 'CAR'], paint: { 'line-color': t.journeyDrive || t.ink, 'line-width': jWidth(4.5, 7), 'line-opacity': jOpacity } });
-  map.addLayer({ ...jl, id: 'journey-walk-casing', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': t.casing, 'line-width': jWidth(6, 8), 'line-opacity': ['case', ['==', ['get', 'dim'], 1], 0.2, state.mapMode === 'standard' ? 0 : 0.6], 'line-dasharray': [0.2, 1.2] } });
-  map.addLayer({ ...jl, id: 'journey-walk', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(3.5, 5), 'line-opacity': jOpacity, 'line-dasharray': [0.2, 2] } });
+  map.addLayer({ ...jl, id: 'journey-walk-casing', filter: ['all', ['==', ['get', 'mode'], 'WALK'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': t.casing, 'line-width': jWidth(6, 8), 'line-opacity': ['case', ['==', ['get', 'dim'], 1], 0.2, state.mapMode === 'standard' ? 0 : 0.6], 'line-dasharray': [0.2, 1.2] } });
+  map.addLayer({ ...jl, id: 'journey-walk', filter: ['all', ['==', ['get', 'mode'], 'WALK'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(3.5, 5), 'line-opacity': jOpacity, 'line-dasharray': [0.2, 2] } });
+  map.addLayer({ ...jl, id: 'journey-walk-estimate', filter: ['all', ['==', ['get', 'mode'], 'WALK'], ['==', ['get', 'approx'], 1]], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(2, 3), 'line-opacity': ['case', ['==', ['get', 'dim'], 1], 0.2, 0.48], 'line-dasharray': [1, 3] } });
   map.addLayer({ id: 'journey-stops', type: 'circle', source: 'journey-points', paint: { 'circle-radius': ['case', ['==', ['get', 'kind'], 'transfer'], 7, 5.5], 'circle-color': t.surface, 'circle-stroke-color': ['case', ['==', ['get', 'kind'], 'transfer'], t.ink, ['get', 'color']], 'circle-stroke-width': 3 } });
   map.addLayer({ id: 'journey-stop-labels', type: 'symbol', source: 'journey-point-labels', minzoom: 10.5, layout: { 'text-field': ['get', 'name'], 'text-font': state.glyphFont, 'text-size': 12.5, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': t.label, 'text-halo-color': t.halo, 'text-halo-width': 1.8 } });
 
@@ -730,11 +749,11 @@ function applyMapState() {
   }
 
   map.setPaintProperty('tr-bus', 'line-color', dimmed ? t.faded : ['get', 'lc']);
-  map.setPaintProperty('tr-bus', 'line-opacity', dimmed ? ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.22] : (state.mapMode === 'dark' ? NIGHT_BUS_OPACITY : BUS_OPACITY));
+  map.setPaintProperty('tr-bus', 'line-opacity', dimmed ? ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.10] : (state.mapMode === 'dark' ? NIGHT_BUS_OPACITY : BUS_OPACITY));
   map.setPaintProperty('tr-bus-casing', 'line-opacity', dimmed ? 0 : ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, t.busCasingOpacity]);
   for (const id of ['tr-light', 'tr-heavy']) {
     map.setPaintProperty(id, 'line-color', dimmed ? t.faded : ['get', 'lc']);
-    map.setPaintProperty(id, 'line-opacity', dimmed ? (journeyActive ? 0.22 : 0.3) : (id === 'tr-light' ? 0.85 : 0.94));
+    map.setPaintProperty(id, 'line-opacity', dimmed ? (journeyActive ? 0.13 : 0.16) : (id === 'tr-light' ? 0.85 : 0.94));
   }
   map.setPaintProperty('tr-heavy-casing', 'line-opacity', dimmed ? 0 : 0.9);
   map.setPaintProperty('tr-light-casing', 'line-opacity', dimmed ? 0 : 0.8);
@@ -800,7 +819,7 @@ function revealSelectedRoute(key) {
   const color = mapLineColor(info.color);
   const casing = luminance(color) > 0.55 ? theme().brightCasing : theme().casing;
   const start = performance.now();
-  const duration = 900;
+  const duration = 650;
   const step = now => {
     if (!map.getLayer('tr-selected')) return;
     const p = Math.min(1, (now - start) / duration);
@@ -815,7 +834,7 @@ function revealSelectedRoute(key) {
 }
 
 /* A new trip fades onto the map instead of appearing all at once. */
-const JOURNEY_LINE_LAYERS = ['journey-casing', 'journey-transit', 'journey-approx', 'journey-drive-casing', 'journey-drive', 'journey-walk'];
+const JOURNEY_LINE_LAYERS = ['journey-casing', 'journey-transit', 'journey-approx', 'journey-drive-casing', 'journey-drive', 'journey-walk', 'journey-walk-estimate'];
 function revealJourney() {
   const map = state.map;
   if (!map?.getLayer('journey-transit') || prefersReducedMotion()) return;
@@ -865,7 +884,7 @@ function journeyFeatures(itinerary) {
     if (coords.length < 2) return null;
     const color = isTransit(leg) ? mapLineColor(legInfo(leg).color) : theme().ink;
     const casing = luminance(color) > 0.55 ? theme().brightCasing : theme().surface;
-    return { type: 'Feature', properties: { mode: leg.mode, color, casing, stroke: luminance(color) > 0.55 ? theme().brightCasing : color, legIndex, approx: legShapeMissing(leg) ? 1 : 0, dim: focus != null && focus !== legIndex ? 1 : 0, focus: focus === legIndex ? 1 : 0 }, geometry: { type: 'LineString', coordinates: coords } };
+    return { type: 'Feature', properties: { mode: leg.mode, color, casing, stroke: luminance(color) > 0.55 ? theme().brightCasing : color, legIndex, approx: (isTransit(leg) ? legShapeMissing(leg) : (leg.mode === 'WALK' && leg.geometry?.coordinates?.length < 2)) ? 1 : 0, dim: focus != null && focus !== legIndex ? 1 : 0, focus: focus === legIndex ? 1 : 0 }, geometry: { type: 'LineString', coordinates: coords } };
   }).filter(Boolean);
   return { type: 'FeatureCollection', features };
 }
@@ -1008,10 +1027,10 @@ function measureSafeArea() {
 const DETENTS = ['peek', 'half', 'full'];
 
 function detentHeight(name) {
-  const vh = window.innerHeight;
+  const vh = Math.max(320, Math.round(window.visualViewport?.height || window.innerHeight));
   if (name === 'peek') return Math.round(148 + safeArea.bottom);
   if (name === 'half') return Math.round(Math.max(vh * 0.5, Math.min(360, vh - 120)));
-  return Math.round(vh - 56 - safeArea.top);
+  return Math.max(detentHeight('peek'), Math.round(vh - 56 - safeArea.top));
 }
 
 function currentSheetHeight() { return isMobile() ? detentHeight(state.detent) : 0; }
@@ -1029,7 +1048,7 @@ function setDetent(name) {
 
 function applySheetHeight(px) {
   document.documentElement.style.setProperty('--sheet-h', `${px}px`);
-  $('#mapControls').classList.toggle('hidden-by-sheet', isMobile() && px > window.innerHeight * 0.62);
+  $('#mapControls').classList.toggle('hidden-by-sheet', isMobile() && px > (window.visualViewport?.height || window.innerHeight) * 0.62);
 }
 
 /* Sheet heights on phones. Peek shows the search field (or the title of a detail view),
@@ -1122,7 +1141,7 @@ function setupSheet() {
     else setDetent(DETENTS[(i + 1) % 3]);
   });
   let resizeTimer, wasMobile = isMobile();
-  window.addEventListener('resize', () => {
+  const onViewportResize = () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       measureSafeArea();
@@ -1130,7 +1149,9 @@ function setupSheet() {
       // Re-render only when crossing the phone breakpoint; an on-screen keyboard also resizes the window.
       if (wasMobile !== isMobile()) { wasMobile = isMobile(); if (!document.activeElement?.matches('input, select')) render(); }
     }, 120);
-  });
+  };
+  window.addEventListener('resize', onViewportResize);
+  window.visualViewport?.addEventListener('resize', onViewportResize);
 }
 
 /* ======================================================================
@@ -1540,15 +1561,15 @@ function viewRoute({ key }) {
   const alerts = activeAlerts({ agencyId: a.id, routeKeys: [key] });
   const mode = modeName(info);
   return `${backHeader()}
-    <div class="hero">
-      ${badgeHtml(info, true)}
+    <div class="hero route-hero" style="--route-accent:${esc(info.color)}">
+      <div class="route-hero-top">${badgeHtml(info, true)}<span class="route-hero-kicker">Line overview</span></div>
       <h1 class="title-1">${esc(info.title)}</h1>
       <p class="caption">${esc(a.name)} · ${esc(mode)}${r.d ? ` · Toward ${esc(displayName(r.d))}` : ''}</p>
       <p class="caption" style="margin-top:4px">${liveLine}</p>
       ${(r.shapes || []).some(sh => sh?.length > 1) ? '' : `<p class="area-note shape-missing">${esc(a.name)} has not published a route shape for this line, so the map shows its stops only.</p>`}
     </div>
     ${alertsHtml(alerts)}
-    <section class="section"><h2 class="label"><span>Stops</span><span>${stops.length}</span></h2>
+    <section class="section route-stop-section"><h2 class="label"><span>Stops along this route</span><span>${stops.length} stops</span></h2>
       <ol class="line-diagram" style="--line-color:${esc(info.color)}">${stops.map(s => {
         const count = vehicleStops.get(s.id);
         return `<li><button data-action="stop" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}"><span class="node"></span><span class="stop-name">${esc(s.n)}</span>${count ? `<span class="vehicle-here">${plural(count, 'vehicle')} here</span>` : ''}</button></li>`;
@@ -1754,7 +1775,7 @@ function viewPlan() {
         ${access === 'CAR_DROP_OFF' ? `<p class="caption plan-hint">Rove plans a drive to a street near the station, where you are dropped off, then transit from there. ${driveLimitText()}</p>` : ''}`}
         ${submit}
         ${plan.loading ? '<ul class="itineraries skeleton-list" aria-hidden="true">' + '<li><div class="itinerary"><span class="sk sk-line"></span><span class="sk sk-bar"></span><span class="sk sk-line short"></span></div></li>'.repeat(3) + '</ul>' : ''}
-        ${plan.error ? `<div class="plan-error-group"><p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>${plan.noServiceWindow && plan.timeMode === 'now' ? '<button class="button secondary plan-later" type="button" data-action="plan-next-morning">Try tomorrow at 8:15 AM</button>' : ''}</div>` : ''}
+        ${plan.error ? `<div class="plan-error-group${plan.noServiceWindow ? ' plan-no-service' : ''}"><p class="plan-error-title">${plan.noServiceWindow ? 'No matching trip in this time window' : 'Could not plan this trip'}</p><p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>${plan.noServiceWindow && plan.timeMode === 'now' ? '<button class="button secondary plan-later" type="button" data-action="plan-next-morning">Try tomorrow at 8:15 AM</button>' : ''}</div>` : ''}
       </div>
     </form>`;
 }
@@ -1907,7 +1928,7 @@ function itinerarySummary(it) {
   const first = transitLegs[0];
   const transfers = Number.isFinite(it.transfers) ? it.transfers : Math.max(0, transitLegs.filter(l => !l.staySeated).length - 1);
   const leaveIn = Math.round((new Date(it.startTime) - Date.now()) / 60000);
-  const leave = leaveIn <= 0 ? 'Leave now' : leaveIn < 60 ? `Leave in ${leaveIn} min` : `Leave at ${clock(new Date(it.startTime))}`;
+  const leave = (state.plan.results?.scheduledOnly ? `Scheduled departure ${clock(new Date(it.startTime))}` : leaveIn <= 0 ? 'Leave now' : leaveIn < 60 ? `Leave in ${leaveIn} min` : `Leave at ${clock(new Date(it.startTime))}`);
   const firstIdx = legs.indexOf(first);
   const lastIdx = legs.indexOf(transitLegs.at(-1));
   const sumMin = list => Math.round(list.reduce((s, l) => s + (l.durationSeconds ?? (legEnd(l) - legStart(l)) / 1000), 0) / 60);
@@ -1949,7 +1970,8 @@ function viewResults() {
       <button type="button" class="text-button" data-action="back">Edit</button>
     </div>
     <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
-    ${plan.results?.notes?.length ? `<ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+    ${plan.results?.experimental ? `<div class="route-map-key" role="note"><div class="route-map-key-heading">How to read this map <span>Schedule preview</span></div><div class="route-map-key-items"><span><i class="route-key-solid"></i>Mapped route</span><span><i class="route-key-dash"></i>Approximate transit connection</span><span><i class="route-key-walk"></i>Estimated walk</span></div><p>Dashed lines connect stops or places in a straight line. They are <strong>not</strong> streets, tracks, or walking instructions. Times are estimates based on published schedules; transfers and traffic can change your arrival.</p></div>` : ''}
+    ${plan.results?.notes?.length ? `<details class="route-notes-details"><summary>About these directions</summary><ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
     ${areaNoteHtml()}
     ${its.length > 1 ? `<div class="segmented sort-switch" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
     <ul class="itineraries">${order.map(i => {
@@ -1983,13 +2005,13 @@ function itineraryTimeline(it) {
     if (leg.mode === 'WALK') {
       const meters = Number.isFinite(leg.distanceMeters) ? leg.distanceMeters : null;
       const isLast = i === legs.length - 1;
-      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"><span class="glyph">${MODE_ICONS.walk}</span></span><span class="body">${legLink(i, `Walk${meters ? ` ${distanceLabel(meters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? ` to ${esc(state.plan.to?.name || 'your destination')}` : ` to ${esc(leg.to?.name || 'the stop')}`}</span>${stepsListHtml(leg, 'Walking directions')}</span></li>`);
+      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"><span class="glyph">${MODE_ICONS.walk}</span></span><span class="body">${legLink(i, `Walk${meters ? ` ${distanceLabel(meters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? ` to ${esc(state.plan.to?.name || 'your destination')}` : ` to ${esc(leg.to?.name || 'the stop')}`}</span>${leg.geometry?.coordinates?.length < 2 ? '<span class="row-meta shape-note">Approximate straight-line walk · streets and crossings not verified.</span>' : ''}${stepsListHtml(leg, 'Walking directions')}</span></li>`);
       return;
     }
     const li = legInfo(leg);
     const stopsCount = leg.intermediateStops ? leg.intermediateStops.length + 1 : null;
     const timing = leg.canceled ? '<span class="status-canceled">Canceled</span>' : leg.realtime ? `<span class="${delayStatus(leg.delaySeconds).cls}">${ICONS.live}${esc(delayStatus(leg.delaySeconds).text)}</span>` : 'Scheduled';
-    const shapeNote = legShapeMissing(leg) ? '<span class="row-meta shape-note">Route shape not available. The map joins the boarding and exit stops with a dashed line.</span>' : '';
+    const shapeNote = legShapeMissing(leg) ? '<span class="row-meta shape-note">Approximate connection only · dashed line is not the actual transit route.</span>' : '';
     if (!leg.staySeated) {
       items.push(`<li class="${focused}" data-leg="${i}" style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body">
         ${legLink(i, leg.from?.name || 'Board')}
@@ -3123,7 +3145,15 @@ async function geocode(query, { signal, mode = 'autocomplete', size = 6 } = {}) 
         if (body.addressSearch !== 'available') geocodeBackend = 'missing';
         else {
           geocodeBackend = 'available';
-          const results = dedupePlaces((body.results || []).map(normalizeRovePlace).filter(p => p && inServiceArea(p)));
+          let results = dedupePlaces((body.results || []).map(normalizeRovePlace).filter(p => p && inServiceArea(p)));
+          if (!results.length && window.RoveSearchIntelligence) {
+            const corrected = window.RoveSearchIntelligence.correct(q, idx.wordFrequency);
+            if (corrected !== normalizeSearch(q)) {
+              const retryParams = new URLSearchParams(params); retryParams.set('q', corrected);
+              const retry = await fetch(`${GEOCODER.backend}?${retryParams}`, { signal });
+              if (retry.ok) results = dedupePlaces(((await retry.json()).results || []).map(normalizeRovePlace).filter(p => p && inServiceArea(p)));
+            }
+          }
           geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
           geocodeSource = 'rove';
           return geocodeCache.get(cacheKey);
@@ -3151,7 +3181,17 @@ async function geocode(query, { signal, mode = 'autocomplete', size = 6 } = {}) 
     if (response && response.status === 429) throw new Error('rate-limited');
     if (response && response.ok) {
       const body = await response.json();
-      const results = dedupePlaces((body.features || []).map(normalizeGeocodeFeature).filter(p => p && inServiceArea(p)));
+      let results = dedupePlaces((body.features || []).map(normalizeGeocodeFeature).filter(p => p && inServiceArea(p)));
+      if (!results.length && window.RoveSearchIntelligence) {
+        const corrected = window.RoveSearchIntelligence.correct(q, idx.wordFrequency);
+        if (corrected !== normalizeSearch(q)) {
+          const retryParams = new URLSearchParams(params); retryParams.set('text', corrected);
+          try {
+            const retry = await fetch(`${mode === 'search' ? GEOCODER.search : GEOCODER.autocomplete}?${retryParams}`, { signal });
+            if (retry.ok) results = dedupePlaces(((await retry.json()).features || []).map(normalizeGeocodeFeature).filter(p => p && inServiceArea(p)));
+          } catch (error) { if (error.name === 'AbortError') throw error; }
+        }
+      }
       geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
       geocodeSource = 'stadia';
       return geocodeCache.get(cacheKey);
@@ -3161,7 +3201,13 @@ async function geocode(query, { signal, mode = 'autocomplete', size = 6 } = {}) 
     if (response && [401, 403].includes(response.status)) geocodeProvider = 'photon';
     else if (response && response.status < 500) throw new Error(`geocoder ${response.status}`);
   }
-  const results = await photonGeocode(q, { signal, size });
+  let results = await photonGeocode(q, { signal, size });
+  if (!results.length && window.RoveSearchIntelligence) {
+    const corrected = window.RoveSearchIntelligence.correct(q, idx.wordFrequency);
+    if (corrected !== normalizeSearch(q)) {
+      try { results = await photonGeocode(corrected, { signal, size }); } catch (error) { if (error.name === 'AbortError') throw error; }
+    }
+  }
   geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
   geocodeSource = 'photon';
   return geocodeCache.get(cacheKey);
@@ -3331,6 +3377,25 @@ function viewPlace({ place: p }) {
     ${covered ? `<section class="section"><h2 class="label">Nearby stops</h2>${nearby.length ? `<ul class="rows">${nearby.map(n => placeRow(n.place, distanceLabel(n.d))).join('')}</ul>` : '<p class="empty">No stops within a mile of this place.</p>'}</section>` : ''}`;
 }
 
+function placeMatchScore(query, place) {
+  const q = normalizeSearch(query), name = normalizeSearch(place.name);
+  if (!q || !name) return 0;
+  // Only apply fuzzy matching to a specific multi-word name. Single-word suggestions
+  // stay strict to avoid turning a misspelling into a confidently wrong place.
+  const a = q.split(' '), b = name.split(' ');
+  if (a.length < 2 || b.length < 2) return 0;
+  const score = transitSearchScore(q, name);
+  if (score < 25) return 0;
+  // Require the majority of the name to match, not a coincidental shared word.
+  return score;
+}
+
+function rankPlaceResults(results, query) {
+  if (!results.length) return results;
+  return results.map((place, index) => ({place, index, score:placeMatchScore(query, place)}))
+    .sort((a,b) => b.score-a.score || a.index-b.index).map(x => x.place);
+}
+
 function matchingPersonalPlaces(q, limit = 3) {
   const needle = normalizeSearch(q);
   const seen = new Set();
@@ -3340,7 +3405,7 @@ function matchingPersonalPlaces(q, limit = 3) {
     if (seen.has(key)) continue;
     seen.add(key);
     const hay = normalizeSearch(`${p.label || ''} ${p.name} ${p.detail || ''}`);
-    if (!needle || hay.includes(needle)) out.push([p, icon]);
+    if (!needle || hay.includes(needle) || placeMatchScore(needle, p) >= 30) out.push([p, icon]);
     if (out.length >= limit) break;
   }
   return out;
@@ -3381,7 +3446,8 @@ function updatePlanSuggestions() {
 /* Moves addresses whose house number matches the query to the top of the list. */
 function promoteAddressMatch(results, text) {
   const best = bestGeocodeMatch(results, text);
-  return best && best !== results[0] ? [best, ...results.filter(p => p !== best)] : results;
+  const ordered = best && best !== results[0] ? [best, ...results.filter(p => p !== best)] : results;
+  return /^\d+[a-z]?\s/i.test(text.trim()) ? ordered : rankPlaceResults(ordered,text);
 }
 
 /* For text that starts with a house number, prefer a real address with that number over the
@@ -3404,7 +3470,7 @@ async function resolveDraft(which) {
   if (!text) return null;
   if (/^your location$/i.test(text) && state.userLocation) return currentLocationPlace();
   const needle = normalizeSearch(text);
-  const personal = matchingPersonalPlaces(text, 6).find(([p]) => normalizeSearch(p.name) === needle || normalizeSearch(p.label || '') === needle);
+  const personal = matchingPersonalPlaces(text, 6).find(([p]) => normalizeSearch(p.name) === needle || normalizeSearch(p.label || '') === needle || placeMatchScore(needle,p) >= 35);
   if (personal) return { ...personal[0] };
   const exact = searchNetwork(text, { routes: false, stopLimit: 8 }).stops.find(({ s }) => normalizeSearch(s.n) === needle);
   if (exact) return placeFromStop(exact.a.id, exact.s.id);
@@ -3426,7 +3492,7 @@ function noRouteMessage(body) {
   if (code === 'OUTSIDE_SERVICE_PERIOD') return 'Schedules are not available for that date. Choose a date closer to today.';
   if (code === 'OUTSIDE_BOUNDS') return 'One of these places is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.';
   if (code === 'NO_STOPS_IN_RANGE' || code === 'LOCATION_NOT_FOUND') return 'One of these places is too far from a transit stop to plan a trip. Try a nearby address or stop.';
-  if (code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW') return 'No transit departures were found near the selected time. Service may be limited right now. Try a later departure to see scheduled options.';
+  if (code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW') return 'No scheduled connection was found within the planner’s search window. This does not mean transit is unavailable. Try another departure time or choose a nearby station.';
   if (code === 'NO_TRANSIT_CONNECTION' || !body?.errors?.[0]?.message) return 'No transit connection was found. Try a different departure time or a nearby transit stop.';
   return body.errors[0].message;
 }
@@ -3689,6 +3755,15 @@ async function init() {
   bindChrome();
   setDetent(isMobile() ? (window.innerHeight < 560 ? 'peek' : 'half') : 'half');
   render();
+  // Independent watchdog: also covers stalled external basemap style requests.
+  setTimeout(() => {
+    if (state.mapReady || $('#mapLoading').classList.contains('done')) return;
+    const loading = $('#mapLoading');
+    if (loading.classList.contains('map-load-failed')) return;
+    loading.classList.add('map-load-failed');
+    loading.innerHTML = '<strong>Map is taking longer than expected</strong><span>Search and transit information remain available. Try again when the connection improves.</span><button type="button" class="button primary" id="mapRetry">Retry map</button>';
+    $('#mapRetry').addEventListener('click', () => window.location.reload());
+  }, 16000);
 
   const savedMode = store.get(STORAGE.mapMode, null);
   const mode = ['standard', 'satellite', 'dark'].includes(savedMode) ? savedMode : 'standard';
@@ -3731,7 +3806,18 @@ async function init() {
       // Help remains available on demand; do not interrupt the map on first visit.
     };
     state.map.on('load', markReady);
-    setTimeout(() => { if (state.map.isStyleLoaded() || state.map.getSource('transit-routes')) markReady(); }, 8000);
+    setTimeout(() => {
+      if (state.mapReady) return;
+      if (state.map.isStyleLoaded() || state.map.getSource('transit-routes')) {
+        markReady();
+      } else {
+        // Do not show an endless spinner if the map provider or font host is unreachable.
+        const loading = $('#mapLoading');
+        loading.classList.add('map-load-failed');
+        loading.innerHTML = '<strong>Map is taking longer than expected</strong><span>Transit search and line information are still available.</span><button type="button" class="button primary" id="mapRetry">Retry map</button>';
+        $('#mapRetry').addEventListener('click', () => window.location.reload());
+      }
+    }, 12000);
     state.map.on('error', e => {
       if (e?.error?.status !== 404) console.warn('Map error:', e?.error?.message || e);
       // Basemap or imagery tiles failing (not fonts or Rove's own data) is said on the map, once.
