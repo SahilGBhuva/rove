@@ -1,6 +1,6 @@
 // Serverless-compatible, explicitly experimental schedule-only route API.
 // No OTP JVM, API keys, hidden external requests, live arrivals, or driving.
-// Deliberately not mounted as /api/v2/plan until safety and cross-agency QA pass.
+// Exposed by /api/v2/plan with clear preview warnings and navigation disabled.
 import {readFileSync} from 'node:fs';
 import {gunzipSync} from 'node:zlib';
 import {findJourney, directFootpaths} from '../../experiments/bay-router/route.mjs';
@@ -89,7 +89,7 @@ export function adaptJourney(journey,data,origin,destination,serviceMidnight) {
       clock+=step.seconds;
       continue;
     }
-    const trip=data.trips.find(t=>t[1]===step.tripId && t[0]===step.agency);
+    const trip=(data.tripIndex?.get(step.agency+'|'+step.tripId)) || data.trips.find(t=>t[1]===step.tripId && t[0]===step.agency);
     if(!trip)throw new Error('Unrecognized scheduled trip');
     const from=legEndpoint(data.stops[a]),to=legEndpoint(data.stops[b]);
     legs.push({mode:trip[5]==='1'?'SUBWAY':trip[5]==='0'?'TRAM':'BUS',
@@ -131,6 +131,8 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
   if(!origins.length||!destinations.length)
     return bad(422,'No stops within 350 metres of one or both places. Select nearby stations.');
   const footpaths=directFootpaths(data.stops,65,6);
+  // Avoid repeated linear trip lookups for every candidate itinerary.
+  data.tripIndex=new Map(data.trips.map(t=>[t[0]+'|'+t[1],t]));
   const answers=[];
   for(const a of origins) for(const b of destinations){
     if(a.index===b.index)continue;
@@ -139,8 +141,28 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
     if(trip&&trip.legs.some(l=>l.type==='transit')){
       const it=adaptJourney(trip,data,from,to,pacificMidnight(ctx.previousDay));
       const egress=Math.ceil(b.distance/1.2);
-      if(egress)it.end=new Date(Date.parse(it.end)+egress*1000).toISOString();
-      it.durationSeconds=Math.round((Date.parse(it.end)-time.getTime())/1000);
+      // Make the start/end walking estimates explicit; their geometry is NOT street-verified.
+      const first=it.legs[0];
+      const ingress=Math.max(0,Math.ceil(a.distance/1.2));
+      const firstStart=Date.parse(first.start.scheduled);
+      const originStart=Math.max(time.getTime(), firstStart-ingress*1000);
+      if(a.distance>1 && firstStart>originStart){
+        it.legs.unshift({mode:'WALK',transit:false,from:{name:'Starting point',lat:from.lat,lon:from.lon},to:first.from,
+          start:{scheduled:new Date(originStart).toISOString()},end:{scheduled:new Date(firstStart).toISOString()},
+          durationSeconds:(firstStart-originStart)/1000,distanceMeters:Math.ceil(a.distance),steps:[],geometry:null,approximate:true});
+      }
+      if(egress>0){
+        const last=it.legs.at(-1);
+        const end=new Date(Date.parse(last.end.scheduled)+egress*1000).toISOString();
+        it.legs.push({mode:'WALK',transit:false,from:last.to,to:{name:'Destination',lat:to.lat,lon:to.lon},
+          start:{scheduled:last.end.scheduled},end:{scheduled:end},durationSeconds:egress,
+          distanceMeters:Math.ceil(b.distance),steps:[],geometry:null,approximate:true});
+        it.end=end;
+      }
+      it.start=it.legs[0].start.scheduled;
+      it.durationSeconds=Math.round((Date.parse(it.end)-Date.parse(it.start))/1000);
+      it.walkMeters=Math.round(it.legs.filter(l=>!l.transit).reduce((sum,l)=>sum+l.distanceMeters,0));
+      it.walkSeconds=it.legs.filter(l=>!l.transit).reduce((sum,l)=>sum+l.durationSeconds,0);
       answers.push(it);
     }
   }

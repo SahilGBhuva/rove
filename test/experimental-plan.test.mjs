@@ -55,3 +55,19 @@ test('overnight request loads the prior service date',()=>{
   assert.deepEqual(timetable.serviceDates,['2026-10-19','2026-10-20']);
   assert.ok(context.seconds>86400);
 });
+
+test('preview route includes transparent endpoint walking legs when places differ from station coordinates',()=>{
+  const {status,body}=planExperimental({...powell,fromLat:37.78530,fromLon:-122.40734,toLat:37.79790},now);
+  assert.equal(status,200);
+  assert.ok(body.itineraries.length);
+  const it=body.itineraries[0];
+  assert.equal(it.legs[0].mode,'WALK');
+  assert.equal(it.legs.at(-1).mode,'WALK');
+  assert.equal(it.legs[0].from.name,'Starting point');
+  assert.equal(it.legs.at(-1).to.name,'Destination');
+  assert.ok(it.legs[0].approximate && it.legs.at(-1).approximate);
+  assert.ok(it.walkMeters>0 && it.walkSeconds>0);
+  assert.ok(it.legs.filter(l=>!l.transit).every(l=>l.geometry===null&&!l.steps.length));
+  assert.equal(it.start,it.legs[0].start.scheduled);
+  assert.equal(it.end,it.legs.at(-1).end.scheduled);
+});
