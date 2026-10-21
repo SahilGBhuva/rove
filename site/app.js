@@ -1959,7 +1959,7 @@ function viewResults() {
         <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
         <div class="it-meta">${itinerarySummary(it)}</div></button>
-        ${open ? `${itineraryTimeline(it)}<div class="action-bar it-actions">${plan.results?.experimental ? '<p class="caption">Preview only: walking transfers and boarding points are not street-verified. Navigation is disabled.</p>' : `<button class="button primary" data-action="nav-start" data-index="${i}">Start</button>`}</div>` : ''}</li>`;
+        ${open ? `${itineraryTimeline(it)}<div class="action-bar it-actions">${plan.results?.experimental && !it.navigationReady ? '<p class="caption">Preview only: safe walking geometry could not be verified. Navigation is disabled for this route.</p>' : `<button class="button primary" data-action="nav-start" data-index="${i}">${plan.results?.experimental ? 'Start beta guidance' : 'Start'}</button>`}</div>` : ''}</li>`;
     }).join('')}</ul>
     <p class="note">${plan.results?.scheduledOnly ? 'These routes use published schedules. Check live departures at your stop before you leave.' : 'Live times are shown where agencies provide them. Other times are scheduled.'}</p>`;
 }
@@ -2126,7 +2126,7 @@ async function navReroute(nav) {
     const response = await fetch('/api/v2/plan?' + query, { signal: controller.signal, cache: 'no-store' });
     const body = await response.json().catch(() => null);
     if (!response.ok || !body?.itineraries?.length) throw new Error('No replacement route available');
-    const alternatives = body.itineraries.map(normalizeItinerary).filter(it => it.legs.length && !it.hasCancellation);
+    const alternatives = body.itineraries.map(normalizeItinerary).filter(it => it.legs.length && !it.hasCancellation && it.navigationReady);
     if (!alternatives.length) throw new Error('No usable replacement route available');
     if (state.nav !== nav) return;
     nav.it = alternatives[0];
@@ -2211,6 +2211,7 @@ function updateNavManeuver(nav, fix) {
 async function startNavigation(index) {
   const it = state.plan.results?.itineraries?.[index];
   if (!it) return;
+  if (state.plan.results?.experimental && !it.navigationReady) { toast('Walking route unavailable. Navigation cannot start.'); return; }
   releaseWakeLock();
   state.journey = it;
   const nav = {
@@ -2910,6 +2911,8 @@ function normalizeItinerary(it) {
     transfers: it.transfers,
     usesRealtime: Boolean(it.usesRealtime),
     hasCancellation: Boolean(it.hasCancellation),
+    navigationReady: Boolean(it.navigationReady),
+    walkingVerified: Boolean(it.walkingVerified),
     legs
   };
 }

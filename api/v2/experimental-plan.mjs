@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 import {gunzipSync} from 'node:zlib';
 import {findJourney, directFootpaths} from '../../experiments/bay-router/route.mjs';
 import {combineServiceDays} from '../../experiments/bay-router/combine-days.mjs';
+import {enrichWalks} from '../../experiments/bay-router/pedestrian.mjs';
 
 const TZ = 'America/Los_Angeles';
 const MAX_ENDPOINT_METERS = 350;
@@ -174,9 +175,24 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
       notes:['Experimental scheduled stop-to-stop routing only. Walk transfers use straight-line estimates, NOT safe pedestrian routes. GPS turn-by-turn and driving directions are unavailable.']},
     itineraries:unique.slice(0,limit),errors:unique.length?[]:[{code:'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW'}]}};
 }
-export default function handler(req,res) {
+export async function planWithWalking(query,now=new Date(),loader=loadDay,fetcher=fetch) {
+  const result=planExperimental(query,now,loader);
+  if (result.status!==200 || !result.body.itineraries.length) return result;
+  // Limit requests to the public demonstration router. A failed lookup remains preview-only.
+  await Promise.all(result.body.itineraries.slice(0,2).map(it=>enrichWalks(it,fetcher)));
+  result.body.routing.walkingGeometry=result.body.itineraries.some(it=>it.walkingVerified);
+  result.body.routing.notes=[
+    'Beta: scheduled transit times only. Walking geometry uses an external pedestrian router and may be incomplete or inaccurate. Check crossings, signs and station platforms.',
+    'Live train/bus positions and automatic boarding confirmation are not available. Keep navigation in the foreground and verify each transfer.'
+  ];
+  for (const it of result.body.itineraries) {
+    it.navigationReady=Boolean(it.walkingVerified && it.legs.some(l=>l.transit));
+  }
+  return result;
+}
+export default async function handler(req,res) {
   res.setHeader('Cache-Control','public, s-maxage=20, stale-while-revalidate=20');
   if(req.method!=='GET')return res.status(405).json({error:'Method not allowed'});
-  const result=planExperimental(new URL(req.url,'https://rove.invalid').searchParams);
+  const result=await planWithWalking(new URL(req.url,'https://rove.invalid').searchParams);
   return res.status(result.status).json(result.body);
 }
