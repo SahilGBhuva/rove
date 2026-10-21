@@ -1720,9 +1720,9 @@ function viewPlan() {
   const hasFrom = Boolean(plan.from || plan.draft.from.trim());
   const hasTo = Boolean(plan.to || plan.draft.to.trim());
   const coverage = planCoverageIssue();
-  const driveOk = driveSupported('CAR_PARKING');
-  const dropOk = driveSupported('CAR_DROP_OFF');
-  const access = driveSupported(plan.access) ? plan.access : 'WALK';
+  const driveOk = false;
+  const dropOk = false;
+  const access = 'WALK';
   let submit;
   if (status && !status.available) submit = '';
   else if (coverage) submit = `<p class="plan-coverage" role="status">${esc(coverage.text)}</p>`;
@@ -1741,7 +1741,7 @@ function viewPlan() {
       <div id="planSuggest" class="plan-suggest" role="listbox" aria-label="Suggestions"></div>
       <div class="plan-body">
         ${coverage ? '' : `<div class="plan-options">
-          <div class="segmented mode-switch${dropOk ? ' three' : ''}" role="group" aria-label="Getting to transit">${modeButton('WALK', MODE_ICONS.walk, 'Walk')}${modeButton('CAR_PARKING', MODE_ICONS.car, 'Drive')}${dropOk ? modeButton('CAR_DROP_OFF', MODE_ICONS.car, 'Drop-off') : ''}</div>
+          <p class="caption plan-hint">Transit and walking only. Driving to transit is not supported in this preview.</p>
           <label class="time-select"><span class="visually-hidden">When</span><select id="planTimeMode">
             <option value="now" ${plan.timeMode === 'now' ? 'selected' : ''}>Leave now</option>
             <option value="depart" ${plan.timeMode === 'depart' ? 'selected' : ''}>Depart at</option>
@@ -2689,7 +2689,7 @@ const INTRO = [
   },
   {
     title: 'Plan door to door',
-    text: 'Choose Directions, then enter any two Bay Area addresses. Walk, drive to a park-and-ride lot, or get dropped off, with turn-by-turn steps.',
+    text: 'Choose Directions, then enter any two Bay Area addresses. Find Bay Area transit schedules and walking connections. Check agency alerts before traveling.',
     art: `<svg viewBox="0 0 280 120"><path class="ia-walk" d="M28 92h40" pathLength="1"/><path class="ia-draw" style="--c:#005b95;--d:.35s" d="M68 92c30 0 30-40 70-40" pathLength="1"/><path class="ia-draw" style="--c:#e4002b;--d:.85s" d="M138 52c40 0 50 26 92 26" pathLength="1"/><path class="ia-walk" style="--d:1.3s" d="M230 78h22" pathLength="1"/><circle cx="28" cy="92" r="6" class="ia-from"/><rect x="246" y="72" width="12" height="12" rx="2.5" class="ia-to"/><g class="ia-pop" style="--d:.7s"><circle cx="68" cy="92" r="4.5" class="ia-stop"/><circle cx="138" cy="52" r="5.5" class="ia-stop strong"/><circle cx="230" cy="78" r="4.5" class="ia-stop"/></g></svg>`
   }
 ];
