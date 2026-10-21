@@ -1822,6 +1822,7 @@ async function submitPlan() {
     // The planner answers 404 with an empty itinerary list when there is no route; that is not an outage.
     if (response.status === 404 && Array.isArray(body?.itineraries)) throw new PlanError(noRouteMessage(body), null, false, body?.errors?.[0]?.code);
     if (!response.ok) {
+      if (body?.error && [422, 503].includes(response.status)) throw new PlanError(body.error, body.field || null, false);
       const err = planErrorMessage(response.status, body);
       if (err.offline) state.planStatus = { available: false, reason: response.status === 404 ? 'missing' : 'ROUTING_UNAVAILABLE', checkedAt: Date.now() };
       throw new PlanError(err.text, err.which, Boolean(err.offline));
@@ -1830,7 +1831,7 @@ async function submitPlan() {
     if (!itineraries.length) throw new PlanError(noRouteMessage(body), null, false, body?.errors?.[0]?.code);
     // Driving notes only apply when an option actually includes a drive (a short trip may be walk-only).
     const hasDrive = itineraries.some(it => it.legs.some(l => l.mode === 'CAR'));
-    plan.results = { itineraries, notes: Array.isArray(body.routing?.notes) ? body.routing.notes.filter(n => typeof n === 'string' && (hasDrive || !/driv|parking|drop-off/i.test(n))) : [], request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
+    plan.results = { experimental: body.routing?.engine === 'EXPERIMENTAL_SCHEDULE_ONLY', itineraries, notes: Array.isArray(body.routing?.notes) ? body.routing.notes.filter(n => typeof n === 'string' && (hasDrive || !/driv|parking|drop-off/i.test(n))) : [], request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
     plan.sort = 'fastest';
     plan.expanded = sortedItineraryIndexes()[0];
     plan.loading = false;
@@ -1958,7 +1959,7 @@ function viewResults() {
         <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
         <div class="it-meta">${itinerarySummary(it)}</div></button>
-        ${open ? `${itineraryTimeline(it)}<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start</button></div>` : ''}</li>`;
+        ${open ? `${itineraryTimeline(it)}<div class="action-bar it-actions">${plan.results?.experimental ? '<p class="caption">Preview only: walking transfers and boarding points are not street-verified. Navigation is disabled.</p>' : `<button class="button primary" data-action="nav-start" data-index="${i}">Start</button>`}</div>` : ''}</li>`;
     }).join('')}</ul>
     <p class="note">${plan.results?.scheduledOnly ? 'These routes use published schedules. Check live departures at your stop before you leave.' : 'Live times are shown where agencies provide them. Other times are scheduled.'}</p>`;
 }

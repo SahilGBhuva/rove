@@ -4,6 +4,10 @@
     "api/v2/experimental-plan.mjs": {
       "includeFiles": "public/data/schedule/**",
       "maxDuration": 30
+    },
+    "api/v2/plan.mjs": {
+      "includeFiles": "public/data/schedule/**",
+      "maxDuration": 30
     }
   },
   "headers": [
