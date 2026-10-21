@@ -27,7 +27,8 @@ test('routing provider outage cannot create fake navigable path',async()=>{
 test('walking longer than available transfer slot disables navigation',async()=>{
  const initial='2026-10-20T16:00:00Z';
  const walk={mode:'WALK',from:start,to:end,start:{scheduled:initial},end:{scheduled:'2026-10-20T16:00:10Z'},durationSeconds:10};
- const it={legs:[walk],walkMeters:0};
+ const ride={mode:'SUBWAY',transit:true,from:end,to:{lat:37.8,lon:-122.3},start:{scheduled:'2026-10-20T16:00:10Z'},end:{scheduled:'2026-10-20T16:15:00Z'}};
+ const it={legs:[walk,ride],walkMeters:0};
  const ready=await enrichWalks(it,ok);
  assert.equal(ready,false);
  assert.equal(it.walkingVerified,false);

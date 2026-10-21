@@ -81,9 +81,21 @@ export async function enrichWalks(itinerary,fetcher=fetch) {
   }
   // A scheduled transfer is not reliable if the street route needs more time
   // than the approximate slot originally allocated to walking.
-  const walkReady=walkLegs.every(l=>l.verified&&l.geometry?.coordinates?.length>=2 &&
-    l.durationSeconds<=l.scheduledWalkSeconds+30);
+  const walkReady=walkLegs.every(l=>{
+    if (!l.verified || !l.geometry?.coordinates?.length) return false;
+    const index=itinerary.legs.indexOf(l);
+    const followedByTransit=itinerary.legs.slice(index+1).some(next=>next.transit);
+    // The last walk can run longer, but never claim a transit connection is
+    // catchable when the routed pedestrian travel exceeds the walking slot.
+    return !followedByTransit || l.durationSeconds<=l.scheduledWalkSeconds+10;
+  });
   itinerary.walkingVerified=walkReady;
+  const last=itinerary.legs.at(-1);
+  if (last.mode==='WALK' && last.verified) {
+    last.end.scheduled=new Date(Date.parse(last.start.scheduled)+last.durationSeconds*1000).toISOString();
+    itinerary.end=last.end.scheduled;
+    itinerary.durationSeconds=Math.round((Date.parse(itinerary.end)-Date.parse(itinerary.start))/1000);
+  }
   itinerary.walkMeters=walkLegs.reduce((s,l)=>s+(l.distanceMeters||0),0);
   itinerary.walkSeconds=walkLegs.reduce((s,l)=>s+(l.durationSeconds||0),0);
   return walkReady;
