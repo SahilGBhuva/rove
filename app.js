@@ -472,8 +472,8 @@ const SATELLITE_STYLE = {
     labels: { type: 'raster', tileSize: 256, maxzoom: 19, tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], attribution: 'Labels: Esri, HERE, Garmin, © OpenStreetMap contributors' }
   },
   layers: [
-    { id: 'imagery', type: 'raster', source: 'imagery', paint: { 'raster-saturation': -0.35, 'raster-brightness-max': 0.7, 'raster-contrast': 0.08 } },
-    { id: 'reference-labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 0.85 } }
+    { id: 'imagery', type: 'raster', source: 'imagery', paint: { 'raster-saturation': -0.13, 'raster-brightness-max': 0.91, 'raster-contrast': 0.025 } },
+    { id: 'reference-labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 0.92 } }
   ]
 };
 const fallbackStyle = dark => ({ version: 8, glyphs: OPENFREEMAP_GLYPHS, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': dark ? '#15171a' : '#f4f1ea' } }] });
@@ -1286,6 +1286,7 @@ function viewHome() {
     <li><button class="row" data-action="lines"><span class="row-main"><span class="row-title">All lines</span><span class="row-meta">${idx.routes.size} lines across 5 agencies</span></span>${ICONS.chevron}</button></li>
 
   </ul></section>`);
+  parts.push(`<div class="home-agencies" aria-label="Transit agencies">${state.network.agencies.map(a => `<span class="home-agency"><i style="background:${esc(a.color)}" aria-hidden="true"></i>${esc(AGENCY_SHORT[a.id] || a.name)}</span>`).join('')}</div>`);
   parts.push(`<div class="home-footer"><p class="note home-service-status">${esc(liveStatusLine())}</p><div class="home-footer-links"><button class="text-button" data-action="sources">Data & credits</button><button class="text-button" data-action="intro">How Rove works</button></div></div>`);
   return parts.join('');
 }
@@ -1958,7 +1959,7 @@ function viewResults() {
         <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
         <div class="it-meta">${itinerarySummary(it)}</div></button>
-        ${open ? `${itineraryTimeline(it)}<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start</button></div>` : ''}</li>`;
+        ${open ? `<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start navigation</button></div>${itineraryTimeline(it)}` : ''}</li>`;
     }).join('')}</ul>
     <p class="note">${plan.results?.scheduledOnly ? 'These routes use published schedules. Check live departures at your stop before you leave.' : 'Live times are shown where agencies provide them. Other times are scheduled.'}</p>`;
 }
@@ -3609,7 +3610,7 @@ const STEP_VERBS = {
 
 function stepText(s) {
   if (s.instruction) return s.instruction;
-  const street = s.streetName && !/^(path|bike path|footpath|sidewalk|service road|steps|parking aisle|open area|corridor|footbridge|underpass|crosswalk|elevator|ramp|link|road|track|alley|bridleway)$/i.test(s.streetName) ? s.streetName : null;
+  const street = s.streetName && !/^(?:path|bike path|footpath|sidewalk|service road|steps|parking aisle|open area|corridor|footbridge|underpass|crosswalk|elevator|ramp|link|road|track|alley|bridleway|way\s+\d+(?:\s+from\s+\d+)?)$/i.test(s.streetName.trim()) ? s.streetName : null;
   const where = street ? ` onto ${street}` : '';
   switch (s.relativeDirection) {
     case 'DEPART': return `Head ${String(s.absoluteDirection || '').toLowerCase().replace('_', ' ') || 'out'}${street ? ` on ${street}` : ''}`;
