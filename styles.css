@@ -1259,3 +1259,13 @@ body.theme-dark .itinerary[aria-expanded="true"] { box-shadow: 0 6px 24px rgba(8
 .rove-accessible button,.rove-accessible input{min-height:48px}
 .rove-accessible button:focus-visible,.rove-accessible input:focus-visible,.rove-accessible a:focus-visible{outline:4px solid #006bc1!important;outline-offset:3px!important}
 @media(prefers-reduced-motion:reduce){.intro,.intro-progress span,.intro-art *{animation:none!important;transition:none!important}}
+
+/* Phase 1 audio-first transit controls */
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.audio-home{padding:20px;border-radius:18px;background:linear-gradient(130deg,rgba(34,102,169,.12),rgba(29,140,115,.09));display:flex;flex-direction:column;gap:10px;margin:12px 0 18px}
+.audio-home h2{font-size:22px;letter-spacing:-.025em}.audio-home p{font-size:14px;line-height:1.55}
+.audio-home button{width:100%;min-height:48px}
+.audio-route{margin:8px 14px 12px;min-height:44px}
+.rove-accessible .audio-route,.rove-accessible .action-bar button{min-height:58px;font-size:18px}
+.rove-accessible #panelBody h1:focus,.rove-accessible #panelBody h2:focus{outline:3px solid #006bc1;outline-offset:4px;border-radius:4px}
+@media(prefers-reduced-motion:reduce){.audio-home,.audio-route{transition:none!important;animation:none!important}}

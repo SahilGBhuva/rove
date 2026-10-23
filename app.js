@@ -1167,6 +1167,37 @@ function setupSheet() {
 
 const currentView = () => state.stack[state.stack.length - 1];
 
+function announceAccess(message, speak = false) {
+  const live = document.getElementById('roveAccessAnnouncement');
+  if (live) live.textContent = String(message || '');
+  if (speak && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(String(message || ''));
+    utterance.rate = 0.9;
+    window.speechSynthesis.speak(utterance);
+  }
+}
+function audioTripSummary(it) {
+  const pieces = [durationLabel(it.durationSeconds || (new Date(it.endTime)-new Date(it.startTime))/1000), `${it.transfers || 0} transfers`];
+  if (Number.isFinite(it.walkMeters)) pieces.push(`${Math.round(it.walkMeters)} metres walking`);
+  pieces.push(`Depart ${clock(new Date(it.startTime))}, arrive ${clock(new Date(it.endTime))}.`);
+  for (const leg of it.legs || []) {
+    if (leg.mode === 'WALK') pieces.push(`Walk to ${leg.to?.name || 'the next stop'}. Walking directions may be approximate.`);
+    else if (leg.mode === 'CAR') pieces.push(`Drive to ${leg.to?.name || 'transit'}.`);
+    else pieces.push(`Board ${legInfo(leg).badge}${leg.headsign ? ' toward '+displayName(leg.headsign) : ''} at ${leg.from?.name || 'the stop'}. Exit at ${leg.to?.name || 'the destination'}.`);
+  }
+  return pieces.join(' ');
+}
+function speakText(text) {
+  if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) { announceAccess('Spoken instructions are not supported in this browser.'); return; }
+  announceAccess(text, true);
+}
+function focusViewHeading() {
+  if (!document.body.classList.contains('rove-accessible')) return;
+  const target = document.querySelector('#panelBody h1, #panelBody h2');
+  if (target) { target.setAttribute('tabindex','-1'); target.focus({preventScroll:true}); }
+  else document.getElementById('panelBody')?.focus({preventScroll:true});
+}
 function pushView(view, { detent } = {}) {
   const top = currentView();
   if (top && top.name === view.name && JSON.stringify(top) === JSON.stringify(view)) { render(); return; }
@@ -1176,6 +1207,7 @@ function pushView(view, { detent } = {}) {
   render();
   if (isMobile() && detent) setDetent(detent);
   $('#panelBody').scrollTop = 0;
+  focusViewHeading();
 }
 
 function popView() {
@@ -1184,6 +1216,7 @@ function popView() {
   if (top.name === 'search' && !state.searchQuery) state.stack.pop();
   onLeaveFocus();
   render();
+  focusViewHeading();
 }
 
 function goHome() {
@@ -1293,6 +1326,7 @@ function viewHome() {
   if (home) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Home">${MODE_ICONS.home}<span>Home</span></button>`);
   if (work) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Work">${MODE_ICONS.work}<span>Work</span></button>`);
   if (!state.userLocation) quick.push(`<button type="button" class="quick" data-action="locate"><svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" stroke="none" d="M10 2.5 16.5 16 10 12.8 3.5 16Z" transform="rotate(45 10 10)"/></svg><span>Near me</span></button>`);
+  parts.push(`<section class="audio-home"><h2>Navigate by listening</h2><p>Plan a trip, hear your options, and follow each transit step without relying on the map.</p><button class="button primary" data-action="access-toggle" aria-pressed="${document.body.classList.contains('rove-accessible')}">${document.body.classList.contains('rove-accessible') ? 'Audio-first mode on' : 'Turn on audio-first mode'}</button><button class="button secondary" data-action="plan">Plan an accessible-audio trip</button></section>`);
   parts.push(`<div class="home-heading"><span class="home-eyebrow">BAY AREA / TRANSIT</span><h1>Go somewhere.</h1><p>Every line. One map.</p></div><div class="quick-row">${quick.join('')}</div>`);
 
   const others = places.filter(p => p.label !== 'Home' && p.label !== 'Work');
@@ -1640,7 +1674,7 @@ function viewStop({ agency, stop }) {
       <h1 class="title-1">${esc(s.n)}</h1>
       <p class="caption">${esc(a.name)}${isStation ? ' · Station' : ' · Stop'}${esc(ageText)}${staleText}</p>
     </div>
-    <section class="section" style="margin-top:4px"><h2 class="label">Departures</h2>${departures}${canceled}</section>
+    <section class="section" style="margin-top:4px"><h2 class="label">Departures</h2><button class="button secondary" data-action="access-departures" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Read next departures aloud</button>${departures}${canceled}</section>
     ${alerts.length ? `<div style="margin-top:16px">${alertsHtml(alerts, 1)}</div>` : ''}
     <div class="action-bar" style="margin-top:20px">
       <button class="button primary" data-action="plan-to" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Directions</button>
@@ -1697,7 +1731,7 @@ function viewImpact() {
 }
 function viewAccess() {
  const on = document.body.classList.contains('rove-accessible');
- return `${backHeader()}<div class="hero"><h1 class="title-1">Accessible travel</h1><p class="caption">Travel information beyond the map</p></div><section class="section"><button class="button primary" data-action="access-toggle" aria-pressed="${on}">${on ? 'Turn off' : 'Turn on'} easier-to-read mode</button><p class="empty">Larger controls, stronger focus outlines, and higher contrast. Use the search and stop lists without needing the map.</p><p class="empty">During navigation, choose “Read instruction aloud” to hear the current boarding, transfer, or walking step. Voice playback is optional and requires browser speech support.</p><p class="empty"><strong>Safety:</strong> Rove does not currently provide verified accessible pathways, curb and crossing guidance, elevator reliability, or obstacle detection. Do not rely on it as a sole mobility aid.</p></section>`;
+ return `${backHeader()}<div class="hero"><h1 class="title-1">Accessible travel</h1><p class="caption">Travel information beyond the map</p></div><section class="section"><button class="button primary" data-action="access-toggle" aria-pressed="${on}">${on ? 'Turn off' : 'Turn on'} easier-to-read mode</button><p class="empty">Larger controls, stronger focus outlines, and higher contrast. Use the search and stop lists without needing the map.</p><p class="empty">During navigation, choose “Read instruction aloud” to hear the current boarding, transfer, or walking step. Voice playback is optional and requires browser speech support.</p><button class="button secondary" data-action="access-demo">Hear an example trip instruction</button><p class="empty">Use the search, route choices, and stop lists without the map. Route results include Listen to route buttons, and stops include Read next departures aloud. Audio-first mode focuses headings on screen changes.</p><p class="empty"><strong>Safety:</strong> Rove does not currently provide verified accessible pathways, curb and crossing guidance, elevator reliability, or obstacle detection. Do not rely on it as a sole mobility aid.</p></section>`;
 }
 function readNavInstruction() {
  const step = state.nav?.steps[state.nav.i];
@@ -2011,7 +2045,7 @@ function viewResults() {
       return `<li><button class="itinerary" data-action="it-toggle" data-index="${i}" aria-expanded="${open}">
         <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
-        <div class="it-meta">${itinerarySummary(it)}</div></button>
+        <div class="it-meta">${itinerarySummary(it)}</div></button><button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Read full spoken itinerary for option ${order.indexOf(i)+1}">Listen to route ${order.indexOf(i)+1}</button>
         ${carbonComparison(it)}
         ${open ? `<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start navigation</button></div>${itineraryTimeline(it)}` : ''}</li>`;
     }).join('')}</ul>
@@ -2438,7 +2472,7 @@ function viewNavigate() {
     </div>
     <div class="action-bar">
       ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
-      <button class="button secondary" data-action="nav-read">Read instruction aloud</button>
+      <button class="button secondary" data-action="nav-read">Repeat current instruction</button>
       <button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'I have arrived' : 'Next step'}</button>
     </div>
     <ol class="step-list" style="margin-top:20px">${list}</ol>`;
@@ -2491,8 +2525,18 @@ function handleAction(el) {
     case 'stop': openStop(el.dataset.agency, el.dataset.stop); break;
     case 'lines': clearSearchField(); pushView({ name: 'lines' }, { detent: 'full' }); break;
     case 'impact': clearSearchField(); pushView({ name: 'impact' }, { detent: 'full' }); break;
+    case 'access-route': { const it = state.plan.results?.itineraries?.[Number(el.dataset.index)]; if (it) speakText(audioTripSummary(it)); break; }
+    case 'access-departures': {
+      const place = placeFor(el.dataset.agency,el.dataset.stop);
+      const data = place && cachedArrivals(place);
+      if (!data || data.status !== 'live' || !data.groups?.length) { speakText('Verified live departures are not currently available for this stop. Please check posted signs or agency information.'); break; }
+      const messages = data.groups.slice(0,5).map(g => { const t=g.times[0]; const minutes=Math.max(0,Math.round((t.time*1000-Date.now())/60000)); return `${g.route?.title || g.label || 'Transit'} ${g.headsign ? 'toward '+g.headsign : ''}, ${minutes} minutes.`; });
+      speakText(`Live departures for ${place.s.n}. ${messages.join(' ')}`);
+      break;
+    }
+    case 'access-demo': { if (!('speechSynthesis' in window)) { toast('Speech is not available in this browser.'); break; } window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance('Example: Board the 38 R bus toward downtown at the next stop. Check the vehicle sign before boarding.'); u.rate = 0.9; window.speechSynthesis.speak(u); break; }
     case 'access': clearSearchField(); pushView({ name: 'access' }, { detent: 'full' }); break;
-    case 'access-toggle': document.body.classList.toggle('rove-accessible'); localStorage.setItem('rove-accessible', document.body.classList.contains('rove-accessible') ? 'yes' : 'no'); render(); break;
+    case 'access-toggle': document.body.classList.toggle('rove-accessible'); try { localStorage.setItem('rove-accessible', document.body.classList.contains('rove-accessible') ? 'yes' : 'no'); } catch {} render(); announceAccess(document.body.classList.contains('rove-accessible') ? 'Audio-first mode on' : 'Audio-first mode off'); break;
     case 'nav-read': readNavInstruction(); break;
     case 'sources': clearSearchField(); pushView({ name: 'sources' }, { detent: 'full' }); break;
     case 'intro': showIntro(0); break;

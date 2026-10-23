@@ -14,6 +14,7 @@
 </head>
 <body>
   <a class="skip-link" href="#panelBody">Skip to transit information</a>
+  <div id="roveAccessAnnouncement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <main class="map-area" aria-label="Map">
     <div id="map" class="map" role="region" aria-label="Interactive map of Bay Area transit lines and stops"></div>
@@ -42,7 +43,7 @@
         </button>
       </div>
     </header>
-    <div class="panel-body" id="panelBody" tabindex="-1" aria-live="polite"></div>
+    <div class="panel-body" id="panelBody" tabindex="-1"></div>
   </aside>
 
   <div class="menu" id="menu" role="menu" hidden>
@@ -103,6 +104,6 @@
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
   <script src="public/js/navigation-core.js?v=2"></script>
   <script src="public/js/vehicle-motion.js?v=1"></script>
-  <script src="app.js?v=31"></script>
+  <script src="app.js?v=32"></script>
 </body>
 </html>
