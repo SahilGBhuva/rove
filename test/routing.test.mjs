@@ -180,3 +180,25 @@ test('access modes map to OTP modes, and drop-off carries WALK as OTP 2.8 requir
     assert.deepEqual(coerced.errors?.map(e => e.message) || [], [], access);
   }
 });
+
+
+test('canceled transit legs are never offered as boardable itineraries', async () => {
+  const valid = structuredClone(OTP_RESPONSE.data.planConnection.edges[0]);
+  const canceled = structuredClone(valid);
+  canceled.node.legs.find(leg => leg.transitLeg).realtimeState = 'CANCELED';
+  const payload = structuredClone(OTP_RESPONSE);
+  payload.data.planConnection.edges = [canceled, valid];
+  const client = new OtpClient({ fetchImpl: fakeFetch(() => jsonResponse(payload)) });
+  const result = await client.plan(parsePlanParams(params(sfToOakland), NOW));
+  assert.equal(result.itineraries.length, 1);
+  assert.equal(result.itineraries[0].hasCancellation, false);
+  assert.equal(result.itineraries[0].id, 'it-0');
+});
+
+test('only canceled routes result in no recommended itineraries', async () => {
+  const payload = structuredClone(OTP_RESPONSE);
+  payload.data.planConnection.edges[0].node.legs.find(leg => leg.transitLeg).realtimeState = 'CANCELED';
+  const client = new OtpClient({ fetchImpl: fakeFetch(() => jsonResponse(payload)) });
+  const result = await client.plan(parsePlanParams(params(sfToOakland), NOW));
+  assert.deepEqual(result.itineraries, []);
+});
