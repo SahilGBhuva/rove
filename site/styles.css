@@ -1318,3 +1318,29 @@ body.theme-dark .search-field:focus-within {
   border-color: #a5e5b9 !important;
   box-shadow: 0 0 0 2px #a5e5b9 !important;
 }
+
+/* Final focus layer: a single forest-green indicator for actual search controls.
+   Keyboard focus stays visible; inner input rings are suppressed only because the
+   parent field already displays focus-within. */
+.rove-accessible .rove-destination-search:focus-visible,
+.rove-accessible .search-field:focus-within,
+.rove-accessible .plan-fields:focus-within {
+  outline: 2px solid #286647 !important;
+  outline-offset: 2px !important;
+  border-color: #286647 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.rove-accessible .search-field input:focus,
+.rove-accessible .search-field input:focus-visible,
+.rove-accessible .plan-field input:focus,
+.rove-accessible .plan-field input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+body.theme-dark.rove-accessible .rove-destination-search:focus-visible,
+body.theme-dark.rove-accessible .search-field:focus-within,
+body.theme-dark.rove-accessible .plan-fields:focus-within {
+  outline-color: #a5e5b9 !important;
+  border-color: #a5e5b9 !important;
+}
