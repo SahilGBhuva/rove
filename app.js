@@ -612,7 +612,7 @@ function stopFeatures() {
  * Bay Area reads at a glance; bus routes fade in from zoom 10, which is a city or neighborhood
  * view, and bus stops, labels and vehicles follow as the map gets closer. A selected line is
  * drawn at every zoom. The Bus lines switch in the layers panel says so ("Appear as you zoom in to a city"). */
-const MAP_ZOOM = Object.freeze({ busRoutes: 10, busStops: 14.5, busStopLabels: 16.3, busVehicles: 12.5, lightRail: 9.5, lightStops: 13, lightLabels: 14, heavyStops: 9.5, heavyLabels: 11.5, railVehicles: 10.5 });
+const MAP_ZOOM = Object.freeze({ busRoutes: 10, busStops: 14.5, busStopLabels: 16.3, busVehicles: 11.5, lightRail: 9.5, lightStops: 13, lightLabels: 14, heavyStops: 9.5, heavyLabels: 11.5, railVehicles: 10.5 });
 const BUS_OPACITY = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.5, 12, 0.64, 14, 0.82];
 // Night mode uses a quieter network overview. A selected bus line keeps its full agency color.
 const NIGHT_BUS_OPACITY = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.28, 12, 0.38, 14, 0.48];
@@ -696,6 +696,13 @@ function addTransitLayers() {
   });
   map.addLayer({ id: 'veh-rail', type: 'circle', source: 'vehicles', minzoom: MAP_ZOOM.railVehicles, filter: ['in', ['get', 'cat'], ['literal', ['heavy', 'light']]], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.railVehicles, 4, 15, 7]) });
   map.addLayer({ id: 'veh-bus', type: 'circle', source: 'vehicles', minzoom: MAP_ZOOM.busVehicles, filter: ['==', ['get', 'cat'], 'bus'], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busVehicles, 3.2, 15, 5.5, 17, 7]) });
+  // Readable route numbers on moving vehicles, with collision avoidance at city zoom.
+  map.addLayer({ id: 'veh-bus-badges', type: 'symbol', source: 'vehicle-labels', minzoom: 13,
+    filter: ['==', ['get', 'cat'], 'bus'],
+    layout: { 'text-field': ['get', 'badge'], 'text-font': state.glyphFont, 'text-size': 11,
+      'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-optional': true,
+      'text-allow-overlap': false },
+    paint: { 'text-color': t.label, 'text-halo-color': t.halo, 'text-halo-width': 2 } });
   map.addLayer({ id: 'veh-selected', type: 'circle', source: 'vehicles', filter: ['==', ['get', 'key'], '__none__'], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], 9, 5, 15, 8]) });
   map.addLayer({ id: 'veh-label', type: 'symbol', source: 'vehicle-labels', minzoom: 15.5, filter: ['==', ['get', 'key'], '__none__'], layout: { 'text-field': ['get', 'badge'], 'text-font': state.glyphFont, 'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-optional': true }, paint: labelPaint });
 
@@ -707,9 +714,9 @@ function addTransitLayers() {
 
 const ROUTE_LAYERS = ['tr-bus-casing', 'tr-bus', 'tr-light-casing', 'tr-light', 'tr-heavy-casing', 'tr-heavy'];
 const STOP_LAYERS = ['st-bus', 'st-light', 'st-heavy', 'st-platform', 'st-heavy-label', 'st-light-label', 'st-bus-label'];
-const VEHICLE_LAYERS = ['veh-rail', 'veh-bus'];
+const VEHICLE_LAYERS = ['veh-rail', 'veh-bus', 'veh-bus-badges'];
 const ROUTE_LAYER_CAT = { 'tr-bus-casing': 'bus', 'tr-bus': 'bus', 'tr-light-casing': 'light', 'tr-light': 'light', 'tr-heavy-casing': 'heavy', 'tr-heavy': 'heavy' };
-const LAYER_KIND = { 'st-bus': 'bus', 'st-bus-label': 'bus', 'veh-bus': 'bus' };
+const LAYER_KIND = { 'st-bus': 'bus', 'st-bus-label': 'bus', 'veh-bus': 'bus', 'veh-bus-badges': 'bus' };
 
 /* Applies agency visibility, the Rail and Bus switches, line selection, and journey focus to every layer. */
 function applyMapState() {
@@ -768,7 +775,7 @@ function applyMapState() {
   for (const id of VEHICLE_LAYERS) {
     const kind = LAYER_KIND[id] || 'rail';
     map.setLayoutProperty(id, 'visibility', showVehicles && !focusKey && kindShown(kind) ? 'visible' : 'none');
-    map.setFilter(id, ['all', id === 'veh-bus' ? ['==', ['get', 'cat'], 'bus'] : ['in', ['get', 'cat'], ['literal', ['heavy', 'light']]], inAgencies]);
+    map.setFilter(id, ['all', kind === 'bus' ? ['==', ['get', 'cat'], 'bus'] : ['in', ['get', 'cat'], ['literal', ['heavy', 'light']]], inAgencies]);
   }
   const selectedVehicles = focusKey ? ['==', ['get', 'key'], focusKey] : ['==', ['get', 'key'], '__none__'];
   map.setFilter('veh-selected', selectedVehicles);
@@ -977,7 +984,7 @@ function showVehiclePopup(feature) {
   const html = `<div class="vehicle-pop">${badge}<strong>${esc(info ? info.title : `${AGENCY_SHORT[p.agency] || ''} ${p.badge}`)}</strong>
     <div class="row-meta">${p.headsign ? `To ${esc(p.headsign)} · ` : ''}${esc(AGENCY_SHORT[p.agency] || '')}${p.vehicle ? ` · Vehicle ${esc(p.vehicle)}` : ''}</div>
     <div class="row-meta ${p.stale ? 'status-stale' : ''}">${p.stale ? 'Location may be out of date. ' : ''}${esc(ageLabel(Number(p.ts)))}</div>
-    ${info ? `<button class="text-button" data-popup-route="${esc(info.key)}">View line</button>` : ''}</div>`;
+    ${info ? `<button class="text-button" data-popup-route="${esc(info.key)}">View line</button>` : ''}<div class="caption">Vehicle location data provided by <a href="https://511.org" target="_blank" rel="noopener noreferrer">511.org</a></div></div>`;
   const popup = new maplibregl.Popup({ offset: 12, maxWidth: '280px' }).setLngLat(feature.geometry.coordinates).setHTML(html).addTo(state.map);
   popup.getElement().querySelector('[data-popup-route]')?.addEventListener('click', ev => { popup.remove(); openRoute(ev.currentTarget.dataset.popupRoute); });
 }
