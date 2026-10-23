@@ -2050,6 +2050,63 @@ function buildSteps(it) {
 /* Navigation session UI, camera, and cautious replanning.
  * Foreground-only web navigation: browsers can suspend tracking while locked. */
 let navMarker = null;
+let navOrientationListener = null;
+function navNormalizeBearing(degrees) { return ((degrees % 360) + 360) % 360; }
+function navAngularDelta(a, b) { return ((b - a + 540) % 360) - 180; }
+function navOrientationHeading(event) {
+  // Safari provides a north-referenced compass heading; other browsers may expose
+  // absolute alpha. Relative alpha alone is not a reliable compass.
+  if (Number.isFinite(event.webkitCompassHeading) &&
+      (!Number.isFinite(event.webkitCompassAccuracy) || event.webkitCompassAccuracy <= 35))
+    return navNormalizeBearing(event.webkitCompassHeading);
+  if (event.absolute === true && Number.isFinite(event.alpha)) {
+    const angle = screen.orientation?.angle ?? window.orientation ?? 0;
+    return navNormalizeBearing(360 - event.alpha + angle);
+  }
+  return null;
+}
+function stopNavOrientation() {
+  if (navOrientationListener) window.removeEventListener('deviceorientation', navOrientationListener, true);
+  navOrientationListener = null;
+}
+async function enableNavCompass() {
+  const nav = state.nav;
+  if (!nav || typeof DeviceOrientationEvent === 'undefined') {
+    if (nav) { nav.status = 'Compass unavailable; using GPS travel direction.'; render(); }
+    return;
+  }
+  try {
+    // iOS requires this call inside a direct user gesture.
+    if (typeof DeviceOrientationEvent.requestPermission === 'function' &&
+        await DeviceOrientationEvent.requestPermission() !== 'granted') {
+      nav.status = 'Compass denied; using GPS travel direction.'; render(); return;
+    }
+    stopNavOrientation();
+    nav.compassEnabled = true;
+    navOrientationListener = event => {
+      if (state.nav !== nav) return;
+      const raw = navOrientationHeading(event);
+      if (!Number.isFinite(raw)) return;
+      const now = Date.now();
+      if (now - (nav.lastCompassAt || 0) < 130) return;
+      nav.lastCompassAt = now;
+      const previous = nav.compassHeading;
+      nav.compassHeading = Number.isFinite(previous)
+        ? navNormalizeBearing(previous + navAngularDelta(previous, raw) * 0.28) : raw;
+      if (nav.fix) {
+        updateNavMarker(nav.fix, nav.compassHeading);
+        if (nav.follow && nav.headingUp) navFollowCamera();
+      }
+    };
+    window.addEventListener('deviceorientation', navOrientationListener, true);
+    nav.status = 'Compass on · keep your phone upright for heading-up navigation.';
+    render();
+  } catch {
+    nav.status = 'Compass unavailable; using GPS travel direction.';
+    render();
+  }
+}
+
 function updateNavMarker(fix, heading) {
   const map = state.map;
   if (!map || typeof maplibregl === 'undefined') return;
@@ -2067,16 +2124,25 @@ function updateNavMarker(fix, heading) {
 function navFollowCamera() {
   const nav = state.nav, map = state.map;
   if (!nav?.follow || !nav.fix || !map || document.hidden) return;
-  const bearing = nav.headingUp && Number.isFinite(nav.heading) ? nav.heading : 0;
-  map.easeTo({ center: nav.fix.point, bearing, pitch: nav.headingUp ? 38 : 0,
-    zoom: Math.max(map.getZoom(), 15.5), padding: cameraPadding(), duration: motionMs(500), essential: true });
+  const direction = Number.isFinite(nav.compassHeading) ? nav.compassHeading : nav.heading;
+  const bearing = nav.headingUp && Number.isFinite(direction) ? direction : 0;
+  // The user's dot sits below center, leaving more of the upcoming route visible.
+  const mobile = isMobile();
+  const offset = nav.headingUp ? [0, mobile ? 95 : 85] : [0, 0];
+  const last = nav.lastCameraAt || 0;
+  const now = Date.now();
+  if (now - last < 240) return;
+  nav.lastCameraAt = now;
+  map.easeTo({ center: nav.fix.point, bearing, pitch: nav.headingUp ? 50 : 0,
+    zoom: Math.max(map.getZoom(), nav.headingUp ? 17 : 15.5),
+    offset, duration: motionMs(550), essential: true });
 }
 function navChangeFollow(what) {
   const nav = state.nav;
   if (!nav) return;
   if (what === 'overview') { nav.follow = false; nav.status = 'Map overview. Tap Follow to recenter.'; fitJourney(nav.it); }
-  else if (what === 'bearing') { nav.headingUp = !nav.headingUp; nav.follow = true; navFollowCamera(); }
-  else { nav.follow = true; nav.status = 'Following your location'; navFollowCamera(); }
+  else if (what === 'bearing') { nav.headingUp = !nav.headingUp; nav.follow = true; nav.lastCameraAt = 0; navFollowCamera(); }
+  else { nav.follow = true; nav.status = 'Following your location'; nav.lastCameraAt = 0; navFollowCamera(); }
   render();
 }
 function routeLegDistance(nav, point) {
@@ -2216,7 +2282,7 @@ async function startNavigation(index) {
   const nav = {
     it, steps: buildSteps(it), i: 0, tracking: false, watchId: null,
     destination: { ...state.plan.to }, access: state.plan.results?.request?.access || 'WALK',
-    follow: true, headingUp: true, voice: false, fix: null, heading: null,
+    follow: true, headingUp: true, voice: false, fix: null, heading: null, compassHeading: null, compassEnabled: false, lastCompassAt: 0, lastCameraAt: 0,
     offRouteFixes: 0, lastOffRouteAt: 0, rerouteAt: 0, rerouting: false,
     maneuver: null, spokenKey: null, speechAllowed: false, lastUiAt: 0,
     status: 'Waiting for GPS permission…', error: null, controller: null
@@ -2247,6 +2313,7 @@ async function startNavigation(index) {
 }
 
 function releaseWakeLock() {
+  stopNavOrientation();
   try { window.speechSynthesis?.cancel(); } catch { /* speech unavailable */ }
   try { state.wakeLock?.release(); } catch { /* already released */ }
   state.wakeLock = null;
@@ -2277,6 +2344,7 @@ function viewNavigate() {
       <button type="button" class="button secondary" data-action="nav-follow" aria-pressed="${nav.follow}">Follow</button>
       <button type="button" class="button secondary" data-action="nav-bearing" aria-pressed="${nav.headingUp}">${nav.headingUp ? 'Heading up' : 'North up'}</button>
       <button type="button" class="button secondary" data-action="nav-overview">Overview</button>
+      <button type="button" class="button secondary" data-action="nav-compass" aria-pressed="${nav.compassEnabled}">${nav.compassEnabled ? 'Compass on' : 'Use phone compass'}</button>
       <button type="button" class="button secondary" data-action="nav-voice" aria-pressed="${nav.voice}" ${!('speechSynthesis' in window) ? 'disabled' : ''}>${nav.voice ? 'Mute voice' : 'Voice guidance'}</button>
       <button type="button" class="button secondary" data-action="nav-replan" ${!nav.fix || nav.rerouting ? 'disabled' : ''}>${nav.rerouting ? 'Recalculating…' : 'New route'}</button>
     </div></div>`;
@@ -2416,6 +2484,7 @@ function handleAction(el) {
     case 'leg-focus': focusLeg(Number(el.dataset.leg)); break;
     case 'nav-start': startNavigation(Number(el.dataset.index)); break;
     case 'nav-follow': navChangeFollow('follow'); break;
+    case 'nav-compass': enableNavCompass(); break;
     case 'nav-voice': toggleNavVoice(); break;
     case 'nav-bearing': navChangeFollow('bearing'); break;
     case 'nav-overview': navChangeFollow('overview'); break;
@@ -2959,7 +3028,7 @@ function onNavPosition(pos) {
     moved >= Math.max(8, fix.accuracy) && seconds > 0 ? RoveNavigation.bearing(previous.point, fix.point) : nav.heading;
   if (Number.isFinite(heading)) nav.heading = heading;
   nav.status = nav.follow ? 'Following your location' : 'Tracking GPS · map exploration paused following';
-  updateNavMarker(fix, nav.heading);
+  updateNavMarker(fix, Number.isFinite(nav.compassHeading) ? nav.compassHeading : nav.heading);
   navFollowCamera();
   maybeAdvanceNavigation(nav, fix);
   const distance = routeLegDistance(nav, fix.point);
