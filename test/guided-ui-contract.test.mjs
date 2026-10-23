@@ -84,3 +84,12 @@ test('trip controls are large, in thumb reach, and respect reduced motion', () =
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.panel-body\.view-enter > \* \{ animation: none !important; \} \}/);
   assert.match(css, /:focus-visible \{\s*outline: 3px solid var\(--rg-focus\) !important;/);
 });
+
+test('overnight service gaps are explained with real timetable times, never a generic leave-now route', () => {
+  const msg = fn('noRouteMessage');
+  assert.match(msg, /body\?\.routing\?\.serviceGap/);
+  assert.match(msg, /The next practical trip leaves at/);
+  assert.match(msg, /by the published schedule/);
+  assert.match(app, /case 'plan-show-later':[\s\S]*?These trips leave later than you asked/);
+  assert.match(app, /warnings: Array\.isArray\(it\.warnings\)/);
+});

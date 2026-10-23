@@ -1547,3 +1547,5 @@ body .panel-body:has(.rg-nav) { display: flex; flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) { body.has-speech-bar .panel-body { transition: none; } }
 .rove-accessible .audio-route { min-height: 52px; border-radius: 999px; box-shadow: none; border: 1.5px solid var(--rg-line); background: var(--rg-surface); color: var(--rg-ink); font-size: 16px; font-weight: 700; margin: 10px 0 4px; padding: 0 18px; }
+.rg-warn-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.rg-warn-tags span { padding: 3px 9px; border-radius: 999px; background: var(--rg-warn-bg); color: var(--rg-warn); font-size: 13px; font-weight: 700; }

@@ -1241,6 +1241,8 @@ function audioTripSummary(it) {
 function transitLineNames(it) {
   return (it.legs || []).filter(l => l.mode === 'TRANSIT' && !l.staySeated).map(l => window.RoveJourneyGuide ? RoveJourneyGuide.vehicle(l).name : legInfo(l).badge);
 }
+const ROUTE_WARNINGS = { LONG_WALK: 'Long walk', LONG_WAIT: 'Long wait at a stop', DEPARTS_LATER: 'Leaves later than you asked', DEPARTS_MUCH_LATER: 'Leaves much later than you asked', DETOUR: 'Indirect route', BACKTRACKS: 'Doubles back' };
+const routeWarnings = it => (it.warnings || []).map(w => ROUTE_WARNINGS[w]).filter(Boolean);
 function routeChoiceSpeech(it, n) {
   const minutes = Math.round((it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000) / 60);
   const lines = transitLineNames(it);
@@ -1248,7 +1250,7 @@ function routeChoiceSpeech(it, n) {
   const walk = Number.isFinite(it.walkMeters) && it.walkMeters >= 50 ? ` About ${RoveJourneyGuide.distanceWords(it.walkMeters)} of walking.` : '';
   const live = it.legs.some(l => l.mode === 'TRANSIT' && l.realtime);
   const spokenDuration = minutes < 60 ? plural(minutes, 'minute') : `${plural(Math.floor(minutes / 60), 'hour')}${minutes % 60 ? ' ' + plural(minutes % 60, 'minute') : ''}`;
-  return `Route ${n}: ${spokenDuration}. ${lines.length ? lines.join(', then ') : 'Walking only'}. ${transfers ? plural(transfers, 'transfer') : 'No transfers'}.${walk} Leaves ${clock(new Date(it.startTime))}, arrives ${clock(new Date(it.endTime))}. ${live ? 'Includes live times.' : 'Scheduled times, not live.'}${it.hasCancellation ? ' Warning: includes a canceled trip.' : ''}`;
+  return `Route ${n}: ${spokenDuration}. ${lines.length ? lines.join(', then ') : 'Walking only'}. ${transfers ? plural(transfers, 'transfer') : 'No transfers'}.${walk} Leaves ${clock(new Date(it.startTime))}, arrives ${clock(new Date(it.endTime))}. ${live ? 'Includes live times.' : 'Scheduled times, not live.'}${it.hasCancellation ? ' Warning: includes a canceled trip.' : ''}${routeWarnings(it).length ? ` Note: ${routeWarnings(it).join(', ')}.` : ''}`;
 }
 function speakText(text) {
   announceAccess(text, true);
@@ -1917,7 +1919,7 @@ function viewPlan() {
         ${access === 'CAR_DROP_OFF' ? `<p class="caption plan-hint">Rove plans a drive to a street near the station, where you are dropped off, then transit from there. ${driveLimitText()}</p>` : ''}`}
         ${submit}
         ${plan.loading ? '<ul class="itineraries skeleton-list" aria-hidden="true">' + '<li><div class="itinerary"><span class="sk sk-line"></span><span class="sk sk-bar"></span><span class="sk sk-line short"></span></div></li>'.repeat(3) + '</ul>' : ''}
-        ${plan.error ? `<div class="plan-error-group"><p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>${plan.noServiceWindow && plan.timeMode === 'now' ? '<button class="button secondary plan-later" type="button" data-action="plan-next-morning">Try tomorrow at 8:15 AM</button>' : ''}</div>` : ''}
+        ${plan.error ? `<div class="plan-error-group"><p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>${plan.noServiceWindow && plan.later?.length ? `<button class="button secondary plan-later" type="button" data-action="plan-show-later">Show the ${esc(clock(new Date(plan.later[0].startTime)))} trip</button>` : plan.noServiceWindow && plan.timeMode === 'now' ? '<button class="button secondary plan-later" type="button" data-action="plan-next-morning">Try tomorrow at 8:15 AM</button>' : ''}</div>` : ''}
       </div>
     </form>`;
 }
@@ -1983,6 +1985,7 @@ async function submitPlan() {
     const response = await fetch(`/api/v2/plan?${params}`, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(35000) : undefined });
     const body = await response.json().catch(() => null);
     // The planner answers 404 with an empty itinerary list when there is no route; that is not an outage.
+    plan.later = (body?.laterItineraries || []).map(normalizeItinerary).filter(it => it.legs.length);
     if (response.status === 404 && Array.isArray(body?.itineraries)) throw new PlanError(noRouteMessage(body), null, false, body?.errors?.[0]?.code);
     if (!response.ok) {
       const err = planErrorMessage(response.status, body);
@@ -1990,6 +1993,7 @@ async function submitPlan() {
       throw new PlanError(err.text, err.which, Boolean(err.offline));
     }
     const itineraries = (body?.itineraries || []).map(normalizeItinerary).filter(it => it.legs.length);
+    plan.later = (body?.laterItineraries || []).map(normalizeItinerary).filter(it => it.legs.length);
     if (!itineraries.length) throw new PlanError(noRouteMessage(body), null, false, body?.errors?.[0]?.code);
     // Driving notes only apply when an option actually includes a drive (a short trip may be walk-only).
     const hasDrive = itineraries.some(it => it.legs.some(l => l.mode === 'CAR'));
@@ -2124,7 +2128,7 @@ function viewResults() {
       return `<li><button class="itinerary" data-action="it-toggle" data-index="${i}" aria-expanded="${open}" aria-label="${esc(routeChoiceSpeech(it, n + 1))}">
         <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
-        <div class="it-meta">${itinerarySummary(it)}</div></button>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Listen to route ${n + 1} stop by stop">Listen to route ${n + 1}</button>` : ''}
+        <div class="it-meta">${itinerarySummary(it)}</div>${routeWarnings(it).length ? `<div class="rg-warn-tags">${routeWarnings(it).map(w => `<span>${esc(w)}</span>`).join('')}</div>` : ''}</button>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Listen to route ${n + 1} stop by stop">Listen to route ${n + 1}</button>` : ''}
         ${carbonComparison(it)}
         ${open ? `<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start route ${n + 1}</button></div>${itineraryTimeline(it)}` : ''}</li>`;
     }).join('')}</ul>
@@ -2912,6 +2916,16 @@ function handleAction(el) {
     case 'plan-locate': locate({ thenPick: plan.focus }); break;
     case 'plan-map': startMapPick(plan.focus || (plan.to ? 'from' : 'to')); break;
     case 'plan-recheck': fetchPlanStatus(true); break;
+    case 'plan-show-later': {
+      // Real later departures from the timetable, shown as ordinary results labeled with their own times.
+      if (!plan.later?.length) break;
+      plan.results = { itineraries: plan.later, notes: ['These trips leave later than you asked. Times are from the published schedule.'], request: { time: plan.later[0].startTime, access: 'WALK' }, scheduledOnly: true };
+      plan.error = null; plan.noServiceWindow = false; plan.sort = 'fastest'; plan.expanded = 0; plan.showAll = false;
+      state.journey = plan.later[0];
+      pushView({ name: 'results' }, { detent: 'half' });
+      announceAccess(`Later trips. ${routeChoiceSpeech(plan.later[0], 1)}`);
+      break;
+    }
     case 'plan-next-morning': {
       // The alternate journey is explicitly labeled as tomorrow, never as 'Leave now'.
       const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -3515,6 +3529,7 @@ function normalizeItinerary(it) {
     transfers: it.transfers,
     usesRealtime: Boolean(it.usesRealtime),
     hasCancellation: Boolean(it.hasCancellation),
+    warnings: Array.isArray(it.warnings) ? it.warnings.filter(w => typeof w === 'string') : [],
     legs
   };
 }
@@ -4064,7 +4079,13 @@ function noRouteMessage(body) {
   if (code === 'OUTSIDE_SERVICE_PERIOD') return 'Schedules are not available for that date. Choose a date closer to today.';
   if (code === 'OUTSIDE_BOUNDS') return 'One of these places is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.';
   if (code === 'NO_STOPS_IN_RANGE' || code === 'LOCATION_NOT_FOUND') return 'One of these places is too far from a transit stop to plan a trip. Try a nearby address or stop.';
-  if (code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW') return 'No matching route was found for this departure time. Service may be limited, or trip-planning data may be incomplete. Try another departure time.';
+  if (code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW') {
+    // The planner reports the next real timetable departure when service has a gap (for example overnight).
+    const gap = body?.routing?.serviceGap;
+    const leave = Date.parse(gap?.nextPracticalDeparture), arrive = Date.parse(gap?.nextPracticalArrival);
+    if (Number.isFinite(leave)) return `No practical transit connection near this time. The next practical trip leaves at ${clock(new Date(leave))}${Number.isFinite(arrive) ? ` and arrives at ${clock(new Date(arrive))}` : ''}, by the published schedule.`;
+    return 'No practical transit connection near this time. Service may be limited overnight. Try a later departure time.';
+  }
   if (code === 'NO_TRANSIT_CONNECTION' || !body?.errors?.[0]?.message) return 'No transit connection was found. Try a different departure time or a nearby transit stop.';
   return body.errors[0].message;
 }
