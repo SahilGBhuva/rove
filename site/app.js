@@ -1325,6 +1325,8 @@ function viewHome() {
  return `<div class="rove-home" aria-labelledby="roveHomeTitle">
  <div class="rove-home-intro"><span class="rove-kicker">Your journey, your way</span><h1 id="roveHomeTitle">Where do you want to go?</h1><p>Find your route and follow your journey with clear, spoken guidance.</p></div>
  <button class="rove-destination-search" data-action="plan" aria-label="Choose a destination and plan a trip"><span aria-hidden="true">⌕</span><span>Search for a destination</span><span aria-hidden="true">→</span></button>
+ <button type="button" class="rove-speak-destination" data-action="access-speak-destination" aria-label="Speak your destination">Speak destination</button>
+ <p class="rove-voice-hint">Say where you want to go, or use Search for a destination.</p>
  ${active?`<section class="rove-active"><h2>Your journey is in progress</h2><p>Return to your current step and hear the next instruction.</p><button class="button primary" data-action="access-my-journey">Continue journey</button></section>`:''}
  <nav class="rove-home-actions" aria-label="Journey actions"><button data-action="plan"><span class="rove-action-icon" aria-hidden="true">↗</span><span>Plan a trip</span></button><button data-action="access-nearby"><span class="rove-action-icon" aria-hidden="true">◎</span><span>Nearby transit</span></button><button data-action="access-my-journey"><span class="rove-action-icon" aria-hidden="true">◉</span><span>My journey</span></button></nav>
  ${shortcuts?`<section class="rove-saved"><h2>Saved places</h2><div>${shortcuts}</div></section>`:''}
@@ -2518,6 +2520,32 @@ function clearSearchField() {
 }
 
 
+function startAccessibleVoiceEntry() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    announceAccess('Speech entry is unavailable in this browser. Use the destination search field instead.');
+    $('#searchInput').focus();
+    return;
+  }
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  announceAccess('Listening. Say the name of your destination.');
+  recognition.onresult = event => {
+    const phrase = event.results?.[0]?.[0]?.transcript?.trim();
+    if (!phrase) return;
+    const input = $('#searchInput');
+    input.value = phrase;
+    onSearchInput(phrase);
+    announceAccess(`Heard ${phrase}. Review the matching places and choose your destination.`);
+    const firstResult = document.querySelector('#panelBody .result, #panelBody .row');
+    if (firstResult) firstResult.focus({ preventScroll: true });
+  };
+  recognition.onerror = () => announceAccess('Voice entry failed. Please type a destination instead.');
+  try { recognition.start(); } catch { announceAccess('Voice entry is unavailable. Please type a destination instead.'); }
+}
+
 function onSearchInput(value) {
   state.searchQuery = value;
   $('#searchClear').hidden = !value;
@@ -2577,6 +2605,7 @@ function handleAction(el) {
     case 'sources': clearSearchField(); pushView({ name: 'sources' }, { detent: 'full' }); break;
     case 'intro': showIntro(0); break;
     case 'locate': locate(); break;
+    case 'access-speak-destination': startAccessibleVoiceEntry(); break;
     case 'plan': openPlan({}); break;
     case 'first-mile': setFirstMile(el.dataset.firstMile); break;
     case 'go-saved': { const p = savedPlaces().find(x => x.label === el.dataset.label); if (p) openPlan({ to: { ...p }, from: currentLocationPlace() || (plan.from && placeKey(plan.from) !== placeKey(p) ? plan.from : null) }); break; }

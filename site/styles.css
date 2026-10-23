@@ -1344,3 +1344,8 @@ body.theme-dark.rove-accessible .plan-fields:focus-within {
   outline-color: #a5e5b9 !important;
   border-color: #a5e5b9 !important;
 }
+
+.rove-speak-destination{display:block;width:100%;min-height:64px;margin-top:12px;padding:15px 20px;border:2px solid #225c40;border-radius:14px;background:#225c40;color:#fff;font:inherit;font-size:1.14rem;font-weight:750;cursor:pointer;text-align:center;box-shadow:0 4px 12px rgba(15,65,38,.14)}
+.rove-speak-destination:focus-visible{outline:3px solid #d48b17!important;outline-offset:3px}
+.rove-voice-hint{font-size:.9rem;line-height:1.5;color:var(--ink-2);margin:8px 0 0}
+body.theme-dark .rove-speak-destination{background:#a4e2b8;color:#123421;border-color:#a4e2b8}
