@@ -118,3 +118,232 @@ export function findJourney(data, fromStop, toStop, departSeconds, options = {})
     arrivalSeconds: result.time, durationSeconds: result.time - departSeconds,
     legs, experimental: true };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Multicriteria journey search used by /api/v2/plan (api/v2/experimental-plan.mjs).
+//
+// Why not findJourney above: it is a plain earliest-arrival Connection Scan with ONE label per
+// stop. It boards each trip at the FIRST stop where the trip becomes reachable and never revisits
+// that choice, and it ignores transfers and waiting. Overnight this produced the P0
+// "Sunnyvale -> Tamien (south) -> wait 3 h -> back north" journey: riding south to Tamien made the
+// 4:37 AM northbound trip reachable at Tamien, which comes earlier in that trip than Sunnyvale,
+// so the trip was boarded there. Arriving at 5:55 AM either way, earliest-arrival alone could not
+// tell the detour from simply boarding the same train at Sunnyvale at 4:58 AM.
+//
+// The search below fixes that structurally:
+//  1. forwardRounds: transfer-bounded (round-based) CSA from ALL origin stops at once. Round r
+//     only allows journeys with <= r vehicles, so it yields the Pareto front of
+//     (door arrival time, number of vehicles) instead of a single earliest-arrival label.
+//  2. latestDeparture: for each Pareto point, a reverse CSA with the same vehicle bound finds the
+//     journey that leaves the door as LATE as possible while still arriving by that time. That
+//     removes pointless early departures, detours and waits that do not improve the arrival.
+// Transfer feasibility is identical in both directions:
+//  - the first vehicle departs >= request + walk-to-stop + BOARDING_MARGIN_SECONDS;
+//  - every transfer needs >= MIN_TRANSFER_SECONDS after alighting, plus the walking time when the
+//    next stop is a different stop (footpaths already include a 45 s fixed overhead).
+export const WALK_METERS_PER_SECOND = 1.2;
+export const BOARDING_MARGIN_SECONDS = 60;
+export const MIN_TRANSFER_SECONDS = 120;
+const NONE = 0, ORIGIN = 1, RIDE = 2, WALK = 3, INHERIT = 4, TARGET = 5, BOARD = 6;
+
+function newLabels(n, fill) {
+  return { time: new Float64Array(n).fill(fill), kind: new Uint8Array(n), rides: new Uint8Array(n),
+    a: new Int32Array(n).fill(-1), b: new Int32Array(n).fill(-1), t: new Float64Array(n), w: new Float64Array(n) };
+}
+function inherit(prev) {
+  const n = prev.time.length, cur = newLabels(n, 0);
+  cur.time.set(prev.time); cur.rides.set(prev.rides);
+  for (let i = 0; i < n; i++) if (prev.kind[i] !== NONE) cur.kind[i] = INHERIT;
+  return cur;
+}
+// Incoming footpaths for the reverse search (directFootpaths lists are outgoing, not symmetric).
+export function reverseFootpaths(footpaths) {
+  const incoming = Array.from({ length: footpaths.length }, () => []);
+  for (let from = 0; from < footpaths.length; from++)
+    for (const [to, seconds] of footpaths[from] || []) incoming[to].push([from, seconds]);
+  return incoming;
+}
+
+/**
+ * Transfer-bounded forward scan.
+ * seeds:   [{index, accessSeconds}]  stops the rider can walk to from the door
+ * targets: [{index, egressSeconds}]  stops from which the rider can walk to the destination
+ * Returns the Pareto front [{rides, doorArrival}], each entry strictly earlier than the last.
+ */
+export function forwardRounds(data, seeds, targets, departSeconds, options = {}) {
+  const { stops, trips, connections } = data;
+  const n = stops.length, footpaths = options.footpaths || [];
+  const maxRides = options.maxRides ?? 4, limit = departSeconds + (options.maxSeconds ?? 8 * 3600);
+  const egress = new Float64Array(n).fill(Infinity);
+  for (const t of targets) egress[t.index] = Math.min(egress[t.index], t.egressSeconds);
+  let prev = newLabels(n, Infinity);
+  for (const s of seeds) {
+    const time = departSeconds + s.accessSeconds;
+    if (time < prev.time[s.index]) { prev.time[s.index] = time; prev.kind[s.index] = ORIGIN; }
+  }
+  const front = [];
+  let bestDoor = Infinity;
+  const first = lowerBoundConnection(connections, departSeconds);
+  const boardStop = new Int32Array(trips.length), boardDep = new Float64Array(trips.length);
+  for (let r = 1; r <= maxRides; r++) {
+    const cur = inherit(prev);
+    boardStop.fill(-1);
+    let roundBest = bestDoor, improved = false;
+    for (let ci = first; ci < connections.length; ci++) {
+      const c = connections[ci], dep = c[2];
+      if (dep > limit || dep >= roundBest) break;
+      const trip = c[4];
+      if (boardStop[trip] < 0) {
+        if (!(c[5] & 1)) continue;
+        const ready = prev.time[c[0]];
+        if (ready === Infinity) continue;
+        const buffer = prev.rides[c[0]] === 0 ? BOARDING_MARGIN_SECONDS : MIN_TRANSFER_SECONDS;
+        if (ready + buffer > dep) continue;
+        boardStop[trip] = c[0]; boardDep[trip] = dep;
+      }
+      if (!(c[5] & 2)) continue;
+      const to = c[1], arr = c[3];
+      if (arr > limit || arr >= cur.time[to]) continue;
+      cur.time[to] = arr; cur.kind[to] = RIDE; cur.rides[to] = r;
+      cur.a[to] = trip; cur.b[to] = boardStop[trip]; cur.t[to] = boardDep[trip];
+      improved = true;
+      if (arr + egress[to] < roundBest) roundBest = arr + egress[to];
+      for (const [nb, seconds] of footpaths[to] || []) {
+        const walkArr = arr + seconds;
+        if (walkArr <= limit && walkArr < cur.time[nb]) {
+          cur.time[nb] = walkArr; cur.kind[nb] = WALK; cur.rides[nb] = r; cur.a[nb] = to; cur.w[nb] = seconds;
+          if (walkArr + egress[nb] < roundBest) roundBest = walkArr + egress[nb];
+        }
+      }
+    }
+    if (roundBest < bestDoor) { bestDoor = roundBest; front.push({ rides: r, doorArrival: roundBest }); }
+    if (!improved) break;
+    prev = cur;
+  }
+  return front;
+}
+
+/**
+ * Reverse, vehicle-bounded scan: the latest door departure (>= earliestDoorDeparture) that still
+ * reaches the destination door by `deadline` using <= maxRides vehicles. Among equally late
+ * departures the one with the fewest vehicles wins. Returns the journey or null.
+ */
+export function latestDeparture(data, seeds, targets, deadline, earliestDoorDeparture, options = {}) {
+  const { stops, trips, connections } = data;
+  const n = stops.length, incoming = options.incomingFootpaths || [];
+  const maxRides = options.maxRides ?? 4;
+  if (!seeds.length || !targets.length) return null;
+  const minAccess = Math.min(...seeds.map(s => s.accessSeconds));
+  // L.time[s]: latest time the rider can be standing at s (after alighting) and still make it.
+  let prev = newLabels(n, -Infinity);
+  for (const t of targets) {
+    const time = deadline - t.egressSeconds;
+    if (time > prev.time[t.index]) { prev.time[t.index] = time; prev.kind[t.index] = TARGET; prev.w[t.index] = t.egressSeconds; }
+  }
+  for (const t of targets) for (const [nb, seconds] of incoming[t.index] || []) {
+    const time = prev.time[t.index] - seconds;
+    if (time > prev.time[nb]) { prev.time[nb] = time; prev.kind[nb] = WALK; prev.a[nb] = t.index; prev.w[nb] = seconds; }
+  }
+  // B.time[s]: latest vehicle departure the rider can board at s (origins use this directly).
+  let prevBoard = newLabels(n, -Infinity);
+  let best = null;
+  const tripAlight = new Int32Array(trips.length), tripAlightArr = new Float64Array(trips.length);
+  const hi = lowerBoundConnection(connections, deadline + 1) - 1;
+  const roundsL = [prev], roundsB = [prevBoard];
+  for (let k = 1; k <= maxRides; k++) {
+    const cur = inherit(prev), board = inherit(prevBoard);
+    tripAlight.fill(-1);
+    // No useful first boarding can happen before this (later rounds only need strictly later).
+    const floor = Math.max(earliestDoorDeparture, best ? best.doorDeparture + 1 : -Infinity) + BOARDING_MARGIN_SECONDS + minAccess;
+    let changed = false;
+    for (let ci = hi; ci >= 0; ci--) {
+      const c = connections[ci], dep = c[2];
+      if (dep < floor) break;
+      const trip = c[4];
+      // Alight as early along the trip as still works (connections are visited latest first).
+      if ((c[5] & 2) && c[3] <= prev.time[c[1]]) { tripAlight[trip] = c[1]; tripAlightArr[trip] = c[3]; }
+      if (tripAlight[trip] < 0 || !(c[5] & 1)) continue;
+      const s = c[0];
+      if (dep > board.time[s]) {
+        board.time[s] = dep; board.kind[s] = BOARD; board.a[s] = trip; board.b[s] = tripAlight[trip]; board.t[s] = tripAlightArr[trip];
+        changed = true;
+      }
+      const ready = dep - MIN_TRANSFER_SECONDS;
+      if (ready > cur.time[s]) {
+        cur.time[s] = ready; cur.kind[s] = BOARD;
+        for (const [nb, seconds] of incoming[s] || []) {
+          if (ready - seconds > cur.time[nb]) { cur.time[nb] = ready - seconds; cur.kind[nb] = WALK; cur.a[nb] = s; cur.w[nb] = seconds; }
+        }
+      }
+    }
+    roundsL.push(cur); roundsB.push(board);
+    for (const seed of seeds) {
+      const doorDeparture = board.time[seed.index] - BOARDING_MARGIN_SECONDS - seed.accessSeconds;
+      if (doorDeparture >= earliestDoorDeparture && (!best || doorDeparture > best.doorDeparture))
+        best = { doorDeparture, seed, k };
+    }
+    if (!changed) break;
+    prev = cur; prevBoard = board;
+  }
+  if (!best) return null;
+  // Rebuild the journey forward from the chosen origin stop.
+  const legs = [];
+  let stop = best.seed.index, k = best.k, target = -1, egressSeconds = 0;
+  outer: for (let guard = 0; guard < 64; guard++) {
+    while (k > 0 && roundsB[k].kind[stop] === INHERIT) k--;
+    const B = roundsB[k];
+    if (k <= 0 || B.kind[stop] !== BOARD) return null;
+    const trip = B.a[stop], alight = B.b[stop];
+    legs.push({ type: 'transit', tripIndex: trip, agency: trips[trip][0], route: trips[trip][3],
+      headsign: trips[trip][4], tripId: trips[trip][1], fromIndex: stop, toIndex: alight,
+      from: stops[stop][0], to: stops[alight][0], depart: B.time[stop], arrive: B.t[stop] });
+    stop = alight; k--;
+    for (let inner = 0; inner < 16; inner++) {
+      while (k > 0 && roundsL[k].kind[stop] === INHERIT) k--;
+      const L = roundsL[k], kind = L.kind[stop];
+      if (kind === TARGET) { target = stop; egressSeconds = L.w[stop]; break outer; }
+      if (kind === WALK) {
+        legs.push({ type: 'approximate-walk', fromIndex: stop, toIndex: L.a[stop],
+          from: stops[stop][0], to: stops[L.a[stop]][0], seconds: L.w[stop] });
+        stop = L.a[stop];
+        continue;
+      }
+      if (kind === BOARD) continue outer;
+      return null;
+    }
+    return null;
+  }
+  if (target < 0) return null;
+  let arrivalAtTarget = -Infinity, clock = -Infinity;
+  for (const leg of legs) {
+    if (leg.type === 'transit') clock = leg.arrive;
+    else clock += leg.seconds;
+    arrivalAtTarget = clock;
+  }
+  return { doorDeparture: best.doorDeparture, originIndex: best.seed.index,
+    accessSeconds: best.seed.accessSeconds, targetIndex: target, egressSeconds,
+    doorArrival: arrivalAtTarget + egressSeconds, legs,
+    vehicles: legs.filter(l => l.type === 'transit').length };
+}
+
+// Per-trip connection index, so a ride's intermediate stops can be listed cheaply.
+export function buildTripIndex(data) {
+  const { trips, connections } = data;
+  const offsets = new Int32Array(trips.length + 1);
+  for (const c of connections) offsets[c[4] + 1]++;
+  for (let i = 1; i <= trips.length; i++) offsets[i] += offsets[i - 1];
+  const order = new Int32Array(connections.length), fill = offsets.slice(0, trips.length);
+  for (let i = 0; i < connections.length; i++) order[fill[connections[i][4]]++] = i;
+  return { offsets, order };
+}
+// Stop indexes one trip visits from boarding to alighting, inclusive.
+export function tripStops(data, index, tripIndex, fromIndex, depart, toIndex, arrive) {
+  const out = [];
+  let on = false;
+  for (let p = index.offsets[tripIndex]; p < index.offsets[tripIndex + 1]; p++) {
+    const c = data.connections[index.order[p]];
+    if (!on && c[0] === fromIndex && c[2] === depart) { on = true; out.push(c[0]); }
+    if (on) { out.push(c[1]); if (c[1] === toIndex && c[3] === arrive) break; }
+  }
+  return out;
+}
