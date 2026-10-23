@@ -1830,7 +1830,7 @@ function viewSources() {
   return `${backHeader()}
     <div class="hero"><h1 class="title-1">Data sources</h1><p class="caption">Schedules updated ${esc(dateFormat.format(new Date(state.network.generatedAt)))}</p></div>
     <section class="section"><h2 class="label">Schedules</h2><ul class="rows">${rows}</ul></section>
-    <section class="section"><h2 class="label">Live data</h2><p class="empty">${esc(liveStatusLine())}${budget ? ` The server has used ${budget.used} of its ${budget.limit} hourly requests to 511.` : ''}</p></section>
+    <section class="section"><h2 class="label">Live data</h2><p class="empty">${esc(liveStatusLine())}${budget ? ` The server has used ${budget.used} of its ${budget.limit} hourly requests to 511.` : ''}</p>${liveCoverageHtml()}</section>
     <section class="section"><h2 class="label">Credits</h2>
       <div class="empty" style="line-height:22px">
         <p>Transit data provided by 511.org, BART, AC Transit, VTA, Caltrain, and SFMTA.</p>
@@ -1847,6 +1847,16 @@ function viewSources() {
 }
 
 
+/* Per-agency statement of what trip planning on this server uses: live predictions or schedules only. */
+function liveCoverageHtml() {
+  const verified = state.planStatus?.liveVerified;
+  if (!verified) return '';
+  const rows = state.network.agencies.map(a => {
+    const live = verified[a.id] === true; // only an explicit server confirmation counts as live
+    return `<li><span>${esc(AGENCY_SHORT[a.id] || a.name)}</span><strong>${live ? 'Live predictions where available' : 'Scheduled times only'}</strong></li>`;
+  }).join('');
+  return `<ul class="rg-coverage" aria-label="Trip planning data by agency">${rows}</ul><p class="empty">Route plans on this server say "Scheduled times, not live" whenever live data is not used.</p>`;
+}
 function formatGtfsDate(value) {
   if (!/^\d{8}$/.test(value || '')) return 'unknown';
   const d = new Date(`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T12:00:00-08:00`);
@@ -3461,7 +3471,8 @@ async function fetchPlanStatus(force = false) {
       const body = await response.json().catch(() => ({}));
       const routing = body.routing || {};
       next = { available: routing.available !== false, reason: routing.available === false ? routing.code || 'ROUTING_UNAVAILABLE' : null, access: Array.isArray(routing.access) ? routing.access : ['WALK'], walkSteps: Boolean(routing.walkSteps), maxDriveMinutes: Number.isFinite(routing.maxDriveMinutes) ? routing.maxDriveMinutes : null,
-        liveReasons: Object.fromEntries((Array.isArray(body.agencies) ? body.agencies : []).map(x => [x.id, Array.isArray(x.arrivalsReasons) ? x.arrivalsReasons : []])) };
+        liveReasons: Object.fromEntries((Array.isArray(body.agencies) ? body.agencies : []).map(x => [x.id, Array.isArray(x.arrivalsReasons) ? x.arrivalsReasons : []])),
+        liveVerified: Object.fromEntries((Array.isArray(body.agencies) ? body.agencies : []).map(x => [x.id, x.arrivals === 'verified'])) };
       if (body.search && body.search.addresses === false) geocodeBackend = 'missing';
     } else {
       response = await fetch('/api/v2/plan/status', { cache: 'no-store' });
