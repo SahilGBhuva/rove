@@ -1167,16 +1167,61 @@ function setupSheet() {
 
 const currentView = () => state.stack[state.stack.length - 1];
 
+/* Screen-reader announcement, or Rove's own voice when `speak` is true. Never both at once:
+ * a live region read by VoiceOver while Rove is speaking talks over (or ducks) the speech. */
 function announceAccess(message, speak = false) {
+  const text = String(message || '');
+  if (speak && speakOut(text)) return;
   const live = document.getElementById('roveAccessAnnouncement');
-  if (live) live.textContent = String(message || '');
-  if (speak && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(String(message || ''));
-    utterance.rate = 0.9;
-    window.speechSynthesis.speak(utterance);
-  }
+  if (!live) return;
+  // Clearing first makes screen readers repeat an identical message (for example, Repeat).
+  live.textContent = '';
+  setTimeout(() => { live.textContent = text; }, 30);
 }
+
+/* All of Rove's speech goes through RoveSpeech (public/js/speech.js). Must be called directly
+ * from a tap handler for the first utterance to be allowed on iPhone. Returns true if started. */
+const speaker = window.RoveSpeech?.speaker || null;
+function speakOut(text) {
+  const message = String(text || '').trim();
+  if (!message) return false;
+  return (speaker ? speaker.speak(message) : 'unsupported') === 'started';
+}
+function stopSpeaking() { speaker?.stop(); }
+
+const SPEECH_FAILURES = {
+  'no-start': 'Rove could not play audio. Check that the volume is up and Silent mode is off, then try again. The text is on screen for your screen reader.',
+  hidden: 'Audio pauses while Rove is in the background. Return to Rove and try again.',
+  'not-allowed': 'Your browser blocked audio. Tap the button again to allow it.',
+  'audio-busy': 'Another app is using audio. Try again in a moment.'
+};
+function renderSpeechBar(status) {
+  const bar = document.getElementById('speechBar');
+  if (!bar) return;
+  const { state, reason } = status;
+  if (state === 'starting' || state === 'speaking') {
+    bar.hidden = false;
+    bar.dataset.state = 'speaking';
+    bar.innerHTML = `<span class="speech-bar-wave" aria-hidden="true"><i></i><i></i><i></i></span><span class="speech-bar-text">Speaking</span><button type="button" class="speech-bar-stop" data-speech-stop>Stop speaking</button>`;
+    return;
+  }
+  if (state === 'failed' || state === 'unsupported') {
+    const message = state === 'unsupported' ? 'This browser cannot speak. Your screen reader can read the text on screen.' : (SPEECH_FAILURES[reason] || 'Rove could not play audio. The text is on screen for your screen reader.');
+    bar.hidden = false;
+    bar.dataset.state = 'failed';
+    bar.innerHTML = `<span class="speech-bar-text">${esc(message)}</span><button type="button" class="speech-bar-stop" data-speech-dismiss>Dismiss</button>`;
+    // The words that could not be spoken still reach screen-reader users.
+    announceAccess(`${message} ${status.text || ''}`);
+    return;
+  }
+  bar.hidden = true;
+  bar.innerHTML = '';
+}
+speaker?.onChange(renderSpeechBar);
+document.addEventListener('click', event => {
+  if (event.target.closest('[data-speech-stop]')) { stopSpeaking(); announceAccess('Speech stopped.'); }
+  if (event.target.closest('[data-speech-dismiss]')) { const bar = document.getElementById('speechBar'); if (bar) { bar.hidden = true; bar.innerHTML = ''; } }
+});
 function audioTripSummary(it) {
   const pieces = [durationLabel(it.durationSeconds || (new Date(it.endTime)-new Date(it.startTime))/1000), `${it.transfers || 0} transfers`];
   if (Number.isFinite(it.walkMeters)) pieces.push(`${Math.round(it.walkMeters)} metres walking`);
@@ -1188,8 +1233,20 @@ function audioTripSummary(it) {
   }
   return pieces.join(' ');
 }
+/* Short, comparable summary for choosing between routes ("Route 1: 52 minutes. Muni N train, then
+ * BART Blue line. 1 transfer..."). Full stop-by-stop detail is a separate, per-route action. */
+function transitLineNames(it) {
+  return (it.legs || []).filter(l => l.mode === 'TRANSIT' && !l.staySeated).map(l => window.RoveJourneyGuide ? RoveJourneyGuide.vehicle(l).name : legInfo(l).badge);
+}
+function routeChoiceSpeech(it, n) {
+  const minutes = Math.round((it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000) / 60);
+  const lines = transitLineNames(it);
+  const transfers = Math.max(0, lines.length - 1);
+  const walk = Number.isFinite(it.walkMeters) && it.walkMeters >= 50 ? ` About ${Math.round(it.walkMeters / 50) * 50} metres walking.` : '';
+  const live = it.legs.some(l => l.mode === 'TRANSIT' && l.realtime);
+  return `Route ${n}: ${durationLabel(minutes * 60)}. ${lines.length ? lines.join(', then ') : 'Walking only'}. ${transfers ? plural(transfers, 'transfer') : 'No transfers'}.${walk} Leaves ${clock(new Date(it.startTime))}, arrives ${clock(new Date(it.endTime))}. ${live ? 'Includes live times.' : 'Scheduled times, not live.'}${it.hasCancellation ? ' Warning: includes a canceled trip.' : ''}`;
+}
 function speakText(text) {
-  if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) { announceAccess('Spoken instructions are not supported in this browser.'); return; }
   announceAccess(text, true);
 }
 function focusViewHeading() {
@@ -1750,10 +1807,8 @@ function viewAccess() {
 
 function readNavInstruction() {
  const step = state.nav?.steps[state.nav.i];
- if (!step || !('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) { toast('Speech is not available in this browser.'); return; }
- window.speechSynthesis.cancel();
- const speech = new SpeechSynthesisUtterance(`${step.title}. ${step.meta || ''}. Confirm boarding and safe paths independently.`);
- speech.rate = 0.9; window.speechSynthesis.speak(speech);
+ if (!step) return;
+ speakText(`${step.title}. ${step.meta || ''}. Confirm boarding and safe paths independently.`);
 }
 function viewSources() {
   const rows = state.network.agencies.map(a => `<li><div class="row"><span class="dot" style="background:${esc(a.color)}"></span><span class="row-main"><span class="row-title">${esc(a.name)}</span><span class="row-meta">${plural(a.routes.length, 'line')} · Schedule valid ${esc(formatGtfsDate(a.feed?.start))} to ${esc(formatGtfsDate(a.feed?.end))}</span></span></div></li>`).join('');
@@ -2322,20 +2377,13 @@ async function navReroute(nav) {
 /* Spoken directions are off by default, and announce only grounded OTP steps. */
 function speakNav(text) {
   const nav = state.nav;
-  if (!nav?.voice || !nav.speechAllowed || !('speechSynthesis' in window) ||
-      !('SpeechSynthesisUtterance' in window) || document.hidden) return;
-  try {
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95;
-    utterance.lang = 'en-US';
-    window.speechSynthesis.speak(utterance);
-  } catch { nav.voice = false; }
+  if (!nav?.voice || !nav.speechAllowed || document.hidden) return;
+  speakOut(text);
 }
 function toggleNavVoice() {
   const nav = state.nav;
   if (!nav) return;
-  if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
+  if (!speaker?.supported()) {
     nav.status = 'Voice guidance is not supported by this browser.';
     render();
     return;
@@ -2343,7 +2391,7 @@ function toggleNavVoice() {
   nav.voice = !nav.voice;
   nav.speechAllowed = nav.voice;
   nav.spokenKey = null;
-  if (!nav.voice) window.speechSynthesis.cancel();
+  if (!nav.voice) stopSpeaking();
   else {
     const next = nav.maneuver;
     if (next?.step && next.metersAhead <= 350) {
@@ -2419,7 +2467,7 @@ async function startNavigation(index) {
 
 function releaseWakeLock() {
   stopNavOrientation();
-  try { window.speechSynthesis?.cancel(); } catch { /* speech unavailable */ }
+  stopSpeaking();
   try { state.wakeLock?.release(); } catch { /* already released */ }
   state.wakeLock = null;
   const nav = state.nav;
@@ -2451,7 +2499,7 @@ function viewNavigate() {
       <button type="button" class="button secondary" data-action="nav-bearing" aria-pressed="${nav.headingUp}">${nav.headingUp ? 'Heading up' : 'North up'}</button>
       <button type="button" class="button secondary" data-action="nav-overview">Overview</button>
       <button type="button" class="button secondary" data-action="nav-compass" aria-pressed="${nav.compassEnabled}">${nav.compassEnabled ? 'Compass on' : 'Use phone compass'}</button>
-      <button type="button" class="button secondary" data-action="nav-voice" aria-pressed="${nav.voice}" ${!('speechSynthesis' in window) ? 'disabled' : ''}>${nav.voice ? 'Mute voice' : 'Voice guidance'}</button>
+      <button type="button" class="button secondary" data-action="nav-voice" aria-pressed="${nav.voice}" ${!speaker?.supported() ? 'disabled' : ''}>${nav.voice ? 'Mute voice' : 'Voice guidance'}</button>
       <button type="button" class="button secondary" data-action="nav-replan" ${!nav.fix || nav.rerouting ? 'disabled' : ''}>${nav.rerouting ? 'Recalculating…' : 'New route'}</button>
     </div></div>`;
   if (step.type === 'arrive') {
@@ -2556,9 +2604,14 @@ function handleAction(el) {
     case 'access-nearby': pushView({name:'accessNearby'},{detent:'full'}); if(!state.userLocation) locate(); break;
     case 'access-refresh-location': locate(); break;
     case 'access-select-stop': { const place=placeFor(el.dataset.agency,el.dataset.stop); if(place){announceAccess('Selected '+place.s.n+'. Confirm the physical stop and direction before boarding.'); openStop(el.dataset.agency,el.dataset.stop);} break; }
-    case 'access-stop-speech': window.speechSynthesis?.cancel(); announceAccess('Speech stopped.'); break;
+    case 'access-stop-speech': stopSpeaking(); announceAccess('Speech stopped.'); break;
     case 'access-dictate': { if (currentView().name !== 'plan') openPlan({}); voiceInputStart(); break; }
-    case 'access-all-routes': { const its=state.plan.results?.itineraries || []; speakText(its.length ? its.slice(0,3).map((it,i)=>`Option ${i+1}. ${audioTripSummary(it)}`).join(' ') : 'No routes are available.'); break; }
+    case 'access-all-routes': {
+      const order = sortedItineraryIndexes().slice(0, 3);
+      const its = state.plan.results?.itineraries || [];
+      speakText(order.length ? `${plural(order.length, 'route')}. ${order.map((i, n) => routeChoiceSpeech(its[i], n + 1)).join(' ')} Choose Listen on a route for its stops.` : 'No routes are available.');
+      break;
+    }
     case 'access-route': { const it = state.plan.results?.itineraries?.[Number(el.dataset.index)]; if (it) speakText(audioTripSummary(it)); break; }
     case 'access-departures': {
       const place = placeFor(el.dataset.agency,el.dataset.stop);
@@ -2568,7 +2621,7 @@ function handleAction(el) {
       speakText(`Live departures for ${place.s.n}. ${messages.join(' ')}`);
       break;
     }
-    case 'access-demo': { if (!('speechSynthesis' in window)) { toast('Speech is not available in this browser.'); break; } window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance('Example: Board the 38 R bus toward downtown at the next stop. Check the vehicle sign before boarding.'); u.rate = 0.9; window.speechSynthesis.speak(u); break; }
+    case 'access-demo': speakText('Example: Board the 38 R bus toward downtown at the next stop. Check the vehicle sign before boarding.'); break;
     case 'access': clearSearchField(); pushView({ name: 'access' }, { detent: 'full' }); break;
     case 'access-toggle': announceAccess('Accessible navigation is always enabled.'); break;
     case 'nav-read': readNavInstruction(); break;
@@ -2825,7 +2878,7 @@ function bindChrome() {
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { try { window.speechSynthesis?.cancel(); } catch { /* unavailable */ } }
+    if (document.hidden) stopSpeaking();
     else {
       loadRealtime();
       if (state.nav) {
