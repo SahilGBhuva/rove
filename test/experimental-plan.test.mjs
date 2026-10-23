@@ -91,3 +91,13 @@ test('broader stop search finds a late Sunnyvale to Berkeley connection',()=>{
  assert.equal(r.status,200);
  assert.ok(r.body.itineraries.length>0,'should find a transit route beyond the four nearest stops');
 });
+
+
+test('Caltrain GTFS type 2 is rendered as rail rather than bus',()=>{
+  const request={fromLat:37.3688,fromLon:-122.0363,toLat:37.768,toLon:-122.3877,time:'2026-10-23T08:15:00-07:00'};
+  const result=planExperimental(request,new Date('2026-10-22T23:35:00-07:00'));
+  assert.equal(result.status,200);
+  const railLegs=result.body.itineraries.flatMap(it=>it.legs.filter(l=>l.agency?.id==='caltrain'));
+  assert.ok(railLegs.length,'test journey should contain a Caltrain leg');
+  assert.ok(railLegs.every(l=>l.mode==='RAIL'),'Caltrain must not be identified as a bus');
+});

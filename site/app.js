@@ -469,39 +469,21 @@ const SATELLITE_STYLE = {
   glyphs: OPENFREEMAP_GLYPHS,
   sources: {
     imagery: { type: 'raster', tileSize: 256, maxzoom: 19, tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], attribution: 'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community' },
-    labels: { type: 'raster', tileSize: 192, maxzoom: 19, tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], attribution: 'Labels: Esri, HERE, Garmin, © OpenStreetMap contributors' }
+    labels: { type: 'raster', tileSize: 256, maxzoom: 19, tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], attribution: 'Labels: Esri, HERE, Garmin, © OpenStreetMap contributors' }
   },
   layers: [
-    { id: 'imagery', type: 'raster', source: 'imagery', paint: { 'raster-saturation': 0.05, 'raster-brightness-min': 0.05, 'raster-brightness-max': 1, 'raster-contrast': 0.08, 'raster-fade-duration': 180 } },
-    { id: 'reference-labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 1, 'raster-contrast': 0.25, 'raster-fade-duration': 180 } }
+    { id: 'imagery', type: 'raster', source: 'imagery', paint: { 'raster-saturation': -0.13, 'raster-brightness-max': 0.91, 'raster-contrast': 0.025 } },
+    { id: 'reference-labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 0.92 } }
   ]
 };
-const fallbackStyle = dark => ({
-  version: 8,
-  glyphs: OPENFREEMAP_GLYPHS,
-  sources: {
-    // Independent raster fallback when the primary vector-style endpoint is unavailable.
-    // OSM tile usage policy applies; this is a low-volume demo fallback, not a production CDN.
-    streets: { type: 'raster', tileSize: 256, maxzoom: 19,
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      attribution: '© OpenStreetMap contributors' }
-  },
-  layers: [
-    { id: 'background', type: 'background', paint: { 'background-color': dark ? '#15171a' : '#f4f1ea' } },
-    { id: 'streets', type: 'raster', source: 'streets', paint: {
-      'raster-opacity': dark ? 0.6 : 1,
-      'raster-saturation': dark ? -0.75 : -0.12,
-      'raster-brightness-max': dark ? 0.72 : 1
-    } }
-  ]
-});
+const fallbackStyle = dark => ({ version: 8, glyphs: OPENFREEMAP_GLYPHS, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': dark ? '#15171a' : '#f4f1ea' } }] });
 
 /* Map palettes for Rove's three styles. `casing` outlines lines and stops so they read over any
  * basemap; satellite uses dark casings and light labels because imagery is dark and busy. */
 const THEME = {
   light: { brightCasing: '#8a7d4a', surface: '#ffffff', ink: '#111214', bus: '#7b8088', faded: '#b3b7bd', stopStroke: '#111214', journeyWalk: '#2f6bff', journeyDrive: '#4b5260', halo: '#ffffff', label: '#111214', casing: '#ffffff', busCasingOpacity: 0.75 },
   dark: { brightCasing: '#16171a', surface: '#16171a', ink: '#f2f1ee', bus: '#8b9099', faded: '#43464c', stopStroke: '#f2f1ee', journeyWalk: '#6b96ff', journeyDrive: '#c3c6cc', halo: '#16171a', label: '#f2f1ee', casing: '#0f1012', busCasingOpacity: 0.7 },
-  satellite: { brightCasing: '#0d0f12', surface: '#ffffff', ink: '#111214', bus: '#c9d0d5', faded: '#8c979d', stopStroke: '#111214', journeyWalk: '#8fb2ff', journeyDrive: '#ffffff', halo: 'rgba(8, 10, 14, 0.88)', label: '#ffffff', casing: '#101b22', busCasingOpacity: 0.9 }
+  satellite: { brightCasing: '#0d0f12', surface: '#ffffff', ink: '#111214', bus: '#e6e8eb', faded: '#9aa0a8', stopStroke: '#111214', journeyWalk: '#8fb2ff', journeyDrive: '#ffffff', halo: 'rgba(8, 10, 14, 0.88)', label: '#ffffff', casing: '#0b0d10', busCasingOpacity: 0.8 }
 };
 const theme = () => THEME[state.mapMode === 'dark' ? 'dark' : state.mapMode === 'satellite' ? 'satellite' : 'light'];
 
@@ -591,7 +573,7 @@ async function fetchStyle(mode) {
     if (!response.ok) throw new Error(`Style returned ${response.status}`);
     return restyleBasemap(await response.json(), mode === 'dark');
   } catch (error) {
-    console.warn('Primary basemap unavailable; using raster fallback:', error.message);
+    console.warn('Basemap unavailable, using a plain background:', error.message);
     return fallbackStyle(mode === 'dark');
   }
 }
@@ -630,7 +612,7 @@ function stopFeatures() {
  * Bay Area reads at a glance; bus routes fade in from zoom 10, which is a city or neighborhood
  * view, and bus stops, labels and vehicles follow as the map gets closer. A selected line is
  * drawn at every zoom. The Bus lines switch in the layers panel says so ("Appear as you zoom in to a city"). */
-const MAP_ZOOM = Object.freeze({ busRoutes: 10, busStops: 14.5, busStopLabels: 16.3, busVehicles: 12.5, lightRail: 9.5, lightStops: 13, lightLabels: 14, heavyStops: 9.5, heavyLabels: 11.5, railVehicles: 10.5 });
+const MAP_ZOOM = Object.freeze({ busRoutes: 10, busStops: 14.5, busStopLabels: 16.3, busVehicles: 11.5, lightRail: 9.5, lightStops: 13, lightLabels: 14, heavyStops: 9.5, heavyLabels: 11.5, railVehicles: 10.5 });
 const BUS_OPACITY = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.5, 12, 0.64, 14, 0.82];
 // Night mode uses a quieter network overview. A selected bus line keeps its full agency color.
 const NIGHT_BUS_OPACITY = ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.28, 12, 0.38, 14, 0.48];
@@ -668,8 +650,8 @@ function addTransitLayers() {
   map.addLayer({ ...line, id: 'tr-light', minzoom: MAP_ZOOM.lightRail, filter: ['==', ['get', 'cat'], 'light'], paint: { 'line-color': ['get', 'lc'], 'line-width': lightWidth, 'line-opacity': 0.85 } }, before);
   map.addLayer({ ...line, id: 'tr-heavy-casing', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.casing], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 8], 'line-opacity': 0.9 } }, before);
   map.addLayer({ ...line, id: 'tr-heavy', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['get', 'lc'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.6, 12, 3, 16, 5], 'line-opacity': 0.94 } }, before);
-  map.addLayer({ ...line, id: 'tr-selected-casing', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.casing], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4.5, 12, 7, 16, 9] } }, before);
-  map.addLayer({ ...line, id: 'tr-selected', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['get', 'lc'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.8, 12, 4.5, 16, 6] } }, before);
+  map.addLayer({ ...line, id: 'tr-selected-casing', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.casing], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 5, 12, 8, 16, 11] } }, before);
+  map.addLayer({ ...line, id: 'tr-selected', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['get', 'lc'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 7] } }, before);
 
   const jl = { type: 'line', source: 'journey', layout: { 'line-cap': 'round', 'line-join': 'round' } };
   const jOpacity = ['case', ['==', ['get', 'dim'], 1], 0.35, 1];
@@ -679,9 +661,8 @@ function addTransitLayers() {
   map.addLayer({ ...jl, id: 'journey-approx', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 1]], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': ['get', 'stroke'], 'line-width': jWidth(4, 6), 'line-opacity': jOpacity, 'line-dasharray': [2, 1.5] } });
   map.addLayer({ ...jl, id: 'journey-drive-casing', filter: ['==', ['get', 'mode'], 'CAR'], paint: { 'line-color': t.casing, 'line-width': jWidth(8, 11), 'line-opacity': jOpacity } });
   map.addLayer({ ...jl, id: 'journey-drive', filter: ['==', ['get', 'mode'], 'CAR'], paint: { 'line-color': t.journeyDrive || t.ink, 'line-width': jWidth(4.5, 7), 'line-opacity': jOpacity } });
-  map.addLayer({ ...jl, id: 'journey-walk-casing', filter: ['all', ['==', ['get', 'mode'], 'WALK'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': t.casing, 'line-width': jWidth(6, 8), 'line-opacity': ['case', ['==', ['get', 'dim'], 1], 0.2, state.mapMode === 'standard' ? 0 : 0.6], 'line-dasharray': [0.2, 1.2] } });
-  map.addLayer({ ...jl, id: 'journey-walk', filter: ['all', ['==', ['get', 'mode'], 'WALK'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(3.5, 5), 'line-opacity': jOpacity, 'line-dasharray': [0.2, 2] } });
-  map.addLayer({ ...jl, id: 'journey-walk-estimate', filter: ['all', ['==', ['get', 'mode'], 'WALK'], ['==', ['get', 'approx'], 1]], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(2, 3), 'line-opacity': ['case', ['==', ['get', 'dim'], 1], 0.2, 0.48], 'line-dasharray': [1, 3] } });
+  map.addLayer({ ...jl, id: 'journey-walk-casing', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': t.casing, 'line-width': jWidth(6, 8), 'line-opacity': ['case', ['==', ['get', 'dim'], 1], 0.2, state.mapMode === 'standard' ? 0 : 0.6], 'line-dasharray': [0.2, 1.2] } });
+  map.addLayer({ ...jl, id: 'journey-walk', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(3.5, 5), 'line-opacity': jOpacity, 'line-dasharray': [0.2, 2] } });
   map.addLayer({ id: 'journey-stops', type: 'circle', source: 'journey-points', paint: { 'circle-radius': ['case', ['==', ['get', 'kind'], 'transfer'], 7, 5.5], 'circle-color': t.surface, 'circle-stroke-color': ['case', ['==', ['get', 'kind'], 'transfer'], t.ink, ['get', 'color']], 'circle-stroke-width': 3 } });
   map.addLayer({ id: 'journey-stop-labels', type: 'symbol', source: 'journey-point-labels', minzoom: 10.5, layout: { 'text-field': ['get', 'name'], 'text-font': state.glyphFont, 'text-size': 12.5, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': t.label, 'text-halo-color': t.halo, 'text-halo-width': 1.8 } });
 
@@ -715,6 +696,13 @@ function addTransitLayers() {
   });
   map.addLayer({ id: 'veh-rail', type: 'circle', source: 'vehicles', minzoom: MAP_ZOOM.railVehicles, filter: ['in', ['get', 'cat'], ['literal', ['heavy', 'light']]], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.railVehicles, 4, 15, 7]) });
   map.addLayer({ id: 'veh-bus', type: 'circle', source: 'vehicles', minzoom: MAP_ZOOM.busVehicles, filter: ['==', ['get', 'cat'], 'bus'], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busVehicles, 3.2, 15, 5.5, 17, 7]) });
+  // Readable route numbers on moving vehicles, with collision avoidance at city zoom.
+  map.addLayer({ id: 'veh-bus-badges', type: 'symbol', source: 'vehicle-labels', minzoom: 13,
+    filter: ['==', ['get', 'cat'], 'bus'],
+    layout: { 'text-field': ['get', 'badge'], 'text-font': state.glyphFont, 'text-size': 11,
+      'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-optional': true,
+      'text-allow-overlap': false },
+    paint: { 'text-color': t.label, 'text-halo-color': t.halo, 'text-halo-width': 2 } });
   map.addLayer({ id: 'veh-selected', type: 'circle', source: 'vehicles', filter: ['==', ['get', 'key'], '__none__'], paint: vehiclePaint(['interpolate', ['linear'], ['zoom'], 9, 5, 15, 8]) });
   map.addLayer({ id: 'veh-label', type: 'symbol', source: 'vehicle-labels', minzoom: 15.5, filter: ['==', ['get', 'key'], '__none__'], layout: { 'text-field': ['get', 'badge'], 'text-font': state.glyphFont, 'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-optional': true }, paint: labelPaint });
 
@@ -726,9 +714,9 @@ function addTransitLayers() {
 
 const ROUTE_LAYERS = ['tr-bus-casing', 'tr-bus', 'tr-light-casing', 'tr-light', 'tr-heavy-casing', 'tr-heavy'];
 const STOP_LAYERS = ['st-bus', 'st-light', 'st-heavy', 'st-platform', 'st-heavy-label', 'st-light-label', 'st-bus-label'];
-const VEHICLE_LAYERS = ['veh-rail', 'veh-bus'];
+const VEHICLE_LAYERS = ['veh-rail', 'veh-bus', 'veh-bus-badges'];
 const ROUTE_LAYER_CAT = { 'tr-bus-casing': 'bus', 'tr-bus': 'bus', 'tr-light-casing': 'light', 'tr-light': 'light', 'tr-heavy-casing': 'heavy', 'tr-heavy': 'heavy' };
-const LAYER_KIND = { 'st-bus': 'bus', 'st-bus-label': 'bus', 'veh-bus': 'bus' };
+const LAYER_KIND = { 'st-bus': 'bus', 'st-bus-label': 'bus', 'veh-bus': 'bus', 'veh-bus-badges': 'bus' };
 
 /* Applies agency visibility, the Rail and Bus switches, line selection, and journey focus to every layer. */
 function applyMapState() {
@@ -749,11 +737,11 @@ function applyMapState() {
   }
 
   map.setPaintProperty('tr-bus', 'line-color', dimmed ? t.faded : ['get', 'lc']);
-  map.setPaintProperty('tr-bus', 'line-opacity', dimmed ? ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.10] : (state.mapMode === 'dark' ? NIGHT_BUS_OPACITY : BUS_OPACITY));
+  map.setPaintProperty('tr-bus', 'line-opacity', dimmed ? ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, 0.22] : (state.mapMode === 'dark' ? NIGHT_BUS_OPACITY : BUS_OPACITY));
   map.setPaintProperty('tr-bus-casing', 'line-opacity', dimmed ? 0 : ['interpolate', ['linear'], ['zoom'], MAP_ZOOM.busRoutes, 0, MAP_ZOOM.busRoutes + 0.6, t.busCasingOpacity]);
   for (const id of ['tr-light', 'tr-heavy']) {
     map.setPaintProperty(id, 'line-color', dimmed ? t.faded : ['get', 'lc']);
-    map.setPaintProperty(id, 'line-opacity', dimmed ? (journeyActive ? 0.13 : 0.16) : (id === 'tr-light' ? 0.85 : 0.94));
+    map.setPaintProperty(id, 'line-opacity', dimmed ? (journeyActive ? 0.22 : 0.3) : (id === 'tr-light' ? 0.85 : 0.94));
   }
   map.setPaintProperty('tr-heavy-casing', 'line-opacity', dimmed ? 0 : 0.9);
   map.setPaintProperty('tr-light-casing', 'line-opacity', dimmed ? 0 : 0.8);
@@ -787,7 +775,7 @@ function applyMapState() {
   for (const id of VEHICLE_LAYERS) {
     const kind = LAYER_KIND[id] || 'rail';
     map.setLayoutProperty(id, 'visibility', showVehicles && !focusKey && kindShown(kind) ? 'visible' : 'none');
-    map.setFilter(id, ['all', id === 'veh-bus' ? ['==', ['get', 'cat'], 'bus'] : ['in', ['get', 'cat'], ['literal', ['heavy', 'light']]], inAgencies]);
+    map.setFilter(id, ['all', kind === 'bus' ? ['==', ['get', 'cat'], 'bus'] : ['in', ['get', 'cat'], ['literal', ['heavy', 'light']]], inAgencies]);
   }
   const selectedVehicles = focusKey ? ['==', ['get', 'key'], focusKey] : ['==', ['get', 'key'], '__none__'];
   map.setFilter('veh-selected', selectedVehicles);
@@ -819,7 +807,7 @@ function revealSelectedRoute(key) {
   const color = mapLineColor(info.color);
   const casing = luminance(color) > 0.55 ? theme().brightCasing : theme().casing;
   const start = performance.now();
-  const duration = 650;
+  const duration = 900;
   const step = now => {
     if (!map.getLayer('tr-selected')) return;
     const p = Math.min(1, (now - start) / duration);
@@ -834,7 +822,7 @@ function revealSelectedRoute(key) {
 }
 
 /* A new trip fades onto the map instead of appearing all at once. */
-const JOURNEY_LINE_LAYERS = ['journey-casing', 'journey-transit', 'journey-approx', 'journey-drive-casing', 'journey-drive', 'journey-walk', 'journey-walk-estimate'];
+const JOURNEY_LINE_LAYERS = ['journey-casing', 'journey-transit', 'journey-approx', 'journey-drive-casing', 'journey-drive', 'journey-walk'];
 function revealJourney() {
   const map = state.map;
   if (!map?.getLayer('journey-transit') || prefersReducedMotion()) return;
@@ -856,6 +844,8 @@ function highlightPlace(place) {
   map.setFilter('st-place', place ? ['all', ['==', ['get', 'agency'], place.a.id], ['==', ['get', 'id'], place.s.id]] : ['==', ['get', 'id'], '__none__']);
 }
 
+let lastVehicleData = null;
+let vehicleMotionFrame = null;
 function renderVehicles() {
   const source = state.map?.getSource('vehicles');
   if (!source) return;
@@ -870,8 +860,27 @@ function renderVehicles() {
     };
   });
   const data = { type: 'FeatureCollection', features };
-  source.setData(data);
-  state.map.getSource('vehicle-labels')?.setData(data);
+  if (vehicleMotionFrame != null) cancelAnimationFrame(vehicleMotionFrame);
+  const previous = lastVehicleData;
+  lastVehicleData = data;
+  const map = state.map;
+  const paint = frame => {
+    if (state.map !== map || !map.getSource('vehicles')) return;
+    map.getSource('vehicles').setData(frame);
+    map.getSource('vehicle-labels')?.setData(frame);
+  };
+  const motion = window.RoveVehicleMotion;
+  const animate = previous?.features?.length && data.features.length && motion &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches && !document.hidden;
+  if (!animate) { paint(data); return; }
+  const start = performance.now();
+  const tick = now => {
+    const progress = Math.min(1, (now - start) / 8000);
+    paint(motion.interpolateVehicles(previous, data, progress));
+    if (progress < 1 && state.map === map && !document.hidden) vehicleMotionFrame = requestAnimationFrame(tick);
+    else vehicleMotionFrame = null;
+  };
+  vehicleMotionFrame = requestAnimationFrame(tick);
 }
 
 function journeyFeatures(itinerary) {
@@ -884,7 +893,7 @@ function journeyFeatures(itinerary) {
     if (coords.length < 2) return null;
     const color = isTransit(leg) ? mapLineColor(legInfo(leg).color) : theme().ink;
     const casing = luminance(color) > 0.55 ? theme().brightCasing : theme().surface;
-    return { type: 'Feature', properties: { mode: leg.mode, color, casing, stroke: luminance(color) > 0.55 ? theme().brightCasing : color, legIndex, approx: (isTransit(leg) ? legShapeMissing(leg) : (leg.mode === 'WALK' && leg.geometry?.coordinates?.length < 2)) ? 1 : 0, dim: focus != null && focus !== legIndex ? 1 : 0, focus: focus === legIndex ? 1 : 0 }, geometry: { type: 'LineString', coordinates: coords } };
+    return { type: 'Feature', properties: { mode: leg.mode, color, casing, stroke: luminance(color) > 0.55 ? theme().brightCasing : color, legIndex, approx: legShapeMissing(leg) ? 1 : 0, dim: focus != null && focus !== legIndex ? 1 : 0, focus: focus === legIndex ? 1 : 0 }, geometry: { type: 'LineString', coordinates: coords } };
   }).filter(Boolean);
   return { type: 'FeatureCollection', features };
 }
@@ -996,7 +1005,7 @@ function showVehiclePopup(feature) {
   const html = `<div class="vehicle-pop">${badge}<strong>${esc(info ? info.title : `${AGENCY_SHORT[p.agency] || ''} ${p.badge}`)}</strong>
     <div class="row-meta">${p.headsign ? `To ${esc(p.headsign)} · ` : ''}${esc(AGENCY_SHORT[p.agency] || '')}${p.vehicle ? ` · Vehicle ${esc(p.vehicle)}` : ''}</div>
     <div class="row-meta ${p.stale ? 'status-stale' : ''}">${p.stale ? 'Location may be out of date. ' : ''}${esc(ageLabel(Number(p.ts)))}</div>
-    ${info ? `<button class="text-button" data-popup-route="${esc(info.key)}">View line</button>` : ''}</div>`;
+    ${info ? `<button class="text-button" data-popup-route="${esc(info.key)}">View line</button>` : ''}<div class="caption">Vehicle location data provided by <a href="https://511.org" target="_blank" rel="noopener noreferrer">511.org</a></div></div>`;
   const popup = new maplibregl.Popup({ offset: 12, maxWidth: '280px' }).setLngLat(feature.geometry.coordinates).setHTML(html).addTo(state.map);
   popup.getElement().querySelector('[data-popup-route]')?.addEventListener('click', ev => { popup.remove(); openRoute(ev.currentTarget.dataset.popupRoute); });
 }
@@ -1027,10 +1036,10 @@ function measureSafeArea() {
 const DETENTS = ['peek', 'half', 'full'];
 
 function detentHeight(name) {
-  const vh = Math.max(320, Math.round(window.visualViewport?.height || window.innerHeight));
+  const vh = window.innerHeight;
   if (name === 'peek') return Math.round(148 + safeArea.bottom);
   if (name === 'half') return Math.round(Math.max(vh * 0.5, Math.min(360, vh - 120)));
-  return Math.max(detentHeight('peek'), Math.round(vh - 56 - safeArea.top));
+  return Math.round(vh - 56 - safeArea.top);
 }
 
 function currentSheetHeight() { return isMobile() ? detentHeight(state.detent) : 0; }
@@ -1048,7 +1057,7 @@ function setDetent(name) {
 
 function applySheetHeight(px) {
   document.documentElement.style.setProperty('--sheet-h', `${px}px`);
-  $('#mapControls').classList.toggle('hidden-by-sheet', isMobile() && px > (window.visualViewport?.height || window.innerHeight) * 0.62);
+  $('#mapControls').classList.toggle('hidden-by-sheet', isMobile() && px > window.innerHeight * 0.62);
 }
 
 /* Sheet heights on phones. Peek shows the search field (or the title of a detail view),
@@ -1141,7 +1150,7 @@ function setupSheet() {
     else setDetent(DETENTS[(i + 1) % 3]);
   });
   let resizeTimer, wasMobile = isMobile();
-  const onViewportResize = () => {
+  window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       measureSafeArea();
@@ -1149,9 +1158,7 @@ function setupSheet() {
       // Re-render only when crossing the phone breakpoint; an on-screen keyboard also resizes the window.
       if (wasMobile !== isMobile()) { wasMobile = isMobile(); if (!document.activeElement?.matches('input, select')) render(); }
     }, 120);
-  };
-  window.addEventListener('resize', onViewportResize);
-  window.visualViewport?.addEventListener('resize', onViewportResize);
+  });
 }
 
 /* ======================================================================
@@ -1160,6 +1167,37 @@ function setupSheet() {
 
 const currentView = () => state.stack[state.stack.length - 1];
 
+function announceAccess(message, speak = false) {
+  const live = document.getElementById('roveAccessAnnouncement');
+  if (live) live.textContent = String(message || '');
+  if (speak && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(String(message || ''));
+    utterance.rate = 0.9;
+    window.speechSynthesis.speak(utterance);
+  }
+}
+function audioTripSummary(it) {
+  const pieces = [durationLabel(it.durationSeconds || (new Date(it.endTime)-new Date(it.startTime))/1000), `${it.transfers || 0} transfers`];
+  if (Number.isFinite(it.walkMeters)) pieces.push(`${Math.round(it.walkMeters)} metres walking`);
+  pieces.push(`Depart ${clock(new Date(it.startTime))}, arrive ${clock(new Date(it.endTime))}.`);
+  for (const leg of it.legs || []) {
+    if (leg.mode === 'WALK') pieces.push(`Walk to ${leg.to?.name || 'the next stop'}. Walking directions may be approximate.`);
+    else if (leg.mode === 'CAR') pieces.push(`Drive to ${leg.to?.name || 'transit'}.`);
+    else pieces.push(`Board ${legInfo(leg).badge}${leg.headsign ? ' toward '+displayName(leg.headsign) : ''} at ${leg.from?.name || 'the stop'}. Exit at ${leg.to?.name || 'the destination'}.`);
+  }
+  return pieces.join(' ');
+}
+function speakText(text) {
+  if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) { announceAccess('Spoken instructions are not supported in this browser.'); return; }
+  announceAccess(text, true);
+}
+function focusViewHeading() {
+  if (!document.body.classList.contains('rove-accessible')) return;
+  const target = document.querySelector('#panelBody h1, #panelBody h2');
+  if (target) { target.setAttribute('tabindex','-1'); target.focus({preventScroll:true}); }
+  else document.getElementById('panelBody')?.focus({preventScroll:true});
+}
 function pushView(view, { detent } = {}) {
   const top = currentView();
   if (top && top.name === view.name && JSON.stringify(top) === JSON.stringify(view)) { render(); return; }
@@ -1169,6 +1207,7 @@ function pushView(view, { detent } = {}) {
   render();
   if (isMobile() && detent) setDetent(detent);
   $('#panelBody').scrollTop = 0;
+  focusViewHeading();
 }
 
 function popView() {
@@ -1177,6 +1216,7 @@ function popView() {
   if (top.name === 'search' && !state.searchQuery) state.stack.pop();
   onLeaveFocus();
   render();
+  focusViewHeading();
 }
 
 function goHome() {
@@ -1202,7 +1242,7 @@ function onLeaveFocus() {
 function render() {
   const view = currentView();
   const body = $('#panelBody');
-  const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources, place: viewPlace };
+  const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources, impact: viewImpact, access: viewAccess, accessNearby: viewAccessNearby, place: viewPlace };
   // Keep the caret where it was if a field inside the panel has focus while the view refreshes.
   const active = document.activeElement;
   const keep = active && body.contains(active) && active.id && active.tagName === 'INPUT' && !(active.dataset.planField && !state.plan.focus) ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
@@ -1279,36 +1319,17 @@ function alertsHtml(alerts, max = 2) {
 
 /* ---------- Home ---------- */
 function viewHome() {
-  const parts = [];
-  const places = savedPlaces();
-  const home = places.find(p => p.label === 'Home'), work = places.find(p => p.label === 'Work');
-  const quick = [`<button type="button" class="quick" data-action="plan">${MODE_ICONS.directions}<span>Directions</span></button>`];
-  if (home) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Home">${MODE_ICONS.home}<span>Home</span></button>`);
-  if (work) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Work">${MODE_ICONS.work}<span>Work</span></button>`);
-  if (!state.userLocation) quick.push(`<button type="button" class="quick" data-action="locate"><svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" stroke="none" d="M10 2.5 16.5 16 10 12.8 3.5 16Z" transform="rotate(45 10 10)"/></svg><span>Near me</span></button>`);
-  parts.push(`<div class="home-heading"><span class="home-eyebrow">BAY AREA / TRANSIT</span><h1>Go somewhere.</h1><p>Every line. One map.</p></div><div class="quick-row">${quick.join('')}</div>`);
-
-  const others = places.filter(p => p.label !== 'Home' && p.label !== 'Work');
-  if (others.length) {
-    parts.push(`<section class="section"><h2 class="label">Your places</h2><ul class="rows">${others.map(p => placeOptionRow(p, 'search-place', 'saved')).join('')}</ul></section>`);
-  }
-
-  if (state.userLocation) {
-    const nearby = nearbyPlaces(state.userLocation, 6);
-    parts.push(`<section class="section"><h2 class="label">Nearby</h2>${nearby.length ? `<ul class="rows">${nearby.map(n => placeRow(n.place, distanceLabel(n.d))).join('')}</ul>` : '<p class="empty">No stops within a mile of your location.</p>'}</section>`);
-  }
-
-  const savedStops = state.saved.map(x => placeFor(x.a, x.id)).filter(Boolean);
-  if (savedStops.length) {
-    parts.push(`<section class="section"><h2 class="label">Saved stops</h2><ul class="rows">${savedStops.map(p => placeRow(p)).join('')}</ul></section>`);
-  }
-
-  parts.push(`<section class="section"><h2 class="label">Explore</h2><ul class="rows">
-    <li><button class="row" data-action="lines"><span class="row-main"><span class="row-title">All lines</span><span class="row-meta">${idx.routes.size} lines across 5 agencies</span></span>${ICONS.chevron}</button></li>
-
-  </ul></section>`);
-  parts.push(`<div class="home-footer"><p class="note home-service-status">${esc(liveStatusLine())}</p><div class="home-footer-links"><button class="text-button" data-action="sources">Data & credits</button><button class="text-button" data-action="intro">How Rove works</button></div></div>`);
-  return parts.join('');
+ const active=!!state.nav;
+ const places=savedPlaces();
+ const shortcuts=places.slice(0,3).map(p=>`<button class="rove-destination" data-action="go-saved" data-label="${esc(p.label)}">${esc(p.label)}</button>`).join('');
+ return `<div class="rove-home" aria-labelledby="roveHomeTitle">
+ <div class="rove-home-intro"><span class="rove-kicker">Your journey, your way</span><h1 id="roveHomeTitle">Where do you want to go?</h1><p>Find your route and follow your journey with clear, spoken guidance.</p></div>
+ <button class="rove-destination-search" data-action="plan" aria-label="Choose a destination and plan a trip"><span aria-hidden="true">⌕</span><span>Search for a destination</span><span aria-hidden="true">→</span></button>
+ ${active?`<section class="rove-active"><h2>Your journey is in progress</h2><p>Return to your current step and hear the next instruction.</p><button class="button primary" data-action="access-my-journey">Continue journey</button></section>`:''}
+ <nav class="rove-home-actions" aria-label="Journey actions"><button data-action="plan"><span class="rove-action-icon" aria-hidden="true">↗</span><span>Plan a trip</span></button><button data-action="access-nearby"><span class="rove-action-icon" aria-hidden="true">◎</span><span>Nearby transit</span></button><button data-action="access-my-journey"><span class="rove-action-icon" aria-hidden="true">◉</span><span>My journey</span></button></nav>
+ ${shortcuts?`<section class="rove-saved"><h2>Saved places</h2><div>${shortcuts}</div></section>`:''}
+ <div class="rove-home-footer"><button class="text-button" data-action="access">Voice and accessibility settings</button><button class="text-button" data-action="sources">Transit data</button></div>
+ </div>`;
 }
 
 /* Stations lead the list only when the query names one; otherwise addresses and places do. */
@@ -1561,15 +1582,15 @@ function viewRoute({ key }) {
   const alerts = activeAlerts({ agencyId: a.id, routeKeys: [key] });
   const mode = modeName(info);
   return `${backHeader()}
-    <div class="hero route-hero" style="--route-accent:${esc(info.color)}">
-      <div class="route-hero-top">${badgeHtml(info, true)}<span class="route-hero-kicker">Line overview</span></div>
+    <div class="hero">
+      ${badgeHtml(info, true)}
       <h1 class="title-1">${esc(info.title)}</h1>
       <p class="caption">${esc(a.name)} · ${esc(mode)}${r.d ? ` · Toward ${esc(displayName(r.d))}` : ''}</p>
       <p class="caption" style="margin-top:4px">${liveLine}</p>
       ${(r.shapes || []).some(sh => sh?.length > 1) ? '' : `<p class="area-note shape-missing">${esc(a.name)} has not published a route shape for this line, so the map shows its stops only.</p>`}
     </div>
     ${alertsHtml(alerts)}
-    <section class="section route-stop-section"><h2 class="label"><span>Stops along this route</span><span>${stops.length} stops</span></h2>
+    <section class="section"><h2 class="label"><span>Stops</span><span>${stops.length}</span></h2>
       <ol class="line-diagram" style="--line-color:${esc(info.color)}">${stops.map(s => {
         const count = vehicleStops.get(s.id);
         return `<li><button data-action="stop" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}"><span class="node"></span><span class="stop-name">${esc(s.n)}</span>${count ? `<span class="vehicle-here">${plural(count, 'vehicle')} here</span>` : ''}</button></li>`;
@@ -1604,12 +1625,12 @@ function viewStop({ agency, stop }) {
   const isStation = s.k || idx.children.has(stopKey(a.id, s.id));
   const cov = coverage(a.id);
   const alerts = activeAlerts({ agencyId: a.id, routeKeys: place.routes.map(r => r.key), stopIds: place.ids });
-  const arrivals = rtConfigured() && cov.arrivals ? cachedArrivals(place) : null;
+  const arrivals = state.realtime?.version === 2 ? cachedArrivals(place) : rtConfigured() && cov.arrivals ? cachedArrivals(place) : null;
 
   let departures;
   if (!rtConfigured()) {
     departures = '<p class="empty">Live arrivals are not connected on this server. The lines that serve this stop are listed below.</p>';
-  } else if (!cov.arrivals || arrivals?.status === 'unverified') {
+  } else if ((state.realtime?.version !== 2 && !cov.arrivals) || arrivals?.status === 'unverified') {
     const why = liveUnavailableReason(arrivals?.reasons?.length ? arrivals.reasons : state.planStatus?.liveReasons?.[a.id]);
     departures = `<p class="empty">Live arrivals for ${esc(AGENCY_SHORT[a.id])} are unavailable right now. ${esc(why || 'Rove only shows predictions it can match to the schedule.')} The lines that serve this stop are listed below.</p>`;
   } else if (!arrivals) {
@@ -1630,7 +1651,7 @@ function viewStop({ agency, stop }) {
       <h1 class="title-1">${esc(s.n)}</h1>
       <p class="caption">${esc(a.name)}${isStation ? ' · Station' : ' · Stop'}${esc(ageText)}${staleText}</p>
     </div>
-    <section class="section" style="margin-top:4px"><h2 class="label">Departures</h2>${departures}${canceled}</section>
+    <section class="section" style="margin-top:4px"><h2 class="label">Departures</h2>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary" data-action="access-departures" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Read next departures aloud</button>` : ''}${departures}${canceled}</section>
     ${alerts.length ? `<div style="margin-top:16px">${alertsHtml(alerts, 1)}</div>` : ''}
     <div class="action-bar" style="margin-top:20px">
       <button class="button primary" data-action="plan-to" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Directions</button>
@@ -1673,6 +1694,67 @@ function viewLines() {
 }
 
 /* ---------- Sources ---------- */
+function carbonComparison(it) {
+  const legs = it?.legs || [];
+  if (legs.some(l => l.mode === 'CAR')) return '';
+  const transitKm = legs.filter(l => isTransit(l)).reduce((n,l) => n + (Number.isFinite(l.distanceMeters) ? l.distanceMeters / 1000 : 0), 0);
+  if (!transitKm) return '';
+  // Illustrative, not measured: passenger-km factors vary with occupancy and vehicle type.
+  const carKg = transitKm * 0.25, transitKg = transitKm * 0.10;
+  return `<p class="carbon-estimate">🌱 About ${esc((carKg-transitKg).toFixed(1))} kg CO₂e less than driving alone <span>· illustrative estimate</span></p>`;
+}
+function viewImpact() {
+ return `${backHeader()}<div class="hero"><h1 class="title-1">A lighter way to move</h1><p class="caption">The impact of a shared ride</p></div><section class="section"><div class="impact-visual" aria-hidden="true"><span>🚘 Driving alone</span><div class="impact-track"><i style="width:100%"></i></div><span>🚆 Shared transit</span><div class="impact-track"><i style="width:40%"></i></div></div><h2 class="label">How the comparison works</h2><p class="empty">Our route cards use illustrative factors of 0.25 kg CO₂e per passenger-km for a solo car and 0.10 kg CO₂e per passenger-km for transit. This is an example, not a verified emissions inventory or a promise for a particular trip.</p><p class="empty">Real emissions depend on vehicle type, energy source, ridership, detours, and whether you would otherwise drive. Walking and biking generally have very low operational emissions. We do not count construction or full lifecycle impacts in these estimates.</p></section>`;
+}
+function accessPreference(key, defaultValue = false) {
+  try { const value = localStorage.getItem('rove-access-'+key); return value == null ? defaultValue : value === 'yes'; } catch { return defaultValue; }
+}
+function accessSetting(key, enabled) {
+  try { localStorage.setItem('rove-access-'+key, enabled ? 'yes' : 'no'); } catch {}
+}
+function accessVibrate(pattern = [90]) {
+  if (accessPreference('haptics', true) && navigator.vibrate) navigator.vibrate(pattern);
+}
+function voiceInputStart() {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) { announceAccess('Voice input is not available. Use the destination search field.'); return; }
+  const target = document.querySelector('#panelBody input[data-plan-field="to"], #searchInput, #panelBody input[type="search"]');
+  if (!target) { announceAccess('Open trip planning to choose a destination.'); return; }
+  const recognition = new Recognition(); recognition.lang = 'en-US'; recognition.interimResults = false; recognition.maxAlternatives = 1;
+  recognition.onresult = e => { const words=e.results?.[0]?.[0]?.transcript?.trim(); if (!words) return; target.focus(); target.value=words; target.dispatchEvent(new Event('input',{bubbles:true})); announceAccess('Heard '+words+'. Check the result before continuing.'); accessVibrate([70,60,70]); };
+  recognition.onerror = () => announceAccess('Voice recognition was unsuccessful. Type the destination instead.');
+  recognition.start(); announceAccess('Listening for a destination.');
+}
+function viewAccessNearby() {
+ const fix=state.accessLocationFix;
+ const valid=state.userLocation && fix && Date.now()-fix.time<60000 && Number.isFinite(fix.accuracy);
+ const uncertain=!valid || fix.accuracy>65;
+ const items=state.userLocation ? nearbyPlaces(state.userLocation,8) : [];
+ return `${backHeader()}<div class="hero"><h1 class="title-1">Nearby transit stops</h1><p class="caption">Stop locations from Bay Area transit schedules</p></div>
+ <section class="section"><button class="button primary" data-action="access-refresh-location">${state.userLocation?'Refresh my location':'Find my location'}</button>
+ <p class="access-location-status" role="status">${!valid?'Your current location accuracy is unknown. Distances may be inaccurate.':`Location accuracy: approximately ${Math.round(fix.accuracy)} metres. ${uncertain?'Accuracy is too low to locate an exact stop.':'Distances are estimates, not walking directions.'}`}</p>
+ <p>GPS cannot identify a safe crossing, platform edge, or exact boarding position. Confirm the stop and direction before boarding.</p></section>
+ <section class="section"><h2>Closest stops</h2>${items.length?`<ol class="access-nearby-list">${items.map(({place,d})=>`<li><h3>${esc(place.s.n)}</h3><p>${esc(AGENCY_SHORT[place.a.id]||place.a.name)} · Approximately ${Math.round(d/10)*10} metres straight-line distance${uncertain?' (low confidence)':''}</p><p>Routes: ${esc(place.routes.slice(0,7).map(r=>r.title).join(', ')||'Not listed')}</p><button class="button primary" data-action="access-select-stop" data-agency="${esc(place.a.id)}" data-stop="${esc(place.s.id)}">Select this stop and check departures</button></li>`).join('')}</ol>`:'<p class="empty">No nearby stops available yet. Refresh location, or search for a stop by name.</p>'}</section>`;
+}
+function viewAccess() {
+ const on = true;
+ return `${backHeader()}<div class="hero"><h1 class="title-1">Rove audio-first</h1><p class="caption">Transit designed to work without looking at a map</p></div>
+ <section class="section access-controls"><p>Spoken guidance and large controls are always available.</p>
+ <button class="button secondary" data-action="plan">Plan a journey</button><button class="button secondary" data-action="access-nearby">Find nearby transit stops</button><button class="button secondary" data-action="access-dictate">Speak a destination</button>
+ <button class="button secondary" data-action="access-stop-speech">Stop speaking</button>
+ <label class="access-setting"><input type="checkbox" data-access-setting="haptics" ${accessPreference('haptics',true) ? 'checked' : ''}/> Vibrate for important confirmations (when supported)</label>
+ <label class="access-setting"><input type="checkbox" data-access-setting="autoVoice" ${accessPreference('autoVoice',false) ? 'checked' : ''}/> Read route choices automatically</label></section>
+ <section class="section"><h2>How to travel with Rove</h2><ol class="access-guide"><li>Enter or speak your destination and confirm the search result.</li><li>Choose a route. Select Listen to route to hear each boarding and exit stop.</li><li>Start navigation and use Repeat instruction or Next step. Confirm boarding and transfers yourself.</li><li>Open any stop to hear available live departures, with uncertainty clearly stated.</li></ol></section>
+ <section class="section"><h2>What Rove cannot verify</h2><p class="empty">Rove cannot detect obstacles, locate safe crossings, confirm platform edges, verify accessible entrances or elevators, or prove that you boarded a bus or train. GPS can be inaccurate. Use your established mobility aids and check signs or ask transit staff when needed.</p></section>`;
+}
+
+function readNavInstruction() {
+ const step = state.nav?.steps[state.nav.i];
+ if (!step || !('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) { toast('Speech is not available in this browser.'); return; }
+ window.speechSynthesis.cancel();
+ const speech = new SpeechSynthesisUtterance(`${step.title}. ${step.meta || ''}. Confirm boarding and safe paths independently.`);
+ speech.rate = 0.9; window.speechSynthesis.speak(speech);
+}
 function viewSources() {
   const rows = state.network.agencies.map(a => `<li><div class="row"><span class="dot" style="background:${esc(a.color)}"></span><span class="row-main"><span class="row-title">${esc(a.name)}</span><span class="row-meta">${plural(a.routes.length, 'line')} · Schedule valid ${esc(formatGtfsDate(a.feed?.start))} to ${esc(formatGtfsDate(a.feed?.end))}</span></span></div></li>`).join('');
   const rt = state.realtime;
@@ -1741,9 +1823,9 @@ function viewPlan() {
   const hasFrom = Boolean(plan.from || plan.draft.from.trim());
   const hasTo = Boolean(plan.to || plan.draft.to.trim());
   const coverage = planCoverageIssue();
-  const driveOk = false;
-  const dropOk = false;
-  const access = 'WALK';
+  const driveOk = driveSupported('CAR_PARKING');
+  const dropOk = driveSupported('CAR_DROP_OFF');
+  const access = driveSupported(plan.access) ? plan.access : 'WALK';
   let submit;
   if (status && !status.available) submit = '';
   else if (coverage) submit = `<p class="plan-coverage" role="status">${esc(coverage.text)}</p>`;
@@ -1762,7 +1844,7 @@ function viewPlan() {
       <div id="planSuggest" class="plan-suggest" role="listbox" aria-label="Suggestions"></div>
       <div class="plan-body">
         ${coverage ? '' : `<div class="plan-options">
-          <p class="caption plan-hint">Transit and walking only. Driving to transit is not supported in this preview.</p>
+          ${driveOk || dropOk ? `<div class="segmented mode-switch${dropOk ? ' three' : ''}" role="group" aria-label="Getting to transit">${modeButton('WALK', MODE_ICONS.walk, 'Walk')}${driveOk ? modeButton('CAR_PARKING', MODE_ICONS.car, 'Drive') : ''}${dropOk ? modeButton('CAR_DROP_OFF', MODE_ICONS.car, 'Drop-off') : ''}</div>` : ''}
           <label class="time-select"><span class="visually-hidden">When</span><select id="planTimeMode">
             <option value="now" ${plan.timeMode === 'now' ? 'selected' : ''}>Leave now</option>
             <option value="depart" ${plan.timeMode === 'depart' ? 'selected' : ''}>Depart at</option>
@@ -1775,7 +1857,7 @@ function viewPlan() {
         ${access === 'CAR_DROP_OFF' ? `<p class="caption plan-hint">Rove plans a drive to a street near the station, where you are dropped off, then transit from there. ${driveLimitText()}</p>` : ''}`}
         ${submit}
         ${plan.loading ? '<ul class="itineraries skeleton-list" aria-hidden="true">' + '<li><div class="itinerary"><span class="sk sk-line"></span><span class="sk sk-bar"></span><span class="sk sk-line short"></span></div></li>'.repeat(3) + '</ul>' : ''}
-        ${plan.error ? `<div class="plan-error-group${plan.noServiceWindow ? ' plan-no-service' : ''}"><p class="plan-error-title">${plan.noServiceWindow ? 'No matching trip in this time window' : 'Could not plan this trip'}</p><p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>${plan.noServiceWindow && plan.timeMode === 'now' ? '<button class="button secondary plan-later" type="button" data-action="plan-next-morning">Try tomorrow at 8:15 AM</button>' : ''}</div>` : ''}
+        ${plan.error ? `<div class="plan-error-group"><p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>${plan.noServiceWindow && plan.timeMode === 'now' ? '<button class="button secondary plan-later" type="button" data-action="plan-next-morning">Try tomorrow at 8:15 AM</button>' : ''}</div>` : ''}
       </div>
     </form>`;
 }
@@ -1843,7 +1925,6 @@ async function submitPlan() {
     // The planner answers 404 with an empty itinerary list when there is no route; that is not an outage.
     if (response.status === 404 && Array.isArray(body?.itineraries)) throw new PlanError(noRouteMessage(body), null, false, body?.errors?.[0]?.code);
     if (!response.ok) {
-      if (body?.error && [422, 503].includes(response.status)) throw new PlanError(body.error, body.field || null, false);
       const err = planErrorMessage(response.status, body);
       if (err.offline) state.planStatus = { available: false, reason: response.status === 404 ? 'missing' : 'ROUTING_UNAVAILABLE', checkedAt: Date.now() };
       throw new PlanError(err.text, err.which, Boolean(err.offline));
@@ -1852,7 +1933,7 @@ async function submitPlan() {
     if (!itineraries.length) throw new PlanError(noRouteMessage(body), null, false, body?.errors?.[0]?.code);
     // Driving notes only apply when an option actually includes a drive (a short trip may be walk-only).
     const hasDrive = itineraries.some(it => it.legs.some(l => l.mode === 'CAR'));
-    plan.results = { experimental: body.routing?.engine === 'EXPERIMENTAL_SCHEDULE_ONLY', itineraries, notes: Array.isArray(body.routing?.notes) ? body.routing.notes.filter(n => typeof n === 'string' && (hasDrive || !/driv|parking|drop-off/i.test(n))) : [], request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
+    plan.results = { itineraries, notes: Array.isArray(body.routing?.notes) ? body.routing.notes.filter(n => typeof n === 'string' && (hasDrive || !/driv|parking|drop-off/i.test(n))) : [], request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
     plan.sort = 'fastest';
     plan.expanded = sortedItineraryIndexes()[0];
     plan.loading = false;
@@ -1928,7 +2009,7 @@ function itinerarySummary(it) {
   const first = transitLegs[0];
   const transfers = Number.isFinite(it.transfers) ? it.transfers : Math.max(0, transitLegs.filter(l => !l.staySeated).length - 1);
   const leaveIn = Math.round((new Date(it.startTime) - Date.now()) / 60000);
-  const leave = (state.plan.results?.scheduledOnly ? `Scheduled departure ${clock(new Date(it.startTime))}` : leaveIn <= 0 ? 'Leave now' : leaveIn < 60 ? `Leave in ${leaveIn} min` : `Leave at ${clock(new Date(it.startTime))}`);
+  const leave = leaveIn <= 0 ? 'Leave now' : leaveIn < 60 ? `Leave in ${leaveIn} min` : `Leave at ${clock(new Date(it.startTime))}`;
   const firstIdx = legs.indexOf(first);
   const lastIdx = legs.indexOf(transitLegs.at(-1));
   const sumMin = list => Math.round(list.reduce((s, l) => s + (l.durationSeconds ?? (legEnd(l) - legStart(l)) / 1000), 0) / 60);
@@ -1969,9 +2050,9 @@ function viewResults() {
       <div class="trip-ends"><p><span class="marker"><i></i></span><span>${esc(plan.from?.name)}</span></p><p><span class="marker to"><i></i></span><span>${esc(plan.to?.name)}</span></p></div>
       <button type="button" class="text-button" data-action="back">Edit</button>
     </div>
+    ${document.body.classList.contains('rove-accessible') ? `<section class="access-results-intro"><h2>Choose a journey</h2><p>Listen to a route to hear the stops, transfers, and walking estimates before deciding.</p><button class="button secondary" data-action="access-all-routes">Read route choices aloud</button></section>` : ''}
     <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
-    ${plan.results?.experimental ? `<div class="route-map-key" role="note"><div class="route-map-key-heading">How to read this map <span>Schedule preview</span></div><div class="route-map-key-items"><span><i class="route-key-solid"></i>Mapped route</span><span><i class="route-key-dash"></i>Approximate transit connection</span><span><i class="route-key-walk"></i>Estimated walk</span></div><p>Dashed lines connect stops or places in a straight line. They are <strong>not</strong> streets, tracks, or walking instructions. Times are estimates based on published schedules; transfers and traffic can change your arrival.</p></div>` : ''}
-    ${plan.results?.notes?.length ? `<details class="route-notes-details"><summary>About these directions</summary><ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
+    ${plan.results?.notes?.length ? `<ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${areaNoteHtml()}
     ${its.length > 1 ? `<div class="segmented sort-switch" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
     <ul class="itineraries">${order.map(i => {
@@ -1980,8 +2061,9 @@ function viewResults() {
       return `<li><button class="itinerary" data-action="it-toggle" data-index="${i}" aria-expanded="${open}">
         <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
-        <div class="it-meta">${itinerarySummary(it)}</div></button>
-        ${open ? `${itineraryTimeline(it)}<div class="action-bar it-actions">${plan.results?.experimental && !it.navigationReady ? '<p class="caption">Preview only: safe walking geometry could not be verified. Navigation is disabled for this route.</p>' : `<button class="button primary" data-action="nav-start" data-index="${i}">${plan.results?.experimental ? 'Start beta guidance' : 'Start'}</button>`}</div>` : ''}</li>`;
+        <div class="it-meta">${itinerarySummary(it)}</div></button>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Read full spoken itinerary for option ${order.indexOf(i)+1}">Listen to route ${order.indexOf(i)+1}</button>` : ''}
+        ${carbonComparison(it)}
+        ${open ? `<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start navigation</button></div>${itineraryTimeline(it)}` : ''}</li>`;
     }).join('')}</ul>
     <p class="note">${plan.results?.scheduledOnly ? 'These routes use published schedules. Check live departures at your stop before you leave.' : 'Live times are shown where agencies provide them. Other times are scheduled.'}</p>`;
 }
@@ -2005,13 +2087,13 @@ function itineraryTimeline(it) {
     if (leg.mode === 'WALK') {
       const meters = Number.isFinite(leg.distanceMeters) ? leg.distanceMeters : null;
       const isLast = i === legs.length - 1;
-      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"><span class="glyph">${MODE_ICONS.walk}</span></span><span class="body">${legLink(i, `Walk${meters ? ` ${distanceLabel(meters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? ` to ${esc(state.plan.to?.name || 'your destination')}` : ` to ${esc(leg.to?.name || 'the stop')}`}</span>${leg.geometry?.coordinates?.length < 2 ? '<span class="row-meta shape-note">Approximate straight-line walk · streets and crossings not verified.</span>' : ''}${stepsListHtml(leg, 'Walking directions')}</span></li>`);
+      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"><span class="glyph">${MODE_ICONS.walk}</span></span><span class="body">${legLink(i, `Walk${meters ? ` ${distanceLabel(meters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? ` to ${esc(state.plan.to?.name || 'your destination')}` : ` to ${esc(leg.to?.name || 'the stop')}`}</span>${stepsListHtml(leg, 'Walking directions')}</span></li>`);
       return;
     }
     const li = legInfo(leg);
     const stopsCount = leg.intermediateStops ? leg.intermediateStops.length + 1 : null;
     const timing = leg.canceled ? '<span class="status-canceled">Canceled</span>' : leg.realtime ? `<span class="${delayStatus(leg.delaySeconds).cls}">${ICONS.live}${esc(delayStatus(leg.delaySeconds).text)}</span>` : 'Scheduled';
-    const shapeNote = legShapeMissing(leg) ? '<span class="row-meta shape-note">Approximate connection only · dashed line is not the actual transit route.</span>' : '';
+    const shapeNote = legShapeMissing(leg) ? '<span class="row-meta shape-note">Route shape not available. The map joins the boarding and exit stops with a dashed line.</span>' : '';
     if (!leg.staySeated) {
       items.push(`<li class="${focused}" data-leg="${i}" style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body">
         ${legLink(i, leg.from?.name || 'Board')}
@@ -2072,6 +2154,63 @@ function buildSteps(it) {
 /* Navigation session UI, camera, and cautious replanning.
  * Foreground-only web navigation: browsers can suspend tracking while locked. */
 let navMarker = null;
+let navOrientationListener = null;
+function navNormalizeBearing(degrees) { return ((degrees % 360) + 360) % 360; }
+function navAngularDelta(a, b) { return ((b - a + 540) % 360) - 180; }
+function navOrientationHeading(event) {
+  // Safari provides a north-referenced compass heading; other browsers may expose
+  // absolute alpha. Relative alpha alone is not a reliable compass.
+  if (Number.isFinite(event.webkitCompassHeading) &&
+      (!Number.isFinite(event.webkitCompassAccuracy) || event.webkitCompassAccuracy <= 35))
+    return navNormalizeBearing(event.webkitCompassHeading);
+  if (event.absolute === true && Number.isFinite(event.alpha)) {
+    const angle = screen.orientation?.angle ?? window.orientation ?? 0;
+    return navNormalizeBearing(360 - event.alpha + angle);
+  }
+  return null;
+}
+function stopNavOrientation() {
+  if (navOrientationListener) window.removeEventListener('deviceorientation', navOrientationListener, true);
+  navOrientationListener = null;
+}
+async function enableNavCompass() {
+  const nav = state.nav;
+  if (!nav || typeof DeviceOrientationEvent === 'undefined') {
+    if (nav) { nav.status = 'Compass unavailable; using GPS travel direction.'; render(); }
+    return;
+  }
+  try {
+    // iOS requires this call inside a direct user gesture.
+    if (typeof DeviceOrientationEvent.requestPermission === 'function' &&
+        await DeviceOrientationEvent.requestPermission() !== 'granted') {
+      nav.status = 'Compass denied; using GPS travel direction.'; render(); return;
+    }
+    stopNavOrientation();
+    nav.compassEnabled = true;
+    navOrientationListener = event => {
+      if (state.nav !== nav) return;
+      const raw = navOrientationHeading(event);
+      if (!Number.isFinite(raw)) return;
+      const now = Date.now();
+      if (now - (nav.lastCompassAt || 0) < 130) return;
+      nav.lastCompassAt = now;
+      const previous = nav.compassHeading;
+      nav.compassHeading = Number.isFinite(previous)
+        ? navNormalizeBearing(previous + navAngularDelta(previous, raw) * 0.28) : raw;
+      if (nav.fix) {
+        updateNavMarker(nav.fix, nav.compassHeading);
+        if (nav.follow && nav.headingUp) navFollowCamera();
+      }
+    };
+    window.addEventListener('deviceorientation', navOrientationListener, true);
+    nav.status = 'Compass on · keep your phone upright for heading-up navigation.';
+    render();
+  } catch {
+    nav.status = 'Compass unavailable; using GPS travel direction.';
+    render();
+  }
+}
+
 function updateNavMarker(fix, heading) {
   const map = state.map;
   if (!map || typeof maplibregl === 'undefined') return;
@@ -2089,16 +2228,25 @@ function updateNavMarker(fix, heading) {
 function navFollowCamera() {
   const nav = state.nav, map = state.map;
   if (!nav?.follow || !nav.fix || !map || document.hidden) return;
-  const bearing = nav.headingUp && Number.isFinite(nav.heading) ? nav.heading : 0;
-  map.easeTo({ center: nav.fix.point, bearing, pitch: nav.headingUp ? 38 : 0,
-    zoom: Math.max(map.getZoom(), 15.5), padding: cameraPadding(), duration: motionMs(500), essential: true });
+  const direction = Number.isFinite(nav.compassHeading) ? nav.compassHeading : nav.heading;
+  const bearing = nav.headingUp && Number.isFinite(direction) ? direction : 0;
+  // The user's dot sits below center, leaving more of the upcoming route visible.
+  const mobile = isMobile();
+  const offset = nav.headingUp ? [0, mobile ? 95 : 85] : [0, 0];
+  const last = nav.lastCameraAt || 0;
+  const now = Date.now();
+  if (now - last < 240) return;
+  nav.lastCameraAt = now;
+  map.easeTo({ center: nav.fix.point, bearing, pitch: nav.headingUp ? 50 : 0,
+    zoom: Math.max(map.getZoom(), nav.headingUp ? 17 : 15.5),
+    offset, duration: motionMs(550), essential: true });
 }
 function navChangeFollow(what) {
   const nav = state.nav;
   if (!nav) return;
   if (what === 'overview') { nav.follow = false; nav.status = 'Map overview. Tap Follow to recenter.'; fitJourney(nav.it); }
-  else if (what === 'bearing') { nav.headingUp = !nav.headingUp; nav.follow = true; navFollowCamera(); }
-  else { nav.follow = true; nav.status = 'Following your location'; navFollowCamera(); }
+  else if (what === 'bearing') { nav.headingUp = !nav.headingUp; nav.follow = true; nav.lastCameraAt = 0; navFollowCamera(); }
+  else { nav.follow = true; nav.status = 'Following your location'; nav.lastCameraAt = 0; navFollowCamera(); }
   render();
 }
 function routeLegDistance(nav, point) {
@@ -2148,7 +2296,7 @@ async function navReroute(nav) {
     const response = await fetch('/api/v2/plan?' + query, { signal: controller.signal, cache: 'no-store' });
     const body = await response.json().catch(() => null);
     if (!response.ok || !body?.itineraries?.length) throw new Error('No replacement route available');
-    const alternatives = body.itineraries.map(normalizeItinerary).filter(it => it.legs.length && !it.hasCancellation && it.navigationReady);
+    const alternatives = body.itineraries.map(normalizeItinerary).filter(it => it.legs.length && !it.hasCancellation);
     if (!alternatives.length) throw new Error('No usable replacement route available');
     if (state.nav !== nav) return;
     nav.it = alternatives[0];
@@ -2233,21 +2381,21 @@ function updateNavManeuver(nav, fix) {
 async function startNavigation(index) {
   const it = state.plan.results?.itineraries?.[index];
   if (!it) return;
-  if (state.plan.results?.experimental && !it.navigationReady) { toast('Walking route unavailable. Navigation cannot start.'); return; }
   releaseWakeLock();
   state.journey = it;
   const nav = {
-    it, steps: buildSteps(it), i: 0, tracking: false, watchId: null,
+    it, steps: buildSteps(it), i: 0, tracking: false, watchId: null, boarded: false, exitAlerted: false, exitHint: null,
     destination: { ...state.plan.to }, access: state.plan.results?.request?.access || 'WALK',
-    follow: true, headingUp: true, voice: false, fix: null, heading: null,
+    follow: true, headingUp: true, voice: false, fix: null, heading: null, compassHeading: null, compassEnabled: false, lastCompassAt: 0, lastCameraAt: 0,
     offRouteFixes: 0, lastOffRouteAt: 0, rerouteAt: 0, rerouting: false,
     maneuver: null, spokenKey: null, speechAllowed: false, lastUiAt: 0,
-    status: 'Waiting for GPS permission…', error: null, controller: null
+    status: it.legs.some(l => l.mode === 'WALK' && l.approximate) ? 'Walking directions are estimates. Follow marked streets and crossings; GPS tracks your location.' : 'Waiting for GPS permission…', error: null, controller: null
   };
   state.nav = nav;
   renderJourney(); applyMapState();
   pushView({ name: 'navigate' }, { detent: 'half' });
   focusStep();
+  if (document.body.classList.contains('rove-accessible')) { announceAccess('Navigation started. Confirm your boarding stop and vehicle.'); }
   // Request a fix on Start even when the rider never tapped the location button.
   if ('geolocation' in navigator && window.isSecureContext) {
     nav.watchId = navigator.geolocation.watchPosition(onNavPosition, error => {
@@ -2270,6 +2418,7 @@ async function startNavigation(index) {
 }
 
 function releaseWakeLock() {
+  stopNavOrientation();
   try { window.speechSynthesis?.cancel(); } catch { /* speech unavailable */ }
   try { state.wakeLock?.release(); } catch { /* already released */ }
   state.wakeLock = null;
@@ -2296,10 +2445,12 @@ function viewNavigate() {
   const head = `<div class="view-head"><button class="back-button" data-action="nav-end">${ICONS.back}<span>End trip</span></button></div>
     <div class="nav-head"><div class="title-2">Arrive ${esc(clock(new Date(nav.it.endTime)))}</div><div class="caption">${esc(durationLabel((new Date(nav.it.endTime) - Date.now()) / 1000))} remaining${nav.it.usesRealtime ? '' : ' · Scheduled times'}</div>
     <p class="nav-gps-status" role="status">${esc(nav.status || 'Waiting for location')}</p>
+    ${nav.it.legs.some(l => l.mode === 'WALK' && l.approximate) ? '<p class="caption">Walking segments are estimates, not verified turn-by-turn paths. Follow safe pedestrian routes.</p>' : ''}
     <div class="nav-camera-controls" role="group" aria-label="Navigation map controls">
       <button type="button" class="button secondary" data-action="nav-follow" aria-pressed="${nav.follow}">Follow</button>
       <button type="button" class="button secondary" data-action="nav-bearing" aria-pressed="${nav.headingUp}">${nav.headingUp ? 'Heading up' : 'North up'}</button>
       <button type="button" class="button secondary" data-action="nav-overview">Overview</button>
+      <button type="button" class="button secondary" data-action="nav-compass" aria-pressed="${nav.compassEnabled}">${nav.compassEnabled ? 'Compass on' : 'Use phone compass'}</button>
       <button type="button" class="button secondary" data-action="nav-voice" aria-pressed="${nav.voice}" ${!('speechSynthesis' in window) ? 'disabled' : ''}>${nav.voice ? 'Mute voice' : 'Voice guidance'}</button>
       <button type="button" class="button secondary" data-action="nav-replan" ${!nav.fix || nav.rerouting ? 'disabled' : ''}>${nav.rerouting ? 'Recalculating…' : 'New route'}</button>
     </div></div>`;
@@ -2334,10 +2485,15 @@ function viewNavigate() {
       ${meta ? `<p class="caption" style="margin:6px 0 0">${esc(meta)}</p>` : ''}
       ${step.leg ? legAlertsHtml(step.leg) : ''}
       ${transitRecovery}
+      ${document.body.classList.contains('rove-accessible') && (step.type === 'wait' || step.type === 'ride') ? `<section class="blind-boarding"><p>${nav.boarded ? 'Boarding manually confirmed. Rove has not independently verified the vehicle.' : 'Before boarding, check the route and destination shown or announced on the vehicle.'}</p><button class="button primary" data-action="nav-board" aria-pressed="${nav.boarded}">${nav.boarded ? 'Boarding confirmed' : 'I have boarded this vehicle'}</button></section>` : ''}
+      ${document.body.classList.contains('rove-accessible') && step.type === 'ride' ? `<section class="blind-exit" role="status"><h3>Exit-stop assistant</h3><p>${esc(nav.exitHint || 'Waiting for accurate GPS. Use vehicle stop announcements to confirm your exit.')}</p><button class="button secondary" data-action="nav-exit-check">Check exit-stop proximity</button></section>` : ''}
       ${turns}
     </div>
+    ${document.body.classList.contains('rove-accessible') ? `<div class="access-navigation-help" role="note">Check your vehicle and stop independently. Rove does not automatically confirm boarding or safe pedestrian routes.</div>` : ''}
     <div class="action-bar">
+      ${document.body.classList.contains('rove-accessible') ? `<button class="button secondary" data-action="access-stop-speech">Stop speech</button>` : ''}
       ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
+      <button class="button secondary" data-action="nav-read">Repeat current instruction</button>
       <button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'I have arrived' : 'Next step'}</button>
     </div>
     <ol class="step-list" style="margin-top:20px">${list}</ol>`;
@@ -2346,6 +2502,12 @@ function viewNavigate() {
 /* ---------- Event handling ---------- */
 
 
+document.addEventListener('change', event => {
+  const key = event.target?.dataset?.accessSetting;
+  if (key !== 'haptics' && key !== 'autoVoice') return;
+  accessSetting(key, Boolean(event.target.checked));
+  announceAccess(key === 'haptics' ? 'Vibration '+(event.target.checked?'on':'off') : 'Automatic route speech '+(event.target.checked?'on':'off'));
+});
 function clearSearchField() {
   state.searchQuery = '';
   $('#searchInput').value = '';
@@ -2389,6 +2551,27 @@ function handleAction(el) {
     case 'route': openRoute(el.dataset.key); break;
     case 'stop': openStop(el.dataset.agency, el.dataset.stop); break;
     case 'lines': clearSearchField(); pushView({ name: 'lines' }, { detent: 'full' }); break;
+    case 'impact': clearSearchField(); pushView({ name: 'impact' }, { detent: 'full' }); break;
+    case 'access-my-journey': if(state.nav) pushView({name:'navigate'},{detent:'full'}); else announceAccess('No journey is currently active. Plan a trip to begin.'); break;
+    case 'access-nearby': pushView({name:'accessNearby'},{detent:'full'}); if(!state.userLocation) locate(); break;
+    case 'access-refresh-location': locate(); break;
+    case 'access-select-stop': { const place=placeFor(el.dataset.agency,el.dataset.stop); if(place){announceAccess('Selected '+place.s.n+'. Confirm the physical stop and direction before boarding.'); openStop(el.dataset.agency,el.dataset.stop);} break; }
+    case 'access-stop-speech': window.speechSynthesis?.cancel(); announceAccess('Speech stopped.'); break;
+    case 'access-dictate': { if (currentView().name !== 'plan') openPlan({}); voiceInputStart(); break; }
+    case 'access-all-routes': { const its=state.plan.results?.itineraries || []; speakText(its.length ? its.slice(0,3).map((it,i)=>`Option ${i+1}. ${audioTripSummary(it)}`).join(' ') : 'No routes are available.'); break; }
+    case 'access-route': { const it = state.plan.results?.itineraries?.[Number(el.dataset.index)]; if (it) speakText(audioTripSummary(it)); break; }
+    case 'access-departures': {
+      const place = placeFor(el.dataset.agency,el.dataset.stop);
+      const data = place && cachedArrivals(place);
+      if (!data || data.status !== 'live' || !data.groups?.length) { speakText('Verified live departures are not currently available for this stop. Please check posted signs or agency information.'); break; }
+      const messages = data.groups.slice(0,5).map(g => { const t=g.times[0]; const minutes=Math.max(0,Math.round((t.time*1000-Date.now())/60000)); return `${g.route?.title || g.label || 'Transit'} ${g.headsign ? 'toward '+g.headsign : ''}, ${minutes} minutes.`; });
+      speakText(`Live departures for ${place.s.n}. ${messages.join(' ')}`);
+      break;
+    }
+    case 'access-demo': { if (!('speechSynthesis' in window)) { toast('Speech is not available in this browser.'); break; } window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance('Example: Board the 38 R bus toward downtown at the next stop. Check the vehicle sign before boarding.'); u.rate = 0.9; window.speechSynthesis.speak(u); break; }
+    case 'access': clearSearchField(); pushView({ name: 'access' }, { detent: 'full' }); break;
+    case 'access-toggle': announceAccess('Accessible navigation is always enabled.'); break;
+    case 'nav-read': readNavInstruction(); break;
     case 'sources': clearSearchField(); pushView({ name: 'sources' }, { detent: 'full' }); break;
     case 'intro': showIntro(0); break;
     case 'locate': locate(); break;
@@ -2438,14 +2621,17 @@ function handleAction(el) {
     }
     case 'leg-focus': focusLeg(Number(el.dataset.leg)); break;
     case 'nav-start': startNavigation(Number(el.dataset.index)); break;
+    case 'nav-board': if (state.nav) { state.nav.boarded = true; accessVibrate([120,70,120]); announceAccess('You confirmed boarding. Rove cannot independently verify the vehicle.',true); render(); } break;
+    case 'nav-exit-check': if (state.nav) { checkBlindExit(state.nav,true); render(); } break;
     case 'nav-follow': navChangeFollow('follow'); break;
+    case 'nav-compass': enableNavCompass(); break;
     case 'nav-voice': toggleNavVoice(); break;
     case 'nav-bearing': navChangeFollow('bearing'); break;
     case 'nav-overview': navChangeFollow('overview'); break;
     case 'nav-replan': if (state.nav?.fix) navReroute(state.nav); break;
     case 'nav-missed': if (state.nav?.fix) navReroute(state.nav); break;
-    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); } break;
-    case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); } break;
+    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
+    case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
     case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
     default: break;
   }
@@ -2661,6 +2847,8 @@ function locate({ thenPick = null } = {}) {
 function onPosition(pos) {
   const first = !state.userLocation;
   state.userLocation = [pos.coords.longitude, pos.coords.latitude];
+  state.accessLocationFix = {accuracy:pos.coords.accuracy,time:pos.timestamp||Date.now()};
+  if(currentView().name==='accessNearby') { render(); announceAccess('Nearby stops updated. Location accuracy approximately '+Math.round(pos.coords.accuracy)+' metres.'); }
   $('#locateButton').classList.add('active');
   const pick = locate.pendingPick;
   locate.pendingPick = null;
@@ -2694,26 +2882,26 @@ function onPositionError(err) {
  * With reduced motion, the illustrations show their finished state and nothing moves. */
 const INTRO = [
   {
-    title: 'Find any stop, line, or address',
-    text: 'One search covers BART, Muni, Caltrain, VTA, and AC Transit, plus Bay Area addresses and places. Try a line such as 38R or a station name.',
+    title: '1. Find your stop',
+    text: 'Tap Search. Type a station, bus line, or address. Pick a result.',
     art: `<svg viewBox="0 0 280 120"><rect class="ia-field" x="20" y="14" width="240" height="30" rx="9"/><circle class="ia-ink-stroke" cx="37" cy="29" r="6"/><path class="ia-ink-stroke" d="m41.5 33.5 4 4"/><text class="ia-type" x="56" y="34">38R</text><rect class="ia-caret" x="83" y="21" width="1.6" height="16" rx=".8"/>
       <g class="ia-row" style="--d:.55s"><rect x="20" y="56" width="240" height="26" rx="7" class="ia-card"/><rect x="30" y="62" width="34" height="14" rx="4" fill="#bf2b45"/><text x="38" y="73" class="ia-badge-text">38R</text><rect x="72" y="65" width="120" height="7" rx="3.5" class="ia-bar"/></g>
       <g class="ia-row" style="--d:.75s"><rect x="20" y="88" width="240" height="26" rx="7" class="ia-card"/><circle cx="40" cy="101" r="6" class="ia-pin"/><rect x="72" y="97" width="150" height="7" rx="3.5" class="ia-bar"/></g></svg>`
   },
   {
-    title: 'Tap a line to follow it',
-    text: 'The line you choose draws itself on the map while the rest of the network steps back. Its stops and live vehicles come forward.',
+    title: '2. See buses on the map',
+    text: 'Tap a colored line. Zoom in to see its stops and reported bus locations.',
     art: `<svg viewBox="0 0 280 120"><path class="ia-faded" d="M10 30h80l40 40h140"/><path class="ia-faded" d="M10 95c60 0 80-60 140-60s70 30 120 30"/><path class="ia-faded" d="M60 5v110"/>
       <path class="ia-draw" style="--c:#1675be" d="M10 70c40 0 50-40 100-40s60 55 160 55" pathLength="1"/><g class="ia-pop" style="--d:.9s"><circle cx="10" cy="70" r="5" class="ia-stop"/><circle cx="110" cy="30" r="5" class="ia-stop"/><circle cx="270" cy="85" r="5" class="ia-stop"/></g><circle class="ia-vehicle" r="5.5" fill="#1675be"><animateMotion dur="3.2s" repeatCount="indefinite" path="M10 70c40 0 50-40 100-40s60 55 160 55"/></circle></svg>`
   },
   {
-    title: 'Live means live',
-    text: 'Times marked with the live symbol come from vehicles in service. Trip plans use published schedules and are labeled Scheduled.',
+    title: '3. Check when it arrives',
+    text: 'Tap a stop for departures. Live predictions are labeled separately from scheduled times.',
     art: `<svg viewBox="0 0 280 120"><rect x="20" y="16" width="240" height="88" rx="12" class="ia-card"/><text x="40" y="66" class="ia-big">4</text><text x="42" y="84" class="ia-small">min</text><rect x="96" y="38" width="44" height="16" rx="4" fill="#f5c100"/><text x="105" y="50" class="ia-badge-text dark">Yellow</text><rect x="96" y="62" width="120" height="7" rx="3.5" class="ia-bar"/><g class="ia-live"><circle cx="102" cy="84" r="3" class="ia-live-dot"/><circle cx="102" cy="84" r="3" class="ia-live-ring"/></g><text x="112" y="88" class="ia-live-text">Live · On time</text></svg>`
   },
   {
-    title: 'Plan door to door',
-    text: 'Choose Directions, then enter any two Bay Area addresses. Find Bay Area transit schedules and walking connections. Check agency alerts before traveling.',
+    title: '4. Start your trip',
+    text: 'Tap Directions, choose where to go, then pick a route. Navigation shows each boarding and transfer step.',
     art: `<svg viewBox="0 0 280 120"><path class="ia-walk" d="M28 92h40" pathLength="1"/><path class="ia-draw" style="--c:#005b95;--d:.35s" d="M68 92c30 0 30-40 70-40" pathLength="1"/><path class="ia-draw" style="--c:#e4002b;--d:.85s" d="M138 52c40 0 50 26 92 26" pathLength="1"/><path class="ia-walk" style="--d:1.3s" d="M230 78h22" pathLength="1"/><circle cx="28" cy="92" r="6" class="ia-from"/><rect x="246" y="72" width="12" height="12" rx="2.5" class="ia-to"/><g class="ia-pop" style="--d:.7s"><circle cx="68" cy="92" r="4.5" class="ia-stop"/><circle cx="138" cy="52" r="5.5" class="ia-stop strong"/><circle cx="230" cy="78" r="4.5" class="ia-stop"/></g></svg>`
   }
 ];
@@ -2726,11 +2914,11 @@ function showIntro(i = 0) {
   // Re-inserting the art restarts its animation for each card.
   $('#introArt').innerHTML = prefersReducedMotion() ? step.art.replace(/<circle class="ia-vehicle"[^>]*>.*?<\/circle>/s, '<circle class="ia-vehicle" r="5.5" cx="185" cy="62" fill="#1675be"/>') : step.art;
   $('#introProgress').innerHTML = INTRO.map((_, k) => `<span class="${k === i ? 'on' : k < i ? 'done' : ''}"></span>`).join('');
-  $('#introNext').textContent = i === INTRO.length - 1 ? 'Get started' : 'Next';
-  $('#introSkip').hidden = i === INTRO.length - 1;
+  $('#introNext').textContent = i === INTRO.length - 1 ? 'Explore Rove' : 'Next step →';
+  $('#introSkip').hidden = false;
   const intro = $('#intro');
   intro.hidden = false;
-  intro.classList.remove('intro-in'); void intro.offsetWidth; intro.classList.add('intro-in');
+  intro.classList.remove('intro-in'); if (!prefersReducedMotion()) { void intro.offsetWidth; intro.classList.add('intro-in'); }
   $('#introNext').focus({ preventScroll: true });
 }
 function finishIntro() {
@@ -2828,10 +3016,11 @@ function prefetchVisibleArrivals() {
   let places = [];
   if (view.name === 'stop') places = [placeFor(view.agency, view.stop)];
   else if (view.name === 'home') {
-    if (state.userLocation) places.push(...nearbyPlaces(state.userLocation, 6).map(n => n.place));
-    places.push(...state.saved.map(x => placeFor(x.a, x.id)));
+    // Avoid fan-out of per-stop 511 requests; the active stop gets priority.
+    if (state.userLocation) places.push(...nearbyPlaces(state.userLocation, 1).map(n => n.place));
+    places.push(...state.saved.slice(0, 1).map(x => placeFor(x.a, x.id)));
   }
-  places.filter(Boolean).filter(p => coverage(p.a.id).arrivals).forEach(p => fetchArrivals(p));
+  places.filter(Boolean).filter(p => state.realtime?.version === 2 ? ['muni','act'].includes(p.a.id) : coverage(p.a.id).arrivals).forEach(p => fetchArrivals(p));
 }
 
 /* A point picked on the map is named after the nearest stop when one is close. */
@@ -2933,8 +3122,6 @@ function normalizeItinerary(it) {
     transfers: it.transfers,
     usesRealtime: Boolean(it.usesRealtime),
     hasCancellation: Boolean(it.hasCancellation),
-    navigationReady: Boolean(it.navigationReady),
-    walkingVerified: Boolean(it.walkingVerified),
     legs
   };
 }
@@ -2965,6 +3152,21 @@ function legAlertsHtml(leg) {
 
 /* Advances walk and ride steps when the rider reaches the end of the leg. Riders can always
  * move between steps with the buttons; this only saves taps. */
+function checkBlindExit(nav,manual=false) {
+  const step=nav.steps[nav.i];
+  if (!step || step.type!=='ride') { if(manual)announceAccess('Select the riding step first.'); return; }
+  const stop=step.leg?.to;
+  const helper=window.RoveBlindNavigation;
+  const proximity=helper?.exitProximity(nav.fix,stop);
+  const message=helper?.stopMessage(step.title,stop?.name||'your exit stop',proximity)||'GPS stop proximity is unavailable.';
+  nav.exitHint=message;
+  if (manual || (proximity?.near && !nav.exitAlerted)) {
+    if(proximity?.near)nav.exitAlerted=true;
+    if(proximity?.near)accessVibrate([200,120,200,120,200]);
+    if(manual || document.body.classList.contains('rove-accessible'))speakText(message);
+    else announceAccess(message);
+  }
+}
 function onNavPosition(pos) {
   const nav = state.nav;
   if (!nav) return;
@@ -2977,6 +3179,7 @@ function onNavPosition(pos) {
   nav.fix = fix;
   nav.tracking = true;
   state.userLocation = fix.point;
+  state.accessLocationFix = {accuracy:fix.accuracy,time:fix.time};
   const seconds = previous ? (fix.time - previous.time) / 1000 : 0;
   // When actual sensor heading is unavailable, infer heading only after real movement.
   const moved = previous ? RoveNavigation.meters(previous.point, fix.point) : 0;
@@ -2984,9 +3187,11 @@ function onNavPosition(pos) {
     moved >= Math.max(8, fix.accuracy) && seconds > 0 ? RoveNavigation.bearing(previous.point, fix.point) : nav.heading;
   if (Number.isFinite(heading)) nav.heading = heading;
   nav.status = nav.follow ? 'Following your location' : 'Tracking GPS · map exploration paused following';
-  updateNavMarker(fix, nav.heading);
+  updateNavMarker(fix, Number.isFinite(nav.compassHeading) ? nav.compassHeading : nav.heading);
   navFollowCamera();
-  maybeAdvanceNavigation(nav, fix);
+  if (document.body.classList.contains('rove-accessible')) checkBlindExit(nav);
+  else if (nav.steps[nav.i]?.type === 'ride') checkBlindExit(nav);
+  if (!document.body.classList.contains('rove-accessible')) maybeAdvanceNavigation(nav, fix);
   const distance = routeLegDistance(nav, fix.point);
   if (distance != null && fix.accuracy <= 75 && distance > Math.max(85, fix.accuracy * 2.5)) {
     nav.offRouteFixes = seconds < 20 ? nav.offRouteFixes + 1 : 1;
@@ -3016,6 +3221,11 @@ function updatePlanMarkers() {
 }
 
 function startMapPick(which) {
+  if (window.innerWidth <= 800) {
+    announceAccess('Use the accessible search field to choose a location.');
+    document.getElementById(which === 'from' ? 'planFrom' : 'planTo')?.focus();
+    return;
+  }
   state.mapPick = which;
   state.plan.focus = null;
   const banner = $('#mapPick');
@@ -3145,15 +3355,7 @@ async function geocode(query, { signal, mode = 'autocomplete', size = 6 } = {}) 
         if (body.addressSearch !== 'available') geocodeBackend = 'missing';
         else {
           geocodeBackend = 'available';
-          let results = dedupePlaces((body.results || []).map(normalizeRovePlace).filter(p => p && inServiceArea(p)));
-          if (!results.length && window.RoveSearchIntelligence) {
-            const corrected = window.RoveSearchIntelligence.correct(q, idx.wordFrequency);
-            if (corrected !== normalizeSearch(q)) {
-              const retryParams = new URLSearchParams(params); retryParams.set('q', corrected);
-              const retry = await fetch(`${GEOCODER.backend}?${retryParams}`, { signal });
-              if (retry.ok) results = dedupePlaces(((await retry.json()).results || []).map(normalizeRovePlace).filter(p => p && inServiceArea(p)));
-            }
-          }
+          const results = dedupePlaces((body.results || []).map(normalizeRovePlace).filter(p => p && inServiceArea(p)));
           geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
           geocodeSource = 'rove';
           return geocodeCache.get(cacheKey);
@@ -3181,17 +3383,7 @@ async function geocode(query, { signal, mode = 'autocomplete', size = 6 } = {}) 
     if (response && response.status === 429) throw new Error('rate-limited');
     if (response && response.ok) {
       const body = await response.json();
-      let results = dedupePlaces((body.features || []).map(normalizeGeocodeFeature).filter(p => p && inServiceArea(p)));
-      if (!results.length && window.RoveSearchIntelligence) {
-        const corrected = window.RoveSearchIntelligence.correct(q, idx.wordFrequency);
-        if (corrected !== normalizeSearch(q)) {
-          const retryParams = new URLSearchParams(params); retryParams.set('text', corrected);
-          try {
-            const retry = await fetch(`${mode === 'search' ? GEOCODER.search : GEOCODER.autocomplete}?${retryParams}`, { signal });
-            if (retry.ok) results = dedupePlaces(((await retry.json()).features || []).map(normalizeGeocodeFeature).filter(p => p && inServiceArea(p)));
-          } catch (error) { if (error.name === 'AbortError') throw error; }
-        }
-      }
+      const results = dedupePlaces((body.features || []).map(normalizeGeocodeFeature).filter(p => p && inServiceArea(p)));
       geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
       geocodeSource = 'stadia';
       return geocodeCache.get(cacheKey);
@@ -3201,13 +3393,7 @@ async function geocode(query, { signal, mode = 'autocomplete', size = 6 } = {}) 
     if (response && [401, 403].includes(response.status)) geocodeProvider = 'photon';
     else if (response && response.status < 500) throw new Error(`geocoder ${response.status}`);
   }
-  let results = await photonGeocode(q, { signal, size });
-  if (!results.length && window.RoveSearchIntelligence) {
-    const corrected = window.RoveSearchIntelligence.correct(q, idx.wordFrequency);
-    if (corrected !== normalizeSearch(q)) {
-      try { results = await photonGeocode(corrected, { signal, size }); } catch (error) { if (error.name === 'AbortError') throw error; }
-    }
-  }
+  const results = await photonGeocode(q, { signal, size });
   geocodeCache.set(cacheKey, promoteAddressMatch(results, q));
   geocodeSource = 'photon';
   return geocodeCache.get(cacheKey);
@@ -3377,25 +3563,6 @@ function viewPlace({ place: p }) {
     ${covered ? `<section class="section"><h2 class="label">Nearby stops</h2>${nearby.length ? `<ul class="rows">${nearby.map(n => placeRow(n.place, distanceLabel(n.d))).join('')}</ul>` : '<p class="empty">No stops within a mile of this place.</p>'}</section>` : ''}`;
 }
 
-function placeMatchScore(query, place) {
-  const q = normalizeSearch(query), name = normalizeSearch(place.name);
-  if (!q || !name) return 0;
-  // Only apply fuzzy matching to a specific multi-word name. Single-word suggestions
-  // stay strict to avoid turning a misspelling into a confidently wrong place.
-  const a = q.split(' '), b = name.split(' ');
-  if (a.length < 2 || b.length < 2) return 0;
-  const score = transitSearchScore(q, name);
-  if (score < 25) return 0;
-  // Require the majority of the name to match, not a coincidental shared word.
-  return score;
-}
-
-function rankPlaceResults(results, query) {
-  if (!results.length) return results;
-  return results.map((place, index) => ({place, index, score:placeMatchScore(query, place)}))
-    .sort((a,b) => b.score-a.score || a.index-b.index).map(x => x.place);
-}
-
 function matchingPersonalPlaces(q, limit = 3) {
   const needle = normalizeSearch(q);
   const seen = new Set();
@@ -3405,7 +3572,7 @@ function matchingPersonalPlaces(q, limit = 3) {
     if (seen.has(key)) continue;
     seen.add(key);
     const hay = normalizeSearch(`${p.label || ''} ${p.name} ${p.detail || ''}`);
-    if (!needle || hay.includes(needle) || placeMatchScore(needle, p) >= 30) out.push([p, icon]);
+    if (!needle || hay.includes(needle)) out.push([p, icon]);
     if (out.length >= limit) break;
   }
   return out;
@@ -3439,15 +3606,14 @@ function updatePlanSuggestions() {
     if (!stationsLead(q, stops)) sections.splice(top.length ? 1 : 0, 0, places); else sections.push(places);
   }
   if (q.length > 0 && q.length < 3 && !sections.length) sections.push('<p class="empty">Keep typing to search addresses and places.</p>');
-  sections.push(`<ul class="rows"><li><button type="button" class="row result place-row" data-action="plan-map"><span class="place-icon">${PLACE_ICON.map}</span><span class="row-main"><span class="row-title">Choose on map</span><span class="row-meta">Tap any point on the map</span></span></button></li></ul>`);
+  if (window.innerWidth > 800) sections.push(`<ul class="rows"><li><button type="button" class="row result place-row" data-action="plan-map"><span class="place-icon">${PLACE_ICON.map}</span><span class="row-main"><span class="row-title">Choose on map</span><span class="row-meta">Tap any point on the map</span></span></button></li></ul>`);
   box.innerHTML = sections.join('');
 }
 
 /* Moves addresses whose house number matches the query to the top of the list. */
 function promoteAddressMatch(results, text) {
   const best = bestGeocodeMatch(results, text);
-  const ordered = best && best !== results[0] ? [best, ...results.filter(p => p !== best)] : results;
-  return /^\d+[a-z]?\s/i.test(text.trim()) ? ordered : rankPlaceResults(ordered,text);
+  return best && best !== results[0] ? [best, ...results.filter(p => p !== best)] : results;
 }
 
 /* For text that starts with a house number, prefer a real address with that number over the
@@ -3470,7 +3636,7 @@ async function resolveDraft(which) {
   if (!text) return null;
   if (/^your location$/i.test(text) && state.userLocation) return currentLocationPlace();
   const needle = normalizeSearch(text);
-  const personal = matchingPersonalPlaces(text, 6).find(([p]) => normalizeSearch(p.name) === needle || normalizeSearch(p.label || '') === needle || placeMatchScore(needle,p) >= 35);
+  const personal = matchingPersonalPlaces(text, 6).find(([p]) => normalizeSearch(p.name) === needle || normalizeSearch(p.label || '') === needle);
   if (personal) return { ...personal[0] };
   const exact = searchNetwork(text, { routes: false, stopLimit: 8 }).stops.find(({ s }) => normalizeSearch(s.n) === needle);
   if (exact) return placeFromStop(exact.a.id, exact.s.id);
@@ -3492,7 +3658,7 @@ function noRouteMessage(body) {
   if (code === 'OUTSIDE_SERVICE_PERIOD') return 'Schedules are not available for that date. Choose a date closer to today.';
   if (code === 'OUTSIDE_BOUNDS') return 'One of these places is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.';
   if (code === 'NO_STOPS_IN_RANGE' || code === 'LOCATION_NOT_FOUND') return 'One of these places is too far from a transit stop to plan a trip. Try a nearby address or stop.';
-  if (code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW') return 'No scheduled connection was found within the planner’s search window. This does not mean transit is unavailable. Try another departure time or choose a nearby station.';
+  if (code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW') return 'No matching route was found for this departure time. Service may be limited, or trip-planning data may be incomplete. Try another departure time.';
   if (code === 'NO_TRANSIT_CONNECTION' || !body?.errors?.[0]?.message) return 'No transit connection was found. Try a different departure time or a nearby transit stop.';
   return body.errors[0].message;
 }
@@ -3679,7 +3845,7 @@ const STEP_VERBS = {
 
 function stepText(s) {
   if (s.instruction) return s.instruction;
-  const street = s.streetName && !/^(path|bike path|footpath|sidewalk|service road|steps|parking aisle|open area|corridor|footbridge|underpass|crosswalk|elevator|ramp|link|road|track|alley|bridleway)$/i.test(s.streetName) ? s.streetName : null;
+  const street = s.streetName && !/^(?:path|bike path|footpath|sidewalk|service road|steps|parking aisle|open area|corridor|footbridge|underpass|crosswalk|elevator|ramp|link|road|track|alley|bridleway|way\s+\d+(?:\s+from\s+\d+)?)$/i.test(s.streetName.trim()) ? s.streetName : null;
   const where = street ? ` onto ${street}` : '';
   switch (s.relativeDirection) {
     case 'DEPART': return `Head ${String(s.absoluteDirection || '').toLowerCase().replace('_', ' ') || 'out'}${street ? ` on ${street}` : ''}`;
@@ -3739,6 +3905,7 @@ window.addEventListener('offline', updateOnlineStatus);
 window.addEventListener('online', () => { updateOnlineStatus(); loadRealtime(); });
 
 async function init() {
+  document.body.classList.add('rove-accessible');
   try {
     const response = await fetch('public/data/network.json');
     if (!response.ok) throw new Error(`The transit network could not be loaded (${response.status}).`);
@@ -3755,15 +3922,6 @@ async function init() {
   bindChrome();
   setDetent(isMobile() ? (window.innerHeight < 560 ? 'peek' : 'half') : 'half');
   render();
-  // Independent watchdog: also covers stalled external basemap style requests.
-  setTimeout(() => {
-    if (state.mapReady || $('#mapLoading').classList.contains('done')) return;
-    const loading = $('#mapLoading');
-    if (loading.classList.contains('map-load-failed')) return;
-    loading.classList.add('map-load-failed');
-    loading.innerHTML = '<strong>Map is taking longer than expected</strong><span>Search and transit information remain available. Try again when the connection improves.</span><button type="button" class="button primary" id="mapRetry">Retry map</button>';
-    $('#mapRetry').addEventListener('click', () => window.location.reload());
-  }, 16000);
 
   const savedMode = store.get(STORAGE.mapMode, null);
   const mode = ['standard', 'satellite', 'dark'].includes(savedMode) ? savedMode : 'standard';
@@ -3806,18 +3964,7 @@ async function init() {
       // Help remains available on demand; do not interrupt the map on first visit.
     };
     state.map.on('load', markReady);
-    setTimeout(() => {
-      if (state.mapReady) return;
-      if (state.map.isStyleLoaded() || state.map.getSource('transit-routes')) {
-        markReady();
-      } else {
-        // Do not show an endless spinner if the map provider or font host is unreachable.
-        const loading = $('#mapLoading');
-        loading.classList.add('map-load-failed');
-        loading.innerHTML = '<strong>Map is taking longer than expected</strong><span>Transit search and line information are still available.</span><button type="button" class="button primary" id="mapRetry">Retry map</button>';
-        $('#mapRetry').addEventListener('click', () => window.location.reload());
-      }
-    }, 12000);
+    setTimeout(() => { if (state.map.isStyleLoaded() || state.map.getSource('transit-routes')) markReady(); }, 8000);
     state.map.on('error', e => {
       if (e?.error?.status !== 404) console.warn('Map error:', e?.error?.message || e);
       // Basemap or imagery tiles failing (not fonts or Rove's own data) is said on the map, once.

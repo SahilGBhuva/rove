@@ -110,7 +110,7 @@ export function adaptJourney(journey,data,origin,destination,serviceMidnight) {
     const trip=(data.tripIndex?.get(step.agency+'|'+step.tripId)) || data.trips.find(t=>t[1]===step.tripId && t[0]===step.agency);
     if(!trip)throw new Error('Unrecognized scheduled trip');
     const from=legEndpoint(data.stops[a]),to=legEndpoint(data.stops[b]);
-    legs.push({mode:trip[5]==='1'?'SUBWAY':trip[5]==='0'?'TRAM':'BUS',
+    legs.push({mode:({'0':'TRAM','1':'SUBWAY','2':'RAIL','3':'BUS','4':'FERRY','5':'CABLE_CAR','6':'GONDOLA','7':'FUNICULAR'})[String(trip[5])] || 'BUS',
       transit:true,agency:{id:step.agency},route:{id:trip[2],shortName:trip[3]},
       trip:{id:step.tripId,headsign:step.headsign},headsign:step.headsign,
       from,to,start:{scheduled:when(step.depart)},end:{scheduled:when(step.arrive)},
