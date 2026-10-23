@@ -1282,3 +1282,5 @@ body.theme-dark .itinerary[aria-expanded="true"] { box-shadow: 0 6px 24px rgba(8
 .rove-accessible button,.rove-accessible input,.rove-accessible select{min-height:48px}
 .rove-accessible button:focus-visible,.rove-accessible input:focus-visible,.rove-accessible select:focus-visible{outline:4px solid #0678cc!important;outline-offset:3px!important}
 @media(prefers-reduced-motion:reduce){.rove-accessible *{scroll-behavior:auto!important}}
+
+.access-nearby-list{padding-left:24px;line-height:1.5}.access-nearby-list li{padding:18px 4px;border-bottom:1px solid var(--border,rgba(100,100,100,.2))}.access-nearby-list h3{font-size:19px;margin:0 0 8px}.access-nearby-list p{margin:7px 0}.access-nearby-list button{width:100%;min-height:52px;margin-top:8px}.access-location-status{font-weight:600;line-height:1.5}

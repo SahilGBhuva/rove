@@ -1242,7 +1242,7 @@ function onLeaveFocus() {
 function render() {
   const view = currentView();
   const body = $('#panelBody');
-  const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources, impact: viewImpact, access: viewAccess, place: viewPlace };
+  const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources, impact: viewImpact, access: viewAccess, accessNearby: viewAccessNearby, place: viewPlace };
   // Keep the caret where it was if a field inside the panel has focus while the view refreshes.
   const active = document.activeElement;
   const keep = active && body.contains(active) && active.id && active.tagName === 'INPUT' && !(active.dataset.planField && !state.plan.focus) ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
@@ -1326,7 +1326,7 @@ function viewHome() {
   if (home) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Home">${MODE_ICONS.home}<span>Home</span></button>`);
   if (work) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Work">${MODE_ICONS.work}<span>Work</span></button>`);
   if (!state.userLocation) quick.push(`<button type="button" class="quick" data-action="locate"><svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" stroke="none" d="M10 2.5 16.5 16 10 12.8 3.5 16Z" transform="rotate(45 10 10)"/></svg><span>Near me</span></button>`);
-  if (document.body.classList.contains('rove-accessible')) parts.push(`<section class="audio-home"><h2>Navigate by listening</h2><p>Plan a trip, hear your options, and follow each transit step without relying on the map.</p><button class="button primary" data-action="access-toggle" aria-pressed="${document.body.classList.contains('rove-accessible')}">${document.body.classList.contains('rove-accessible') ? 'Switch back to classic Rove' : 'Turn on audio-first mode'}</button><button class="button secondary" data-action="plan">Plan an accessible-audio trip</button><button class="button secondary" data-action="access">Audio-first settings</button></section>`);
+  if (document.body.classList.contains('rove-accessible')) parts.push(`<section class="audio-home"><h2>Navigate by listening</h2><p>Plan a trip, hear your options, and follow each transit step without relying on the map.</p><button class="button primary" data-action="access-toggle" aria-pressed="${document.body.classList.contains('rove-accessible')}">${document.body.classList.contains('rove-accessible') ? 'Switch back to classic Rove' : 'Turn on audio-first mode'}</button><button class="button secondary" data-action="plan">Plan an accessible-audio trip</button><button class="button secondary" data-action="access">Audio-first settings</button><button class="button secondary" data-action="access-nearby">Nearby stops</button></section>`);
   else parts.push(`<div class="classic-mode-toggle"><button class="button secondary" data-action="access-toggle">Switch to audio-first mode</button></div>`);
   parts.push(`<div class="home-heading"><span class="home-eyebrow">BAY AREA / TRANSIT</span><h1>Go somewhere.</h1><p>Every line. One map.</p></div><div class="quick-row">${quick.join('')}</div>`);
 
@@ -1749,11 +1749,22 @@ function voiceInputStart() {
   recognition.onerror = () => announceAccess('Voice recognition was unsuccessful. Type the destination instead.');
   recognition.start(); announceAccess('Listening for a destination.');
 }
+function viewAccessNearby() {
+ const fix=state.accessLocationFix;
+ const valid=state.userLocation && fix && Date.now()-fix.time<60000 && Number.isFinite(fix.accuracy);
+ const uncertain=!valid || fix.accuracy>65;
+ const items=state.userLocation ? nearbyPlaces(state.userLocation,8) : [];
+ return `${backHeader()}<div class="hero"><h1 class="title-1">Nearby transit stops</h1><p class="caption">Stop locations from Bay Area transit schedules</p></div>
+ <section class="section"><button class="button primary" data-action="access-refresh-location">${state.userLocation?'Refresh my location':'Find my location'}</button>
+ <p class="access-location-status" role="status">${!valid?'Your current location accuracy is unknown. Distances may be inaccurate.':`Location accuracy: approximately ${Math.round(fix.accuracy)} metres. ${uncertain?'Accuracy is too low to locate an exact stop.':'Distances are estimates, not walking directions.'}`}</p>
+ <p>GPS cannot identify a safe crossing, platform edge, or exact boarding position. Confirm the stop and direction before boarding.</p></section>
+ <section class="section"><h2>Closest stops</h2>${items.length?`<ol class="access-nearby-list">${items.map(({place,d})=>`<li><h3>${esc(place.s.n)}</h3><p>${esc(AGENCY_SHORT[place.a.id]||place.a.name)} · Approximately ${Math.round(d/10)*10} metres straight-line distance${uncertain?' (low confidence)':''}</p><p>Routes: ${esc(place.routes.slice(0,7).map(r=>r.title).join(', ')||'Not listed')}</p><button class="button primary" data-action="access-select-stop" data-agency="${esc(place.a.id)}" data-stop="${esc(place.s.id)}">Select this stop and check departures</button></li>`).join('')}</ol>`:'<p class="empty">No nearby stops available yet. Refresh location, or search for a stop by name.</p>'}</section>`;
+}
 function viewAccess() {
  const on = document.body.classList.contains('rove-accessible');
  return `${backHeader()}<div class="hero"><h1 class="title-1">Rove audio-first</h1><p class="caption">Transit designed to work without looking at a map</p></div>
  <section class="section access-controls"><button class="button primary" data-action="access-toggle" aria-pressed="${on}">${on ? 'Audio-first mode is on. Turn off' : 'Turn on audio-first mode'}</button>
- <button class="button secondary" data-action="plan">Plan a journey</button><button class="button secondary" data-action="access-dictate">Speak a destination</button>
+ <button class="button secondary" data-action="plan">Plan a journey</button><button class="button secondary" data-action="access-nearby">Find nearby transit stops</button><button class="button secondary" data-action="access-dictate">Speak a destination</button>
  <button class="button secondary" data-action="access-stop-speech">Stop speaking</button>
  <label class="access-setting"><input type="checkbox" data-access-setting="haptics" ${accessPreference('haptics',true) ? 'checked' : ''}/> Vibrate for important confirmations (when supported)</label>
  <label class="access-setting"><input type="checkbox" data-access-setting="autoVoice" ${accessPreference('autoVoice',false) ? 'checked' : ''}/> Read route choices automatically</label></section>
@@ -2565,6 +2576,9 @@ function handleAction(el) {
     case 'stop': openStop(el.dataset.agency, el.dataset.stop); break;
     case 'lines': clearSearchField(); pushView({ name: 'lines' }, { detent: 'full' }); break;
     case 'impact': clearSearchField(); pushView({ name: 'impact' }, { detent: 'full' }); break;
+    case 'access-nearby': pushView({name:'accessNearby'},{detent:'full'}); if(!state.userLocation) locate(); break;
+    case 'access-refresh-location': locate(); break;
+    case 'access-select-stop': { const place=placeFor(el.dataset.agency,el.dataset.stop); if(place){announceAccess('Selected '+place.s.n+'. Confirm the physical stop and direction before boarding.'); openStop(el.dataset.agency,el.dataset.stop);} break; }
     case 'access-stop-speech': window.speechSynthesis?.cancel(); announceAccess('Speech stopped.'); break;
     case 'access-dictate': { if (currentView().name !== 'plan') openPlan({}); voiceInputStart(); break; }
     case 'access-all-routes': { const its=state.plan.results?.itineraries || []; speakText(its.length ? its.slice(0,3).map((it,i)=>`Option ${i+1}. ${audioTripSummary(it)}`).join(' ') : 'No routes are available.'); break; }
@@ -2856,6 +2870,8 @@ function locate({ thenPick = null } = {}) {
 function onPosition(pos) {
   const first = !state.userLocation;
   state.userLocation = [pos.coords.longitude, pos.coords.latitude];
+  state.accessLocationFix = {accuracy:pos.coords.accuracy,time:pos.timestamp||Date.now()};
+  if(currentView().name==='accessNearby') { render(); announceAccess('Nearby stops updated. Location accuracy approximately '+Math.round(pos.coords.accuracy)+' metres.'); }
   $('#locateButton').classList.add('active');
   const pick = locate.pendingPick;
   locate.pendingPick = null;
@@ -3186,6 +3202,7 @@ function onNavPosition(pos) {
   nav.fix = fix;
   nav.tracking = true;
   state.userLocation = fix.point;
+  state.accessLocationFix = {accuracy:fix.accuracy,time:fix.time};
   const seconds = previous ? (fix.time - previous.time) / 1000 : 0;
   // When actual sensor heading is unavailable, infer heading only after real movement.
   const moved = previous ? RoveNavigation.meters(previous.point, fix.point) : 0;
