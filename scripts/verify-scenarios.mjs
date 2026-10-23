@@ -22,7 +22,17 @@ function nextWeekday() {
     if (![0, 6].includes(local.getDay())) return d.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
   }
 }
-const at = hhmm => `${DAY}T${hhmm}:00-07:00`;
+// Resolve the actual Pacific UTC offset for the scenario date, including DST transitions.
+function pacificOffset(day) {
+  const probe = new Date(`${day}T12:00:00Z`);
+  const part = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles', timeZoneName: 'shortOffset'
+  }).formatToParts(probe).find(p => p.type === 'timeZoneName')?.value;
+  const match = /^GMT([+-])(\\d{1,2})(?::(\\d{2}))?$/.exec(part || '');
+  if (!match) throw new Error(`Unable to determine Pacific offset for ${day}: ${part}`);
+  return `${match[1]}${match[2].padStart(2, '0')}:${match[3] || '00'}`;
+}
+const at = hhmm => `${DAY}T${hhmm}:00${pacificOffset(DAY)}`;
 const get = async p => { const r = await fetch(base + p, { signal: AbortSignal.timeout(60_000) }); return { status: r.status, body: await r.json() }; };
 const search = async q => (await get(`/api/v2/places/search?q=${encodeURIComponent(q)}&limit=3`)).body.results?.[0] || null;
 const fmt = it => `${it.start.slice(11, 16)} → ${it.end.slice(11, 16)} (${Math.round(it.durationSeconds / 60)} min): ` + it.legs.map(l => l.transit
