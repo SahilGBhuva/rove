@@ -84,3 +84,10 @@ test('seven regional origin/destination pairs find transit on weekday mornings',
  const pairs=[['sunnyvale','berkeley'],['powell','downtownBerkeley'],['paloAlto','mountainView'],['oakland','powell'],['fremont','downtownBerkeley'],['sanjose','sunnyvale'],['berkeley','oakland']];
  for(const [a,b] of pairs){const [fl,fn]=points[a],[tl,tn]=points[b];const r=planExperimental({fromLat:fl,fromLon:fn,toLat:tl,toLon:tn,time:'2026-10-21T08:15:00-07:00'},now);assert.equal(r.status,200,`${a} → ${b} HTTP`);assert.ok(r.body.itineraries.length,`${a} → ${b} must have a route`);}
 });
+
+test('broader stop search finds a late Sunnyvale to Berkeley connection',()=>{
+ const t='2026-10-22T21:50:00-07:00';
+ const r=planExperimental({fromLat:37.36,fromLon:-122.01,toLat:37.8671,toLon:-122.2532,time:t},new Date(t));
+ assert.equal(r.status,200);
+ assert.ok(r.body.itineraries.length>0,'should find a transit route beyond the four nearest stops');
+});

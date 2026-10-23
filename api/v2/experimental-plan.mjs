@@ -8,7 +8,7 @@ import {combineServiceDays} from '../../experiments/bay-router/combine-days.mjs'
 import {enrichWalks} from '../../experiments/bay-router/pedestrian.mjs';
 
 const TZ = 'America/Los_Angeles';
-const MAX_ENDPOINT_METERS = 650;
+const MAX_ENDPOINT_METERS = 1100;
 const loaded = new Map();
 function localParts(date) {
   return Object.fromEntries(new Intl.DateTimeFormat('en-US', {
@@ -127,18 +127,18 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
   let ctx,data;
   try {({context:ctx,timetable:data}=loadFor(time,loader));}
   catch {return bad(503,'Scheduled timetable unavailable for this date; try another service date.');}
-  const origins=candidateStops(data.stops,from,MAX_ENDPOINT_METERS,4);
-  const destinations=candidateStops(data.stops,to,MAX_ENDPOINT_METERS,4);
+  const origins=candidateStops(data.stops,from,MAX_ENDPOINT_METERS,8);
+  const destinations=candidateStops(data.stops,to,MAX_ENDPOINT_METERS,8);
   if(!origins.length||!destinations.length)
-    return bad(422,'No transit stops within 650 metres of one or both places. Try a nearby station or a closer starting point.');
-  const footpaths=directFootpaths(data.stops,140,8);
+    return bad(422,'No transit stops within 1100 metres of one or both places. Try a nearby station or a closer starting point.');
+  const footpaths=directFootpaths(data.stops,260,12);
   // Avoid repeated linear trip lookups for every candidate itinerary.
   data.tripIndex=new Map(data.trips.map(t=>[t[0]+'|'+t[1],t]));
   const answers=[];
   for(const a of origins) for(const b of destinations){
     if(a.index===b.index)continue;
     const startSeconds=ctx.seconds+Math.ceil(a.distance/1.2);
-    const trip=findJourney(data,a.index,b.index,startSeconds,{footpaths,maxSeconds:5*3600});
+    const trip=findJourney(data,a.index,b.index,startSeconds,{footpaths,maxSeconds:8*3600});
     if(trip&&trip.legs.some(l=>l.type==='transit')){
       const it=adaptJourney(trip,data,from,to,pacificMidnight(ctx.previousDay));
       const egress=Math.ceil(b.distance/1.2);
