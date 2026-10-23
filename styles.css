@@ -1297,3 +1297,36 @@ body .sheet-grabber{display:none}
 @media(max-width:800px){body .map-area{display:none!important}body .panel{inset:0!important;transform:none!important;position:fixed!important;width:100vw!important;max-width:none!important;height:100dvh!important;border:0!important;border-radius:0!important;z-index:4!important}body .panel-body{height:auto!important;flex:1!important;overflow-y:auto!important}body .panel-top{padding-top:max(16px,env(safe-area-inset-top))}.rove-home{padding-top:12px}}
 @media(min-width:801px){body .panel{position:fixed;inset:0 auto 0 0!important;height:100vh!important;transform:none!important;display:flex;flex-direction:column}body .map-area{display:block}}
 @media(prefers-reduced-motion:reduce){.rove-home *, .rove-home *:before,.rove-home *:after{animation:none!important;transition:none!important}}
+
+.nav-extra{margin-top:14px}.nav-extra summary{font-size:14px;font-weight:650;cursor:pointer;padding:12px 2px;color:var(--ink-3)}
+.nav-extra[open] summary{margin-bottom:8px}.nav-stage{margin:14px 0;color:var(--ink-3);font-size:14px}
+.nav-stop-progress,.nav-transfer,.nav-help-panel{padding:17px 0;border-top:1px solid var(--line,rgba(0,0,0,.13));line-height:1.5}
+.nav-stop-progress h3,.nav-transfer h3{font-size:18px;margin:0 0 10px}
+.nav-stop-actions,.nav-help-actions{display:grid;gap:12px;margin-top:14px}
+.nav-stop-actions button,.nav-help-actions button{min-height:54px}
+.nav-help-panel{margin:24px;max-width:540px}.nav-help-panel h2{font-size:26px;letter-spacing:-.025em}
+.nav-help-panel p{font-size:17px;line-height:1.55}
+.nav-primary-actions{margin-top:12px}
+@media(max-width:430px){.nav-help-panel{margin:18px}.nav-camera-controls{flex-wrap:wrap}}
+
+.nav-end-button{font-size:14px;min-height:48px}.view-head:has(.nav-end-button){display:flex;align-items:center;justify-content:space-between}.arrived{padding:20px 24px}.arrived p{font-size:17px;line-height:1.55}
+
+.nav-arrival{margin:16px 0;padding:18px 0;border-top:1px solid var(--line,rgba(0,0,0,.14));border-bottom:1px solid var(--line,rgba(0,0,0,.14))}
+.nav-arrival h3{font-size:18px;margin:0 0 8px}.nav-arrival-state{font-size:17px;line-height:1.55;margin:6px 0 10px}
+.nav-arrival-actions{display:grid;gap:10px;margin-top:12px}.nav-arrival-actions button{min-height:52px}
+/* Accessible screens should never flash blank during frequent live-data updates. */
+.rove-accessible .panel-body.view-enter > * { animation: none !important; opacity: 1 !important; filter: none !important; }
+@media (max-width:800px) {
+  /* Map controls are irrelevant when the mobile map is hidden behind the journey. */
+  body:not(.map-visible) .map-controls,body:not(.map-visible) .layers-popover { display: none !important; }
+}
+
+/* A secondary visual map is opened deliberately; never required to finish a trip. */
+.mobile-map-close{display:none}
+@media(max-width:800px){
+  body.map-visible .map-area{display:block!important;position:fixed!important;inset:0!important;z-index:15!important}
+  body.map-visible #panel{opacity:0!important;pointer-events:none!important}
+  body.map-visible .map-controls{display:flex!important;z-index:18!important;bottom:90px!important}
+  body.map-visible .mobile-map-close{display:block!important;position:fixed;z-index:25;top:max(18px,env(safe-area-inset-top));left:16px;min-height:54px;padding:12px 18px;border-radius:12px;background:#fff;color:#101a29;font-weight:700;box-shadow:0 2px 12px rgba(0,0,0,.18)}
+}
+.nav-show-map{width:100%;margin:4px 0 12px;min-height:52px}

@@ -129,7 +129,7 @@ test('late-night no-service flow offers a correctly labeled later search', () =>
 });
 
 test('ending navigation releases location tracking before clearing state', () => {
-  assert.match(source, /case 'nav-end': releaseWakeLock\(\); state.nav = null; goHome\(\); break;/);
+  assert.match(source, /case 'nav-end': releaseWakeLock\(\);state.nav=null;window.RoveJourneyAssist\?\.clear\(localStorage\);goHome\(\);break;/);
 });
 
 

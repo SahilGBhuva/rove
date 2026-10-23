@@ -1233,9 +1233,10 @@ function onLeaveFocus() {
   const wantKey = routeView ? routeView.key : null;
   if (state.selectedKey !== wantKey) { state.selectedKey = wantKey; applyMapState(); }
   if (top.name === 'stop') highlightPlace(placeFor(top.agency, top.stop)); else highlightPlace(null);
-  if (!['results', 'navigate'].includes(top.name) && state.journey) { state.journey = null; state.focusLeg = null; renderJourney(); applyMapState(); }
+  if (!state.nav && !['results', 'navigate'].includes(top.name) && state.journey) { state.journey = null; state.focusLeg = null; renderJourney(); applyMapState(); }
   if (top.name === 'place') showPlacePin(top.place); else if (placePin) showPlacePin(null);
-  if (top.name !== 'navigate') releaseWakeLock();
+  // An active journey survives opening Home or nearby stops; only end it on request.
+  if (top.name !== 'navigate' && !state.nav) releaseWakeLock();
 }
 
 
@@ -1246,12 +1247,20 @@ function render() {
   // Keep the caret where it was if a field inside the panel has focus while the view refreshes.
   const active = document.activeElement;
   const keep = active && body.contains(active) && active.id && active.tagName === 'INPUT' && !(active.dataset.planField && !state.plan.focus) ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
+  const focusAction = !keep && active && body.contains(active) && active.dataset?.action && view.name === state.lastViewName
+    ? { action: active.dataset.action, index: active.dataset.index ?? null } : null;
   body.innerHTML = (renderers[view.name] || viewHome)(view);
   // A new view slides in gently; refreshing the same view never animates.
   if (state.lastViewName !== view.name && !prefersReducedMotion()) {
     body.classList.remove('view-enter'); void body.offsetWidth; body.classList.add('view-enter');
   }
   state.lastViewName = view.name;
+  if (focusAction) {
+    const again = Array.from(body.querySelectorAll('[data-action]'))
+      .find(el => el.dataset.action === focusAction.action &&
+        (el.dataset.index ?? null) === focusAction.index);
+    again?.focus({ preventScroll: true });
+  }
   if (keep) {
     const again = document.getElementById(keep.id);
     if (again) { again.focus({ preventScroll: true }); try { again.setSelectionRange(keep.start, keep.end); } catch { /* not a text field */ } }
@@ -1319,13 +1328,14 @@ function alertsHtml(alerts, max = 2) {
 
 /* ---------- Home ---------- */
 function viewHome() {
- const active=!!state.nav;
+ const saved=window.RoveJourneyAssist?.load(localStorage);
+ const active=!!state.nav || !!saved;
  const places=savedPlaces();
  const shortcuts=places.slice(0,3).map(p=>`<button class="rove-destination" data-action="go-saved" data-label="${esc(p.label)}">${esc(p.label)}</button>`).join('');
  return `<main class="rove-home" aria-labelledby="roveHomeTitle">
  <div class="rove-home-intro"><span class="rove-kicker">Your journey, your way</span><h1 id="roveHomeTitle">Where do you want to go?</h1><p>Find your route and follow your journey with clear, spoken guidance.</p></div>
  <button class="rove-destination-search" data-action="plan" aria-label="Choose a destination and plan a trip"><span aria-hidden="true">⌕</span><span>Search for a destination</span><span aria-hidden="true">→</span></button>
- ${active?`<section class="rove-active"><h2>Your journey is in progress</h2><p>Return to your current step and hear the next instruction.</p><button class="button primary" data-action="access-my-journey">Continue journey</button></section>`:''}
+ ${active?`<section class="rove-active"><h2>Your journey is in progress</h2><p>Return to your current step and hear the next instruction.</p><button class="button primary" data-action="access-my-journey">${state.nav ? "Continue journey" : "Resume saved journey"}</button></section>`:''}
  <nav class="rove-home-actions" aria-label="Journey actions"><button data-action="plan"><span class="rove-action-icon" aria-hidden="true">↗</span><span>Plan a trip</span></button><button data-action="access-nearby"><span class="rove-action-icon" aria-hidden="true">◎</span><span>Nearby transit</span></button><button data-action="access-my-journey"><span class="rove-action-icon" aria-hidden="true">◉</span><span>My journey</span></button></nav>
  ${shortcuts?`<section class="rove-saved"><h2>Saved places</h2><div>${shortcuts}</div></section>`:''}
  <div class="rove-home-footer"><button class="text-button" data-action="access">Voice and accessibility settings</button><button class="text-button" data-action="sources">Transit data</button></div>
@@ -1738,19 +1748,23 @@ function viewAccessNearby() {
 }
 function viewAccess() {
  const on = true;
- return `${backHeader()}<div class="hero"><h1 class="title-1">Rove audio-first</h1><p class="caption">Transit designed to work without looking at a map</p></div>
+ return `${backHeader()}<div class="hero"><h1 class="title-1">Voice and accessibility settings</h1><p class="caption">Transit designed to work without looking at a map</p></div>
  <section class="section access-controls"><p>Spoken guidance and large controls are always available.</p>
  <button class="button secondary" data-action="plan">Plan a journey</button><button class="button secondary" data-action="access-nearby">Find nearby transit stops</button><button class="button secondary" data-action="access-dictate">Speak a destination</button>
  <button class="button secondary" data-action="access-stop-speech">Stop speaking</button>
  <label class="access-setting"><input type="checkbox" data-access-setting="haptics" ${accessPreference('haptics',true) ? 'checked' : ''}/> Vibrate for important confirmations (when supported)</label>
- <label class="access-setting"><input type="checkbox" data-access-setting="autoVoice" ${accessPreference('autoVoice',false) ? 'checked' : ''}/> Read route choices automatically</label></section>
+ </section>
  <section class="section"><h2>How to travel with Rove</h2><ol class="access-guide"><li>Enter or speak your destination and confirm the search result.</li><li>Choose a route. Select Listen to route to hear each boarding and exit stop.</li><li>Start navigation and use Repeat instruction or Next step. Confirm boarding and transfers yourself.</li><li>Open any stop to hear available live departures, with uncertainty clearly stated.</li></ol></section>
  <section class="section"><h2>What Rove cannot verify</h2><p class="empty">Rove cannot detect obstacles, locate safe crossings, confirm platform edges, verify accessible entrances or elevators, or prove that you boarded a bus or train. GPS can be inaccurate. Use your established mobility aids and check signs or ask transit staff when needed.</p></section>`;
 }
 
 function readNavInstruction() {
  const step = state.nav?.steps[state.nav.i];
- if (!step || !('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) { toast('Speech is not available in this browser.'); return; }
+ if (!step) return;
+ if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
+   announceAccess(`${step.title}. ${step.meta || ''}. Use your screen reader to hear this instruction.`);
+   return;
+ }
  window.speechSynthesis.cancel();
  const speech = new SpeechSynthesisUtterance(`${step.title}. ${step.meta || ''}. Confirm boarding and safe paths independently.`);
  speech.rate = 0.9; window.speechSynthesis.speak(speech);
@@ -2301,7 +2315,8 @@ async function navReroute(nav) {
     if (state.nav !== nav) return;
     nav.it = alternatives[0];
     nav.steps = buildSteps(nav.it);
-    nav.i = 0; nav.maneuver = null; nav.spokenKey = null;
+    nav.i=0;nav.boarded=false;nav.stopProgress=null;nav.help=false;nav.prediction=null;nav.maneuver=null;nav.spokenKey=null;storeJourney(nav);
+    if(nav.steps[0]?.type==='wait')void updateWaitingPrediction(nav);
     state.journey = nav.it;
     nav.status = 'Route updated from your current location';
     nav.error = null;
@@ -2378,24 +2393,153 @@ function updateNavManeuver(nav, fix) {
   }
 }
 
-async function startNavigation(index) {
-  const it = state.plan.results?.itineraries?.[index];
+function openOptionalMap() {
+ if(!state.map){announceAccess('The optional visual map is unavailable. All journey instructions remain available.');return;}
+ if(window.matchMedia('(min-width:801px)').matches){fitJourney(state.nav?.it);return;}
+ document.body.classList.add('map-visible');
+ document.getElementById('panel').inert=true;
+ const close=document.getElementById('mobileMapClose');
+ close.hidden=false;close.focus({preventScroll:true});
+ requestAnimationFrame(()=>{
+   state.map.resize();
+   if(state.nav?.it)fitJourney(state.nav.it);
+ });
+}
+function closeOptionalMap() {
+ document.body.classList.remove('map-visible');
+ document.getElementById('panel').inert=false;
+ const close=document.getElementById('mobileMapClose');close.hidden=true;
+ document.querySelector('[data-action="nav-show-map"]')?.focus({preventScroll:true});
+}
+function currentJourneyStage(nav) {
+ const step=nav?.steps?.[nav.i];
+ if(!step)return 'Unknown';
+ if(step.type==='wait')return 'Waiting to board';
+ if(step.type==='ride')return nav.boarded?'Riding':'Boarding not confirmed';
+ if(step.type==='walk')return nav.i>0 && nav.steps.slice(0,nav.i).some(s=>s.type==='ride')?'Making a transfer or continuing on foot':'Walking to the stop';
+ if(step.type==='arrive')return 'Arrival to confirm';
+ return 'On your journey';
+}
+function storeJourney(nav=state.nav) {if(nav)window.RoveJourneyAssist?.store(nav,localStorage);}
+function waitingPredictionText(nav) {
+ const step=nav?.steps?.[nav.i];
+ if(step?.type!=='wait')return 'You are not currently waiting for a transit service.';
+ const p=nav.prediction;
+ if(!p || p.status==='loading')return 'Checking arrival predictions for your boarding stop.';
+ if(p.status==='live' && Math.abs(Date.now()-p.feedTs*1000)<=110000) {
+   const mins=Math.max(0,Math.round((p.estimates[0].time*1000-Date.now())/60000));
+   const trip=p.exactTrip?'The scheduled trip has a matching live prediction. ':'Live route prediction at this stop, but your selected vehicle is not verified. ';
+   return trip+(mins===0?'Estimated arrival now.':'Estimated arrival in '+mins+' minutes.')+
+     ' Check the route and direction using vehicle announcements or transit staff.';
+ }
+ return p.reason||'Verified live predictions are unavailable. Check the scheduled departure and confirm route and direction.';
+}
+function waitingPredictionHtml(nav,step) {
+ const p=nav.prediction;
+ const msg=waitingPredictionText(nav);
+ const allowed=['muni','act'].includes(step.leg?.agencyId);
+ return `<section class="nav-arrival" aria-labelledby="navArrivalTitle">
+  <h3 id="navArrivalTitle">At your boarding stop</h3>
+  <p class="nav-arrival-state" role="status">${esc(allowed?msg:'Live arrivals are not verified for this transit agency. Use the scheduled time and verify the vehicle.')}</p>
+  ${allowed && p?.status==='live' && Math.abs(Date.now()-p.feedTs*1000)<=110000
+    ? `<p class="caption">Source: 511 GTFS-Realtime · ${esc(ageLabel(p.feedTs))}. Trip direction is not guaranteed by this feed.</p>`:''}
+  <div class="nav-arrival-actions"><button class="button secondary" data-action="nav-refresh-arrivals" ${nav.prediction?.status==='loading'?'disabled':''}>Check departures</button>
+  <button class="button secondary" data-action="nav-read-boarding">Repeat route and direction</button></div>
+ </section>`;
+}
+async function updateWaitingPrediction(nav,force=false) {
+ const step=nav?.steps?.[nav.i];
+ if(!step || step.type!=='wait')return;
+ const leg=step.leg,agency=leg?.agencyId;
+ const raw=String(leg?.from?.stopId||'');
+ const m=/^([a-z]+):(.+)$/i.exec(raw);
+ const stop=m?(m[1]===agency?m[2]:null):raw;
+ if(!['muni','act'].includes(agency) || !stop || !leg.routeId) {
+   nav.prediction={status:'unverified',reason:'No verified live arrival service for this boarding stop.'};
+   return;
+ }
+ const timestamp=Date.now(),previous=nav.prediction;
+ if(previous?.at && timestamp-previous.at<(force?20000:90000))return;
+ const stepIndex=nav.i;
+ nav.prediction={status:'loading',at:timestamp};
+ if(currentView().name==='navigate')render();
+ try {
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),11000);
+   let response;
+   try{response=await fetch('/api/v2/arrivals?'+new URLSearchParams({agency,stop}),{signal:controller.signal,cache:'no-store'});}
+   finally{clearTimeout(timer);}
+   const body=response.ok?await response.json():null;
+   if(nav!==state.nav || nav.i!==stepIndex)return;
+   nav.prediction=body?{...window.RoveJourneyAssist.matchArrivals(body,leg.routeId,leg.tripId),at:timestamp}:
+     {status:'unverified',at:timestamp,reason:'Live arrival data could not be reached.'};
+ }catch{
+   if(nav!==state.nav || nav.i!==stepIndex)return;
+   nav.prediction={status:'unverified',at:timestamp,reason:'Live arrival data could not be reached.'};
+ }
+ if(currentView().name==='navigate')render();
+}
+
+function advanceJourney(manualExit=false) {
+ const nav=state.nav;if(!nav)return;
+ const step=nav.steps[nav.i];
+ if(step?.type==='wait') {announceAccess('Confirm you boarded the correct route and direction using the boarding button.');return;}
+ if(step?.type==='ride' && !manualExit) {announceAccess('Confirm you have exited at the intended stop before continuing.');return;}
+ if(nav.i>=nav.steps.length-1)return;
+ const continuingOnboard=nav.steps[nav.i+1]?.type==='ride' && nav.steps[nav.i+1]?.leg?.staySeated;
+ nav.i++;nav.boarded=!!continuingOnboard;nav.exitAlerted=false;nav.exitHint=null;nav.stopProgress=null;
+ nav.maneuver=null;nav.spokenKey=null;nav.help=false;
+ storeJourney(nav);render();focusStep();accessVibrate([100,70,100]);
+ if(nav.steps[nav.i]?.type==='wait')void updateWaitingPrediction(nav);
+ announceAccess('Next journey step. '+nav.steps[nav.i].title);
+}
+function restoreSavedJourney() {
+ const saved=window.RoveJourneyAssist?.load(localStorage);
+ if(!saved){announceAccess('No saved journey is available. Plan a new trip.');return;}
+ startNavigation(-1,saved);
+}
+function viewJourneyHelp(nav) {
+ const step=nav.steps[nav.i],fix=nav.fix;
+ const reliable=fix && fix.accuracy<=65 && Date.now()-fix.time<=60000;
+ const transfer=window.RoveJourneyAssist?.nextTransfer(nav.steps,nav.i);
+ return `<section class="nav-help-panel" aria-labelledby="navHelpTitle">
+ <h2 id="navHelpTitle" tabindex="-1">Need help with this trip?</h2>
+ <p><strong>Last known step:</strong> ${esc(step?.title||'Unavailable')}</p>
+ <p><strong>Destination:</strong> ${esc(nav.destination?.name||'Your selected destination')}</p>
+ <p><strong>Location:</strong> ${reliable ? 'GPS estimate available, accuracy approximately '+Math.round(fix.accuracy)+' metres.' : 'Your current position is not reliable or is unavailable.'}</p>
+ <p>${transfer ? 'Next planned service: '+esc(transfer.route)+(transfer.headsign?' toward '+esc(transfer.headsign):'')+', from '+esc(transfer.stop)+'.' : 'No further transfer is listed.'}</p>
+ <p>Rove cannot verify the correct platform, street crossing, or whether you are on the expected vehicle. If unsure, stop in a safe location and ask transit staff for assistance.</p>
+ <div class="nav-help-actions">
+ <button class="button secondary" data-action="nav-help-location">Refresh my location</button>
+ <button class="button secondary" data-action="nav-replan" ${!reliable || !navigator.onLine || nav.rerouting ? 'disabled' : ''}>Find a replacement route</button>
+ <button class="button primary" data-action="nav-help">Back to journey</button></div></section>`;
+}
+
+async function startNavigation(index, snapshot=null) {
+  const it = snapshot?.it || state.plan.results?.itineraries?.[index];
   if (!it) return;
+  if(snapshot)state.plan.to={...snapshot.destination};
   releaseWakeLock();
   state.journey = it;
   const nav = {
-    it, steps: buildSteps(it), i: 0, tracking: false, watchId: null, boarded: false, exitAlerted: false, exitHint: null,
+    it, steps: buildSteps(it), i: 0, tracking: false, watchId: null, boarded: false, exitAlerted: false, exitHint: null, stopProgress:null, help:false,
     destination: { ...state.plan.to }, access: state.plan.results?.request?.access || 'WALK',
     follow: true, headingUp: true, voice: false, fix: null, heading: null, compassHeading: null, compassEnabled: false, lastCompassAt: 0, lastCameraAt: 0,
     offRouteFixes: 0, lastOffRouteAt: 0, rerouteAt: 0, rerouting: false,
     maneuver: null, spokenKey: null, speechAllowed: false, lastUiAt: 0,
     status: it.legs.some(l => l.mode === 'WALK' && l.approximate) ? 'Walking directions are estimates. Follow marked streets and crossings; GPS tracks your location.' : 'Waiting for GPS permission…', error: null, controller: null
   };
-  state.nav = nav;
+  if(snapshot) {
+    nav.i=Math.min(Math.max(0,snapshot.index),nav.steps.length-1);
+    nav.boarded=!!snapshot.boarded && nav.steps[nav.i]?.type==='ride';
+    nav.stopProgress=snapshot.stopProgress||null;
+    nav.status='Journey restored from this device. Times and predictions may have changed; check live information.';
+  }
+  state.nav=nav;
+  storeJourney(nav);
   renderJourney(); applyMapState();
   pushView({ name: 'navigate' }, { detent: 'half' });
   focusStep();
-  if (document.body.classList.contains('rove-accessible')) { announceAccess('Navigation started. Confirm your boarding stop and vehicle.'); }
+  announceAccess(snapshot?'Saved journey restored. Check the scheduled departure and your current position.':'Navigation started. Confirm your boarding stop and vehicle.');
   // Request a fix on Start even when the rider never tapped the location button.
   if ('geolocation' in navigator && window.isSecureContext) {
     nav.watchId = navigator.geolocation.watchPosition(onNavPosition, error => {
@@ -2408,6 +2552,10 @@ async function startNavigation(index) {
     nav.tracking = true;
   } else nav.status = 'Live navigation needs location permission and HTTPS (or localhost).';
   render();
+  if(nav.steps[nav.i]?.type==='wait')void updateWaitingPrediction(nav);
+  nav.arrivalTimer=setInterval(()=>{
+    if(state.nav===nav && !document.hidden && nav.steps[nav.i]?.type==='wait')void updateWaitingPrediction(nav);
+  },90000);
   try {
     if ('wakeLock' in navigator) {
       const lock = await navigator.wakeLock.request('screen');
@@ -2424,6 +2572,7 @@ function releaseWakeLock() {
   state.wakeLock = null;
   const nav = state.nav;
   nav?.controller?.abort();
+  if(nav?.arrivalTimer){clearInterval(nav.arrivalTimer);nav.arrivalTimer=null;}
   if (nav?.watchId != null) { navigator.geolocation.clearWatch(nav.watchId); nav.watchId = null; nav.tracking = false; }
   navMarker?.remove(); navMarker = null;
   if (state.map) state.map.easeTo({ bearing: 0, pitch: 0, duration: 0 });
@@ -2442,20 +2591,22 @@ function viewNavigate() {
   if (!nav) return viewHome();
   const step = nav.steps[nav.i];
   const total = nav.steps.length - 1;
-  const head = `<div class="view-head"><button class="back-button" data-action="nav-end">${ICONS.back}<span>End trip</span></button></div>
+  const head = `<div class="view-head"><button class="back-button" data-action="nav-minimize">${ICONS.back}<span>Home</span></button><button class="button secondary nav-end-button" data-action="nav-end">End trip</button></div>
     <div class="nav-head"><div class="title-2">Arrive ${esc(clock(new Date(nav.it.endTime)))}</div><div class="caption">${esc(durationLabel((new Date(nav.it.endTime) - Date.now()) / 1000))} remaining${nav.it.usesRealtime ? '' : ' · Scheduled times'}</div>
     <p class="nav-gps-status" role="status">${esc(nav.status || 'Waiting for location')}</p>
     ${nav.it.legs.some(l => l.mode === 'WALK' && l.approximate) ? '<p class="caption">Walking segments are estimates, not verified turn-by-turn paths. Follow safe pedestrian routes.</p>' : ''}
-    <div class="nav-camera-controls" role="group" aria-label="Navigation map controls">
+    <p class="caption">Keep Rove open in the foreground for GPS updates. Browsers may pause tracking when your phone locks.</p>
+    <details class="nav-extra"><summary>Map and advanced route options</summary><button class="button secondary nav-show-map" data-action="nav-show-map">Open optional map</button><div class="nav-camera-controls" role="group" aria-label="Navigation map controls">
       <button type="button" class="button secondary" data-action="nav-follow" aria-pressed="${nav.follow}">Follow</button>
       <button type="button" class="button secondary" data-action="nav-bearing" aria-pressed="${nav.headingUp}">${nav.headingUp ? 'Heading up' : 'North up'}</button>
       <button type="button" class="button secondary" data-action="nav-overview">Overview</button>
       <button type="button" class="button secondary" data-action="nav-compass" aria-pressed="${nav.compassEnabled}">${nav.compassEnabled ? 'Compass on' : 'Use phone compass'}</button>
       <button type="button" class="button secondary" data-action="nav-voice" aria-pressed="${nav.voice}" ${!('speechSynthesis' in window) ? 'disabled' : ''}>${nav.voice ? 'Mute voice' : 'Voice guidance'}</button>
       <button type="button" class="button secondary" data-action="nav-replan" ${!nav.fix || nav.rerouting ? 'disabled' : ''}>${nav.rerouting ? 'Recalculating…' : 'New route'}</button>
-    </div></div>`;
+    </div></details></div>`;
+  if(nav.help)return `${head}${viewJourneyHelp(nav)}`;
   if (step.type === 'arrive') {
-    return `${head}<div class="arrived"><h2 class="title-1">${esc(step.title)}</h2><p class="caption" style="margin-top:8px">${esc(clock(new Date()))}</p><div style="margin-top:20px"><button class="button primary" data-action="nav-end">Done</button></div></div>`;
+    return `${head}<div class="arrived"><h2 class="title-1">Journey steps complete</h2><p>Verify that you have reached ${esc(nav.destination?.name || 'your destination')}. Rove cannot confirm your exact entrance or position.</p><div style="margin-top:20px"><button class="button primary" data-action="nav-end">Finish journey</button></div></div>`;
   }
   let big = step.big || '', meta = step.meta || '';
   if (step.type === 'wait') {
@@ -2485,16 +2636,31 @@ function viewNavigate() {
       ${meta ? `<p class="caption" style="margin:6px 0 0">${esc(meta)}</p>` : ''}
       ${step.leg ? legAlertsHtml(step.leg) : ''}
       ${transitRecovery}
-      ${document.body.classList.contains('rove-accessible') && (step.type === 'wait' || step.type === 'ride') ? `<section class="blind-boarding"><p>${nav.boarded ? 'Boarding manually confirmed. Rove has not independently verified the vehicle.' : 'Before boarding, check the route and destination shown or announced on the vehicle.'}</p><button class="button primary" data-action="nav-board" aria-pressed="${nav.boarded}">${nav.boarded ? 'Boarding confirmed' : 'I have boarded this vehicle'}</button></section>` : ''}
+      <p class="nav-stage">Stage: ${esc(currentJourneyStage(nav))}</p>
+      ${step.type==='wait'?waitingPredictionHtml(nav,step):''}
+      ${step.type==='ride' ? (() => {
+        const stops=window.RoveJourneyAssist?.stopSequence(step.leg);
+        const progress=nav.stopProgress;
+        const remaining=stops && progress ? Math.max(0,stops.length-progress.confirmed-1):null;
+        const next=stops?.[Math.min((progress?.confirmed||0)+1,stops.length-1)];
+        return `<section class="nav-stop-progress" aria-label="Stop tracking">
+          <h3>Stops on this journey</h3>
+          <p>${stops ? 'Next stop from your itinerary: '+esc(next?.name||'unknown')+'. '+(remaining!=null ? remaining+' stops remaining (GPS estimate or rider confirmation).' : 'Stop progress not yet confirmed.') : 'A verified intermediate-stop sequence is not supplied for this trip. Rove cannot reliably count stops.'}</p>
+          ${stops? `<div class="nav-stop-actions"><button class="button secondary" data-action="nav-mark-stop">I am at ${esc(next?.name||'the next stop')}</button><button class="button secondary" data-action="nav-correct-stop" ${(progress?.confirmed||0)<=0?'disabled':''}>Correct previous stop</button></div>`:''}
+        </section>`;
+      })() : ''}
+      ${step.type==='ride' ? (() => {const t=window.RoveJourneyAssist?.nextTransfer(nav.steps,nav.i);return t? `<section class="nav-transfer"><h3>Next transfer</h3><p>After exiting, continue to ${esc(t.stop)} for ${esc(t.route)}${t.headsign?' toward '+esc(t.headsign):''}. Verify your platform or boarding point independently.</p></section>`:'';})() : ''}
+      ${document.body.classList.contains('rove-accessible') && step.type === 'wait' ? `<section class="blind-boarding"><p>${nav.boarded ? 'Boarding manually confirmed. Rove has not independently verified the vehicle.' : 'Before boarding, check the route and destination shown or announced on the vehicle.'}</p><button class="button primary" data-action="nav-board" aria-pressed="${nav.boarded}">${nav.boarded ? 'Boarding confirmed' : 'I have boarded this vehicle'}</button></section>` : ''}
       ${document.body.classList.contains('rove-accessible') && step.type === 'ride' ? `<section class="blind-exit" role="status"><h3>Exit-stop assistant</h3><p>${esc(nav.exitHint || 'Waiting for accurate GPS. Use vehicle stop announcements to confirm your exit.')}</p><button class="button secondary" data-action="nav-exit-check">Check exit-stop proximity</button></section>` : ''}
       ${turns}
     </div>
     ${document.body.classList.contains('rove-accessible') ? `<div class="access-navigation-help" role="note">Check your vehicle and stop independently. Rove does not automatically confirm boarding or safe pedestrian routes.</div>` : ''}
-    <div class="action-bar">
+    <div class="action-bar nav-primary-actions">
+      <button class="button secondary" data-action="nav-help">Need help?</button>
       ${document.body.classList.contains('rove-accessible') ? `<button class="button secondary" data-action="access-stop-speech">Stop speech</button>` : ''}
       ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
       <button class="button secondary" data-action="nav-read">Repeat current instruction</button>
-      <button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'I have arrived' : 'Next step'}</button>
+      <button class="button primary" data-action="nav-next">${step.type==='wait'?'I need to board':step.type==='ride' && nav.steps[nav.i+1]?.leg?.staySeated?'Continue on this vehicle':step.type==='ride'?'I got off at my stop':nav.i === total - 1 ? 'I have arrived' : 'Continue journey'}</button>
     </div>
     <ol class="step-list" style="margin-top:20px">${list}</ol>`;
 }
@@ -2504,9 +2670,9 @@ function viewNavigate() {
 
 document.addEventListener('change', event => {
   const key = event.target?.dataset?.accessSetting;
-  if (key !== 'haptics' && key !== 'autoVoice') return;
+  if (key !== 'haptics') return;
   accessSetting(key, Boolean(event.target.checked));
-  announceAccess(key === 'haptics' ? 'Vibration '+(event.target.checked?'on':'off') : 'Automatic route speech '+(event.target.checked?'on':'off'));
+  announceAccess('Vibration '+(event.target.checked?'on':'off'));
 });
 function clearSearchField() {
   state.searchQuery = '';
@@ -2552,7 +2718,7 @@ function handleAction(el) {
     case 'stop': openStop(el.dataset.agency, el.dataset.stop); break;
     case 'lines': clearSearchField(); pushView({ name: 'lines' }, { detent: 'full' }); break;
     case 'impact': clearSearchField(); pushView({ name: 'impact' }, { detent: 'full' }); break;
-    case 'access-my-journey': if(state.nav) pushView({name:'navigate'},{detent:'full'}); else announceAccess('No journey is currently active. Plan a trip to begin.'); break;
+    case 'access-my-journey': if(state.nav)pushView({name:'navigate'},{detent:'full'});else restoreSavedJourney();break;
     case 'access-nearby': pushView({name:'accessNearby'},{detent:'full'}); if(!state.userLocation) locate(); break;
     case 'access-refresh-location': locate(); break;
     case 'access-select-stop': { const place=placeFor(el.dataset.agency,el.dataset.stop); if(place){announceAccess('Selected '+place.s.n+'. Confirm the physical stop and direction before boarding.'); openStop(el.dataset.agency,el.dataset.stop);} break; }
@@ -2621,7 +2787,30 @@ function handleAction(el) {
     }
     case 'leg-focus': focusLeg(Number(el.dataset.leg)); break;
     case 'nav-start': startNavigation(Number(el.dataset.index)); break;
-    case 'nav-board': if (state.nav) { state.nav.boarded = true; accessVibrate([120,70,120]); announceAccess('You confirmed boarding. Rove cannot independently verify the vehicle.',true); render(); } break;
+    case 'nav-board': if(state.nav && state.nav.steps[state.nav.i]?.type==='wait'){
+      state.nav.boarded=true;state.nav.i++;state.nav.stopProgress={confirmed:0,pending:null};
+      state.nav.exitAlerted=false;state.nav.help=false;storeJourney();
+      accessVibrate([120,70,120]);announceAccess('You confirmed boarding. Rove has not independently verified the vehicle. Listen for stop announcements.');
+      render();focusStep();
+    }break;
+    case 'nav-refresh-arrivals': if(state.nav)void updateWaitingPrediction(state.nav,true);break;
+    case 'nav-read-boarding': if(state.nav){
+      const step=state.nav.steps[state.nav.i];
+      speakText(step.title+'. '+waitingPredictionText(state.nav));
+    }break;
+    case 'nav-help': if(state.nav){state.nav.help=!state.nav.help;render();if(state.nav.help)document.getElementById('navHelpTitle')?.focus({preventScroll:true});}break;
+    case 'nav-help-location': locate();announceAccess('Requesting a location estimate. GPS cannot verify a boarding position.');break;
+    case 'nav-mark-stop': if(state.nav){
+      const stops=window.RoveJourneyAssist?.stopSequence(state.nav.steps[state.nav.i]?.leg);
+      if(stops){
+        const n=state.nav.stopProgress?.confirmed||0;
+        if(n<stops.length-1){state.nav.stopProgress={confirmed:n+1,pending:null};storeJourney();render();announceAccess('You reported reaching '+stops[n+1].name+'. Confirm stop announcements before exiting.');}
+      }
+    }break;
+    case 'nav-correct-stop': if(state.nav){
+      const n=state.nav.stopProgress?.confirmed||0;
+      state.nav.stopProgress={confirmed:Math.max(0,n-1),pending:null};storeJourney();render();announceAccess('Reported stop adjusted.');
+    }break;
     case 'nav-exit-check': if (state.nav) { checkBlindExit(state.nav,true); render(); } break;
     case 'nav-follow': navChangeFollow('follow'); break;
     case 'nav-compass': enableNavCompass(); break;
@@ -2630,9 +2819,11 @@ function handleAction(el) {
     case 'nav-overview': navChangeFollow('overview'); break;
     case 'nav-replan': if (state.nav?.fix) navReroute(state.nav); break;
     case 'nav-missed': if (state.nav?.fix) navReroute(state.nav); break;
-    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
-    case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
-    case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
+    case 'nav-next': advanceJourney(state.nav?.steps[state.nav.i]?.type==='ride'); break;
+    case 'nav-prev': if(state.nav&&state.nav.i>0){state.nav.i--;state.nav.boarded=state.nav.steps[state.nav.i]?.type==='ride';state.nav.stopProgress=null;state.nav.exitAlerted=false;state.nav.help=false;storeJourney();render();focusStep();}break;
+    case 'nav-show-map': openOptionalMap();break;
+    case 'nav-minimize': goHome();announceAccess('Journey continues. Select My journey to return.');break;
+    case 'nav-end': releaseWakeLock();state.nav=null;window.RoveJourneyAssist?.clear(localStorage);goHome();break;
     default: break;
   }
 }
@@ -2750,6 +2941,10 @@ function renderAgencyToggles() {
 }
 
 function bindChrome() {
+  document.getElementById('mobileMapClose').addEventListener('click',closeOptionalMap);
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&document.body.classList.contains('map-visible')){event.preventDefault();closeOptionalMap();}
+  });
   $('#layersButton').addEventListener('click', e => {
     e.stopPropagation();
     const pop = $('#layersPopover');
@@ -3081,7 +3276,7 @@ function normalizeItinerary(it) {
     const transit = Boolean(leg.transit);
     const startTime = leg.start?.estimated || leg.start?.scheduled;
     const endTime = leg.end?.estimated || leg.end?.scheduled;
-    const end = p => p ? { name: displayName(p.stop?.station?.name || p.name || ''), lat: p.lat, lon: p.lon, platform: p.stop?.platform || null, stopName: p.name, parking: p.parking ? (p.parking.name || 'Parking') : null, parkingCapacity: Number.isFinite(p.parking?.capacity) ? p.parking.capacity : null } : null;
+    const end = p => p ? { name: displayName(p.stop?.station?.name || p.name || ''), lat: p.lat, lon: p.lon, stopId: p.stop?.id || null, platform: p.stop?.platform || null, stopName: p.name, parking: p.parking ? (p.parking.name || 'Parking') : null, parkingCapacity: Number.isFinite(p.parking?.capacity) ? p.parking.capacity : null } : null;
     return {
       mode: transit ? 'TRANSIT' : (leg.mode === 'CAR' ? 'CAR' : 'WALK'),
       transitMode: leg.mode,
@@ -3095,6 +3290,7 @@ function normalizeItinerary(it) {
       tripShortName: leg.trip?.shortName || null,
       from: end(leg.from),
       to: end(leg.to),
+      tripId: leg.trip?.id || null,
       startTime,
       endTime,
       scheduledStart: leg.start?.scheduled || startTime,
@@ -3163,8 +3359,10 @@ function checkBlindExit(nav,manual=false) {
   if (manual || (proximity?.near && !nav.exitAlerted)) {
     if(proximity?.near)nav.exitAlerted=true;
     if(proximity?.near)accessVibrate([200,120,200,120,200]);
-    if(manual || document.body.classList.contains('rove-accessible'))speakText(message);
-    else announceAccess(message);
+    announceAccess(message);
+    // Automatic speech only when riders explicitly enabled voice guidance.
+    if (nav.voice && !manual) speakNav(message);
+    if (manual) speakText(message);
   }
 }
 function onNavPosition(pos) {
@@ -3189,6 +3387,22 @@ function onNavPosition(pos) {
   nav.status = nav.follow ? 'Following your location' : 'Tracking GPS · map exploration paused following';
   updateNavMarker(fix, Number.isFinite(nav.compassHeading) ? nav.compassHeading : nav.heading);
   navFollowCamera();
+  if(nav.steps[nav.i]?.type==='ride' && nav.boarded) {
+    const stops=window.RoveJourneyAssist?.stopSequence(nav.steps[nav.i].leg);
+    if(stops) {
+      const old=nav.stopProgress||{confirmed:0,pending:null};
+      const next=window.RoveJourneyAssist.updateStopProgress(stops,old,fix);
+      nav.stopProgress=next;
+      if(next.changed) {
+        storeJourney(nav);
+        const message=next.remaining===1
+          ? 'GPS estimates that your exit stop is next. Verify with vehicle announcements before leaving.'
+          : 'GPS estimates '+next.remaining+' stops until your selected exit. Verify with vehicle announcements.';
+        announceAccess(message);
+        accessVibrate(next.remaining===1?[170,100,170]:[90]);
+      }
+    }
+  }
   if (document.body.classList.contains('rove-accessible')) checkBlindExit(nav);
   else if (nav.steps[nav.i]?.type === 'ride') checkBlindExit(nav);
   if (!document.body.classList.contains('rove-accessible')) maybeAdvanceNavigation(nav, fix);
@@ -3199,7 +3413,7 @@ function onNavPosition(pos) {
   updateNavManeuver(nav, fix);
   if (RoveNavigation.shouldReroute(fix, distance, nav.offRouteFixes, Date.now() - nav.rerouteAt)) {
     navReroute(nav);
-  } else if (currentView().name === 'navigate' && Date.now() - nav.lastUiAt >= 1400) { nav.lastUiAt = Date.now(); render(); }
+  } else if (currentView().name === 'navigate' && Date.now() - nav.lastUiAt >= 8000) { nav.lastUiAt = Date.now(); render(); }
 }
 
 /* Small start and end markers for the trip being planned. */
