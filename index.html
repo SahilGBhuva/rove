@@ -10,7 +10,7 @@
   <link rel="icon" type="image/svg+xml" href="public/rove-mark.svg" />
   <link rel="preload" href="public/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=29" />
+  <link rel="stylesheet" href="styles.css?v=30" />
 </head>
 <body>
   <a class="skip-link" href="#panelBody">Skip to transit information</a>
@@ -48,6 +48,8 @@
   <div class="menu" id="menu" role="menu" hidden>
     <button role="menuitem" data-menu="lines">All lines</button>
     <button role="menuitem" data-menu="intro">Show the introduction</button>
+    <button role="menuitem" data-menu="access">Accessibility & voice</button>
+    <button role="menuitem" data-menu="impact">Carbon impact</button>
     <button role="menuitem" data-menu="sources">Data sources and credits</button>
   </div>
 
@@ -86,7 +88,7 @@
     <h2 id="introTitle"></h2>
     <p id="introText"></p>
     <div class="intro-actions">
-      <button class="text-button" id="introSkip">Skip</button>
+      <button class="text-button" id="introSkip">Skip tutorial</button>
       <button class="button primary" id="introNext">Next</button>
     </div>
   </div>
@@ -101,6 +103,6 @@
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
   <script src="public/js/navigation-core.js?v=2"></script>
   <script src="public/js/vehicle-motion.js?v=1"></script>
-  <script src="app.js?v=30"></script>
+  <script src="app.js?v=31"></script>
 </body>
 </html>

@@ -1209,7 +1209,7 @@ function onLeaveFocus() {
 function render() {
   const view = currentView();
   const body = $('#panelBody');
-  const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources, place: viewPlace };
+  const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources, impact: viewImpact, access: viewAccess, place: viewPlace };
   // Keep the caret where it was if a field inside the panel has focus while the view refreshes.
   const active = document.activeElement;
   const keep = active && body.contains(active) && active.id && active.tagName === 'INPUT' && !(active.dataset.planField && !state.plan.focus) ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
@@ -1311,10 +1311,12 @@ function viewHome() {
   }
 
   parts.push(`<section class="section"><h2 class="label">Explore</h2><ul class="rows">
+    <li><button class="row" data-action="access"><span class="row-main"><span class="row-title">Accessibility & voice</span><span class="row-meta">Larger controls and spoken navigation steps</span></span>${ICONS.chevron}</button></li>
     <li><button class="row" data-action="lines"><span class="row-main"><span class="row-title">All lines</span><span class="row-meta">${idx.routes.size} lines across 5 agencies</span></span>${ICONS.chevron}</button></li>
 
   </ul></section>`);
   parts.push(`<div class="home-agencies" aria-label="Transit agencies">${state.network.agencies.map(a => `<span class="home-agency"><i style="background:${esc(a.color)}" aria-hidden="true"></i>${esc(AGENCY_SHORT[a.id] || a.name)}</span>`).join('')}</div>`);
+  parts.push(`<section class="rove-impact" aria-label="Why transit matters"><span class="impact-kicker">A BETTER WAY AROUND</span><h2>Less traffic. Lighter footprint.</h2><p>Choose a bus or train instead of driving alone. Shared transit can reduce emissions per passenger, especially on busy routes.</p><button class="text-button" data-action="impact">How we estimate impact →</button></section>`);
   parts.push(`<div class="home-footer"><p class="note home-service-status">${esc(liveStatusLine())}</p><div class="home-footer-links"><button class="text-button" data-action="sources">Data & credits</button><button class="text-button" data-action="intro">How Rove works</button></div></div>`);
   return parts.join('');
 }
@@ -1681,6 +1683,29 @@ function viewLines() {
 }
 
 /* ---------- Sources ---------- */
+function carbonComparison(it) {
+  const legs = it?.legs || [];
+  if (legs.some(l => l.mode === 'CAR')) return '';
+  const transitKm = legs.filter(l => isTransit(l)).reduce((n,l) => n + (Number.isFinite(l.distanceMeters) ? l.distanceMeters / 1000 : 0), 0);
+  if (!transitKm) return '';
+  // Illustrative, not measured: passenger-km factors vary with occupancy and vehicle type.
+  const carKg = transitKm * 0.25, transitKg = transitKm * 0.10;
+  return `<p class="carbon-estimate">🌱 About ${esc((carKg-transitKg).toFixed(1))} kg CO₂e less than driving alone <span>· illustrative estimate</span></p>`;
+}
+function viewImpact() {
+ return `${backHeader()}<div class="hero"><h1 class="title-1">A lighter way to move</h1><p class="caption">The impact of a shared ride</p></div><section class="section"><div class="impact-visual" aria-hidden="true"><span>🚘 Driving alone</span><div class="impact-track"><i style="width:100%"></i></div><span>🚆 Shared transit</span><div class="impact-track"><i style="width:40%"></i></div></div><h2 class="label">How the comparison works</h2><p class="empty">Our route cards use illustrative factors of 0.25 kg CO₂e per passenger-km for a solo car and 0.10 kg CO₂e per passenger-km for transit. This is an example, not a verified emissions inventory or a promise for a particular trip.</p><p class="empty">Real emissions depend on vehicle type, energy source, ridership, detours, and whether you would otherwise drive. Walking and biking generally have very low operational emissions. We do not count construction or full lifecycle impacts in these estimates.</p></section>`;
+}
+function viewAccess() {
+ const on = document.body.classList.contains('rove-accessible');
+ return `${backHeader()}<div class="hero"><h1 class="title-1">Accessible travel</h1><p class="caption">Travel information beyond the map</p></div><section class="section"><button class="button primary" data-action="access-toggle" aria-pressed="${on}">${on ? 'Turn off' : 'Turn on'} easier-to-read mode</button><p class="empty">Larger controls, stronger focus outlines, and higher contrast. Use the search and stop lists without needing the map.</p><p class="empty">During navigation, choose “Read instruction aloud” to hear the current boarding, transfer, or walking step. Voice playback is optional and requires browser speech support.</p><p class="empty"><strong>Safety:</strong> Rove does not currently provide verified accessible pathways, curb and crossing guidance, elevator reliability, or obstacle detection. Do not rely on it as a sole mobility aid.</p></section>`;
+}
+function readNavInstruction() {
+ const step = state.nav?.steps[state.nav.i];
+ if (!step || !('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) { toast('Speech is not available in this browser.'); return; }
+ window.speechSynthesis.cancel();
+ const speech = new SpeechSynthesisUtterance(`${step.title}. ${step.meta || ''}`);
+ speech.rate = 0.9; window.speechSynthesis.speak(speech);
+}
 function viewSources() {
   const rows = state.network.agencies.map(a => `<li><div class="row"><span class="dot" style="background:${esc(a.color)}"></span><span class="row-main"><span class="row-title">${esc(a.name)}</span><span class="row-meta">${plural(a.routes.length, 'line')} · Schedule valid ${esc(formatGtfsDate(a.feed?.start))} to ${esc(formatGtfsDate(a.feed?.end))}</span></span></div></li>`).join('');
   const rt = state.realtime;
@@ -1987,6 +2012,7 @@ function viewResults() {
         <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
         <div class="it-meta">${itinerarySummary(it)}</div></button>
+        ${carbonComparison(it)}
         ${open ? `<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start navigation</button></div>${itineraryTimeline(it)}` : ''}</li>`;
     }).join('')}</ul>
     <p class="note">${plan.results?.scheduledOnly ? 'These routes use published schedules. Check live departures at your stop before you leave.' : 'Live times are shown where agencies provide them. Other times are scheduled.'}</p>`;
@@ -2412,6 +2438,7 @@ function viewNavigate() {
     </div>
     <div class="action-bar">
       ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
+      <button class="button secondary" data-action="nav-read">Read instruction aloud</button>
       <button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'I have arrived' : 'Next step'}</button>
     </div>
     <ol class="step-list" style="margin-top:20px">${list}</ol>`;
@@ -2463,6 +2490,10 @@ function handleAction(el) {
     case 'route': openRoute(el.dataset.key); break;
     case 'stop': openStop(el.dataset.agency, el.dataset.stop); break;
     case 'lines': clearSearchField(); pushView({ name: 'lines' }, { detent: 'full' }); break;
+    case 'impact': clearSearchField(); pushView({ name: 'impact' }, { detent: 'full' }); break;
+    case 'access': clearSearchField(); pushView({ name: 'access' }, { detent: 'full' }); break;
+    case 'access-toggle': document.body.classList.toggle('rove-accessible'); localStorage.setItem('rove-accessible', document.body.classList.contains('rove-accessible') ? 'yes' : 'no'); render(); break;
+    case 'nav-read': readNavInstruction(); break;
     case 'sources': clearSearchField(); pushView({ name: 'sources' }, { detent: 'full' }); break;
     case 'intro': showIntro(0); break;
     case 'locate': locate(); break;
@@ -2769,26 +2800,26 @@ function onPositionError(err) {
  * With reduced motion, the illustrations show their finished state and nothing moves. */
 const INTRO = [
   {
-    title: 'Find any stop, line, or address',
-    text: 'One search covers BART, Muni, Caltrain, VTA, and AC Transit, plus Bay Area addresses and places. Try a line such as 38R or a station name.',
+    title: '1. Find your stop',
+    text: 'Tap Search. Type a station, bus line, or address. Pick a result.',
     art: `<svg viewBox="0 0 280 120"><rect class="ia-field" x="20" y="14" width="240" height="30" rx="9"/><circle class="ia-ink-stroke" cx="37" cy="29" r="6"/><path class="ia-ink-stroke" d="m41.5 33.5 4 4"/><text class="ia-type" x="56" y="34">38R</text><rect class="ia-caret" x="83" y="21" width="1.6" height="16" rx=".8"/>
       <g class="ia-row" style="--d:.55s"><rect x="20" y="56" width="240" height="26" rx="7" class="ia-card"/><rect x="30" y="62" width="34" height="14" rx="4" fill="#bf2b45"/><text x="38" y="73" class="ia-badge-text">38R</text><rect x="72" y="65" width="120" height="7" rx="3.5" class="ia-bar"/></g>
       <g class="ia-row" style="--d:.75s"><rect x="20" y="88" width="240" height="26" rx="7" class="ia-card"/><circle cx="40" cy="101" r="6" class="ia-pin"/><rect x="72" y="97" width="150" height="7" rx="3.5" class="ia-bar"/></g></svg>`
   },
   {
-    title: 'Tap a line to follow it',
-    text: 'The line you choose draws itself on the map while the rest of the network steps back. Its stops and live vehicles come forward.',
+    title: '2. See buses on the map',
+    text: 'Tap a colored line. Zoom in to see its stops and reported bus locations.',
     art: `<svg viewBox="0 0 280 120"><path class="ia-faded" d="M10 30h80l40 40h140"/><path class="ia-faded" d="M10 95c60 0 80-60 140-60s70 30 120 30"/><path class="ia-faded" d="M60 5v110"/>
       <path class="ia-draw" style="--c:#1675be" d="M10 70c40 0 50-40 100-40s60 55 160 55" pathLength="1"/><g class="ia-pop" style="--d:.9s"><circle cx="10" cy="70" r="5" class="ia-stop"/><circle cx="110" cy="30" r="5" class="ia-stop"/><circle cx="270" cy="85" r="5" class="ia-stop"/></g><circle class="ia-vehicle" r="5.5" fill="#1675be"><animateMotion dur="3.2s" repeatCount="indefinite" path="M10 70c40 0 50-40 100-40s60 55 160 55"/></circle></svg>`
   },
   {
-    title: 'Live means live',
-    text: 'Times marked with the live symbol come from vehicles in service. Trip plans use published schedules and are labeled Scheduled.',
+    title: '3. Check when it arrives',
+    text: 'Tap a stop for departures. Live predictions are labeled separately from scheduled times.',
     art: `<svg viewBox="0 0 280 120"><rect x="20" y="16" width="240" height="88" rx="12" class="ia-card"/><text x="40" y="66" class="ia-big">4</text><text x="42" y="84" class="ia-small">min</text><rect x="96" y="38" width="44" height="16" rx="4" fill="#f5c100"/><text x="105" y="50" class="ia-badge-text dark">Yellow</text><rect x="96" y="62" width="120" height="7" rx="3.5" class="ia-bar"/><g class="ia-live"><circle cx="102" cy="84" r="3" class="ia-live-dot"/><circle cx="102" cy="84" r="3" class="ia-live-ring"/></g><text x="112" y="88" class="ia-live-text">Live · On time</text></svg>`
   },
   {
-    title: 'Plan door to door',
-    text: 'Choose Directions, then enter any two Bay Area addresses. Walk, drive to a park-and-ride lot, or get dropped off, with turn-by-turn steps.',
+    title: '4. Start your trip',
+    text: 'Tap Directions, choose where to go, then pick a route. Navigation shows each boarding and transfer step.',
     art: `<svg viewBox="0 0 280 120"><path class="ia-walk" d="M28 92h40" pathLength="1"/><path class="ia-draw" style="--c:#005b95;--d:.35s" d="M68 92c30 0 30-40 70-40" pathLength="1"/><path class="ia-draw" style="--c:#e4002b;--d:.85s" d="M138 52c40 0 50 26 92 26" pathLength="1"/><path class="ia-walk" style="--d:1.3s" d="M230 78h22" pathLength="1"/><circle cx="28" cy="92" r="6" class="ia-from"/><rect x="246" y="72" width="12" height="12" rx="2.5" class="ia-to"/><g class="ia-pop" style="--d:.7s"><circle cx="68" cy="92" r="4.5" class="ia-stop"/><circle cx="138" cy="52" r="5.5" class="ia-stop strong"/><circle cx="230" cy="78" r="4.5" class="ia-stop"/></g></svg>`
   }
 ];
@@ -2801,11 +2832,11 @@ function showIntro(i = 0) {
   // Re-inserting the art restarts its animation for each card.
   $('#introArt').innerHTML = prefersReducedMotion() ? step.art.replace(/<circle class="ia-vehicle"[^>]*>.*?<\/circle>/s, '<circle class="ia-vehicle" r="5.5" cx="185" cy="62" fill="#1675be"/>') : step.art;
   $('#introProgress').innerHTML = INTRO.map((_, k) => `<span class="${k === i ? 'on' : k < i ? 'done' : ''}"></span>`).join('');
-  $('#introNext').textContent = i === INTRO.length - 1 ? 'Get started' : 'Next';
-  $('#introSkip').hidden = i === INTRO.length - 1;
+  $('#introNext').textContent = i === INTRO.length - 1 ? 'Explore Rove' : 'Next step →';
+  $('#introSkip').hidden = false;
   const intro = $('#intro');
   intro.hidden = false;
-  intro.classList.remove('intro-in'); void intro.offsetWidth; intro.classList.add('intro-in');
+  intro.classList.remove('intro-in'); if (!prefersReducedMotion()) { void intro.offsetWidth; intro.classList.add('intro-in'); }
   $('#introNext').focus({ preventScroll: true });
 }
 function finishIntro() {
@@ -3769,6 +3800,7 @@ window.addEventListener('offline', updateOnlineStatus);
 window.addEventListener('online', () => { updateOnlineStatus(); loadRealtime(); });
 
 async function init() {
+  try { if (localStorage.getItem('rove-accessible') === 'yes') document.body.classList.add('rove-accessible'); } catch { /* private browsing */ }
   try {
     const response = await fetch('public/data/network.json');
     if (!response.ok) throw new Error(`The transit network could not be loaded (${response.status}).`);
