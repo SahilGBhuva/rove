@@ -6,6 +6,7 @@ import {gunzipSync} from 'node:zlib';
 import {findJourney, directFootpaths} from '../../experiments/bay-router/route.mjs';
 import {combineServiceDays} from '../../experiments/bay-router/combine-days.mjs';
 import {enrichWalks} from '../../experiments/bay-router/pedestrian.mjs';
+import {rankItineraries} from '../../experiments/bay-router/rank.mjs';
 
 const TZ = 'America/Los_Angeles';
 const MAX_ENDPOINT_METERS = 1100;
@@ -66,6 +67,22 @@ export function candidateStops(stops,point,maxMeters=MAX_ENDPOINT_METERS,maxCoun
   }
   return found.sort((a,b)=>a.distance-b.distance).slice(0,maxCount);
 }
+// Nearby bus stops are dense and can crowd out a walkable rail station.
+// Preserve rail access independently of the closest bus stop ranking.
+export function diverseCandidateStops(stops,point,maxMeters=1800) {
+  const all=candidateStops(stops,point,maxMeters,120);
+  const chosen=all.slice(0,12);
+  const seen=new Set(chosen.map(s=>s.index));
+  for(const agency of ['caltrain','bart']) {
+    let count=0;
+    for(const s of all) {
+      if(count>=4) break;
+      if(!stops[s.index][0].startsWith(agency+':')) continue;
+      if(!seen.has(s.index)) {chosen.push(s);seen.add(s.index);count++;}
+    }
+  }
+  return chosen;
+}
 function legEndpoint(stop) {
   return {name:stop[1],lat:stop[2],lon:stop[3],stop:{id:stop[0]}};
 }
@@ -100,6 +117,18 @@ export function adaptJourney(journey,data,origin,destination,serviceMidnight) {
       durationSeconds:step.arrive-step.depart,realtime:false,steps:[],geometry:null});
     clock=step.arrive;
   }
+  // Consecutive segments on the same physical trip are one boarding, not transfers.
+  const merged=[];
+  for(const leg of legs) {
+    const prev=merged.at(-1);
+    if(prev?.transit && leg.transit && prev.agency.id===leg.agency.id && prev.trip.id===leg.trip.id &&
+       prev.to.stop.id===leg.from.stop.id) {
+      prev.to=leg.to;
+      prev.end=leg.end;
+      prev.durationSeconds=(Date.parse(prev.end.scheduled)-Date.parse(prev.start.scheduled))/1000;
+    } else merged.push(leg);
+  }
+  legs.splice(0,legs.length,...merged);
   return {id:'schedule-'+journey.departureSeconds+'-'+legs.length,
     start:when(journey.departureSeconds),end:when(journey.arrivalSeconds),
     durationSeconds:journey.durationSeconds,walkMeters:Math.round(legs.filter(l=>!l.transit).reduce((s,l)=>s+l.distanceMeters,0)),
@@ -127,10 +156,10 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
   let ctx,data;
   try {({context:ctx,timetable:data}=loadFor(time,loader));}
   catch {return bad(503,'Scheduled timetable unavailable for this date; try another service date.');}
-  const origins=candidateStops(data.stops,from,MAX_ENDPOINT_METERS,8);
-  const destinations=candidateStops(data.stops,to,MAX_ENDPOINT_METERS,8);
+  const origins=diverseCandidateStops(data.stops,from,1800);
+  const destinations=diverseCandidateStops(data.stops,to,1500);
   if(!origins.length||!destinations.length)
-    return bad(422,'No transit stops within 1100 metres of one or both places. Try a nearby station or a closer starting point.');
+    return bad(422,'No transit stops within walking reach of one or both places. Try a nearby station or a closer starting point.');
   const footpaths=directFootpaths(data.stops,260,12);
   // Avoid repeated linear trip lookups for every candidate itinerary.
   data.tripIndex=new Map(data.trips.map(t=>[t[0]+'|'+t[1],t]));
@@ -167,9 +196,8 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
       answers.push(it);
     }
   }
-  answers.sort((a,b)=>Date.parse(a.end)-Date.parse(b.end));
-  const unique=answers.filter((a,i)=>answers.findIndex(b=>b.legs.filter(l=>l.transit).map(l=>l.trip.id).join('|')===a.legs.filter(l=>l.transit).map(l=>l.trip.id).join('|'))===i);
   const limit=Math.max(1,Math.min(5,Number(q.get('limit')||3)||3));
+  const unique=rankItineraries(answers,limit);
   return {status:200,body:{request:{time:time.toISOString()},
     routing:{engine:'EXPERIMENTAL_SCHEDULE_ONLY',realtime:'none',
       notes:['Experimental scheduled stop-to-stop routing only. Walk transfers use straight-line estimates, NOT safe pedestrian routes. GPS turn-by-turn and driving directions are unavailable.']},

@@ -37,7 +37,7 @@ test('missing days fail closed rather than pretending service exists',()=>{
   assert.equal(result.status,503);
 });
 test('endpoints must be close enough to a real GTFS stop',()=>{
-  assert.equal(planExperimental({...powell,fromLat:37.7,fromLon:-122.5},now).status,422);
+  assert.equal(planExperimental({...powell,fromLat:37.7,fromLon:-122.7},now).status,422);
 });
 test('all five published agency feeds appear in timetable',()=>{
   const d=fixtureDay('2026-10-20');
