@@ -1549,3 +1549,9 @@ body .panel-body:has(.rg-nav) { display: flex; flex-direction: column; }
 .rove-accessible .audio-route { min-height: 52px; border-radius: 999px; box-shadow: none; border: 1.5px solid var(--rg-line); background: var(--rg-surface); color: var(--rg-ink); font-size: 16px; font-weight: 700; margin: 10px 0 4px; padding: 0 18px; }
 .rg-warn-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .rg-warn-tags span { padding: 3px 9px; border-radius: 999px; background: var(--rg-warn-bg); color: var(--rg-warn); font-size: 13px; font-weight: 700; }
+.rg-settings { margin-top: 28px; display: grid; gap: 12px; }
+.rg-settings .access-setting { align-items: flex-start; padding: 14px 16px; border-radius: 14px; background: var(--rg-surface); border: 1.5px solid var(--rg-line); font-size: 16px; line-height: 1.45; color: var(--rg-ink-2); }
+.rg-settings .access-setting strong { color: var(--rg-ink); font-size: 17px; }
+.rg-settings .access-setting input { margin-top: 2px; accent-color: var(--rg-green); }
+.rg-body { margin: 0; font-size: 17px; line-height: 1.55; color: var(--rg-ink-2); }
+.rg-settings .access-guide { margin: 0; font-size: 17px; }

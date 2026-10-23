@@ -1799,15 +1799,23 @@ function viewAccessNearby() {
  <section class="section"><h2>Closest stops</h2>${items.length?`<ol class="access-nearby-list">${items.map(({place,d})=>`<li><h3>${esc(place.s.n)}</h3><p>${esc(AGENCY_SHORT[place.a.id]||place.a.name)} · Approximately ${Math.round(d/10)*10} metres straight-line distance${uncertain?' (low confidence)':''}</p><p>Routes: ${esc(place.routes.slice(0,7).map(r=>r.title).join(', ')||'Not listed')}</p><button class="button primary" data-action="access-select-stop" data-agency="${esc(place.a.id)}" data-stop="${esc(place.s.id)}">Select this stop and check departures</button></li>`).join('')}</ol>`:'<p class="empty">No nearby stops available yet. Refresh location, or search for a stop by name.</p>'}</section>`;
 }
 function viewAccess() {
- const on = true;
- return `${backHeader()}<div class="hero"><h1 class="title-1">Rove audio-first</h1><p class="caption">Transit designed to work without looking at a map</p></div>
- <section class="section access-controls"><p>Spoken guidance and large controls are always available.</p>
- <button class="button secondary" data-action="plan">Plan a journey</button><button class="button secondary" data-action="access-nearby">Find nearby transit stops</button><button class="button secondary" data-action="access-dictate">Speak a destination</button>
- <button class="button secondary" data-action="access-stop-speech">Stop speaking</button>
- <label class="access-setting"><input type="checkbox" data-access-setting="haptics" ${accessPreference('haptics',true) ? 'checked' : ''}/> Vibrate for important confirmations (when supported)</label>
- <label class="access-setting"><input type="checkbox" data-access-setting="autoVoice" ${accessPreference('autoVoice',false) ? 'checked' : ''}/> Read route choices automatically</label></section>
- <section class="section"><h2>How to travel with Rove</h2><ol class="access-guide"><li>Enter or speak your destination and confirm the search result.</li><li>Choose a route. Select Listen to route to hear each boarding and exit stop.</li><li>Start navigation and use Repeat instruction or Next step. Confirm boarding and transfers yourself.</li><li>Open any stop to hear available live departures, with uncertainty clearly stated.</li></ol></section>
- <section class="section"><h2>What Rove cannot verify</h2><p class="empty">Rove cannot detect obstacles, locate safe crossings, confirm platform edges, verify accessible entrances or elevators, or prove that you boarded a bus or train. GPS can be inaccurate. Use your established mobility aids and check signs or ask transit staff when needed.</p></section>`;
+  return `${backHeader()}<div class="rg-page">
+    <h1 class="rg-title">Voice and accessibility</h1>
+    <section class="rg-settings" aria-labelledby="rgSettingsTitle">
+      <h2 id="rgSettingsTitle" class="rg-label">Settings</h2>
+      <label class="access-setting"><input type="checkbox" data-access-setting="speak" ${accessPreference('speak', true) ? 'checked' : ''}/> <span><strong>Rove voice</strong><br>Rove reads each step and reminder aloud. If you use VoiceOver or TalkBack, you can turn this off; your screen reader will announce updates instead.</span></label>
+      <label class="access-setting"><input type="checkbox" data-access-setting="haptics" ${accessPreference('haptics', true) ? 'checked' : ''}/> <span><strong>Vibration</strong><br>For reminders and confirmations, on phones that support it. iPhone Safari does not.</span></label>
+      <button type="button" class="rg-quiet" data-action="access-demo">Test Rove voice</button>
+    </section>
+    <section class="rg-settings" aria-labelledby="rgHowTitle">
+      <h2 id="rgHowTitle" class="rg-label">How a trip works</h2>
+      <ol class="access-guide"><li>Speak or type where you want to go, then choose the right match.</li><li>Listen to the route choices and start one.</li><li>Rove gives one step at a time. Confirm each step yourself: I'm at the stop, I've boarded, I've got off.</li><li>Rove reminds you before your stop, by live time when available, otherwise by the schedule.</li><li>Help is always one tap away: find another route, where am I, undo.</li></ol>
+    </section>
+    <section class="rg-settings" aria-labelledby="rgCantTitle">
+      <h2 id="rgCantTitle" class="rg-label">What Rove cannot do</h2>
+      <p class="rg-body">Rove cannot detect obstacles, safe crossings, platform edges, accessible entrances or elevators, or which vehicle you are on. GPS can be off by a block or more. Use your usual mobility aids, and ask transit staff when unsure.</p>
+    </section>
+  </div>`;
 }
 
 function readNavInstruction() {
@@ -2823,9 +2831,9 @@ function routeDetailSpeech(it) {
 
 document.addEventListener('change', event => {
   const key = event.target?.dataset?.accessSetting;
-  if (key !== 'haptics' && key !== 'autoVoice') return;
+  if (!['haptics', 'autoVoice', 'speak'].includes(key)) return;
   accessSetting(key, Boolean(event.target.checked));
-  announceAccess(key === 'haptics' ? 'Vibration '+(event.target.checked?'on':'off') : 'Automatic route speech '+(event.target.checked?'on':'off'));
+  announceAccess(({ haptics: 'Vibration', autoVoice: 'Automatic route speech', speak: 'Rove voice' })[key] + (event.target.checked ? ' on' : ' off'));
 });
 function clearSearchField() {
   state.searchQuery = '';
@@ -2892,7 +2900,7 @@ function handleAction(el) {
       speakText(`Live departures for ${place.s.n}. ${messages.join(' ')}`);
       break;
     }
-    case 'access-demo': speakText('Example: Board the 38 R bus toward downtown at the next stop. Check the vehicle sign before boarding.'); break;
+    case 'access-demo': speakText('This is Rove voice. Example: Board the Muni 38R bus toward Downtown. Ask the driver to confirm the route number as you board.'); break;
     case 'access': clearSearchField(); pushView({ name: 'access' }, { detent: 'full' }); break;
     case 'access-toggle': announceAccess('Accessible navigation is always enabled.'); break;
     case 'nav-read': readNavInstruction(); break;
