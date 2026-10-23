@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import vm from 'node:vm';
+const ctx={};vm.runInNewContext(readFileSync(new URL('../public/js/blind-navigation.js',import.meta.url),'utf8'),ctx);const n=ctx.RoveBlindNavigation;const stop={lat:37.78,lon:-122.4};const now=Date.now();
+test('proximity is only available with accurate fresh GPS',()=>{assert.equal(n.exitProximity({point:[-122.4,37.78],accuracy:90,time:now},stop,now),null);assert.equal(n.exitProximity({point:[-122.4,37.78],accuracy:10,time:now-30000},stop,now),null);assert.equal(n.exitProximity({point:[-122.4,37.78],accuracy:10,time:now},stop,now).near,true)});
+test('far location is not an exit alert',()=>{const p=n.exitProximity({point:[-122.43,37.78],accuracy:10,time:now},stop,now);assert.equal(p.near,false);assert.match(n.stopMessage('38R','Market St',p),/not a stop-count/)});
+test('near location requires rider confirmation',()=>{const p=n.exitProximity({point:[-122.4,37.78],accuracy:10,time:now},stop,now);assert.match(n.stopMessage('38R','Market St',p),/Confirm the stop/)});

@@ -2396,7 +2396,7 @@ async function startNavigation(index) {
   releaseWakeLock();
   state.journey = it;
   const nav = {
-    it, steps: buildSteps(it), i: 0, tracking: false, watchId: null,
+    it, steps: buildSteps(it), i: 0, tracking: false, watchId: null, boarded: false, exitAlerted: false, exitHint: null,
     destination: { ...state.plan.to }, access: state.plan.results?.request?.access || 'WALK',
     follow: true, headingUp: true, voice: false, fix: null, heading: null, compassHeading: null, compassEnabled: false, lastCompassAt: 0, lastCameraAt: 0,
     offRouteFixes: 0, lastOffRouteAt: 0, rerouteAt: 0, rerouting: false,
@@ -2407,6 +2407,7 @@ async function startNavigation(index) {
   renderJourney(); applyMapState();
   pushView({ name: 'navigate' }, { detent: 'half' });
   focusStep();
+  if (document.body.classList.contains('rove-accessible')) { announceAccess('Navigation started. Confirm your boarding stop and vehicle.'); }
   // Request a fix on Start even when the rider never tapped the location button.
   if ('geolocation' in navigator && window.isSecureContext) {
     nav.watchId = navigator.geolocation.watchPosition(onNavPosition, error => {
@@ -2496,6 +2497,8 @@ function viewNavigate() {
       ${meta ? `<p class="caption" style="margin:6px 0 0">${esc(meta)}</p>` : ''}
       ${step.leg ? legAlertsHtml(step.leg) : ''}
       ${transitRecovery}
+      ${(step.type === 'wait' || step.type === 'ride') ? `<section class="blind-boarding"><p>${nav.boarded ? 'Boarding manually confirmed. Rove has not independently verified the vehicle.' : 'Before boarding, check the route and destination shown or announced on the vehicle.'}</p><button class="button primary" data-action="nav-board" aria-pressed="${nav.boarded}">${nav.boarded ? 'Boarding confirmed' : 'I have boarded this vehicle'}</button></section>` : ''}
+      ${step.type === 'ride' ? `<section class="blind-exit" role="status"><h3>Exit-stop assistant</h3><p>${esc(nav.exitHint || 'Waiting for accurate GPS. Use vehicle stop announcements to confirm your exit.')}</p><button class="button secondary" data-action="nav-exit-check">Check exit-stop proximity</button></section>` : ''}
       ${turns}
     </div>
     <div class="access-navigation-help" role="note">Check your vehicle and stop independently. Rove does not automatically confirm boarding or safe pedestrian routes.</div>
@@ -2626,6 +2629,8 @@ function handleAction(el) {
     }
     case 'leg-focus': focusLeg(Number(el.dataset.leg)); break;
     case 'nav-start': startNavigation(Number(el.dataset.index)); break;
+    case 'nav-board': if (state.nav) { state.nav.boarded = true; accessVibrate([120,70,120]); announceAccess('You confirmed boarding. Rove cannot independently verify the vehicle.',true); render(); } break;
+    case 'nav-exit-check': if (state.nav) { checkBlindExit(state.nav,true); render(); } break;
     case 'nav-follow': navChangeFollow('follow'); break;
     case 'nav-compass': enableNavCompass(); break;
     case 'nav-voice': toggleNavVoice(); break;
@@ -2633,8 +2638,8 @@ function handleAction(el) {
     case 'nav-overview': navChangeFollow('overview'); break;
     case 'nav-replan': if (state.nav?.fix) navReroute(state.nav); break;
     case 'nav-missed': if (state.nav?.fix) navReroute(state.nav); break;
-    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
-    case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
+    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
+    case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
     case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
     default: break;
   }
@@ -3153,6 +3158,21 @@ function legAlertsHtml(leg) {
 
 /* Advances walk and ride steps when the rider reaches the end of the leg. Riders can always
  * move between steps with the buttons; this only saves taps. */
+function checkBlindExit(nav,manual=false) {
+  const step=nav.steps[nav.i];
+  if (!step || step.type!=='ride') { if(manual)announceAccess('Select the riding step first.'); return; }
+  const stop=step.leg?.to;
+  const helper=window.RoveBlindNavigation;
+  const proximity=helper?.exitProximity(nav.fix,stop);
+  const message=helper?.stopMessage(step.title,stop?.name||'your exit stop',proximity)||'GPS stop proximity is unavailable.';
+  nav.exitHint=message;
+  if (manual || (proximity?.near && !nav.exitAlerted)) {
+    if(proximity?.near)nav.exitAlerted=true;
+    if(proximity?.near)accessVibrate([200,120,200,120,200]);
+    if(manual || document.body.classList.contains('rove-accessible'))speakText(message);
+    else announceAccess(message);
+  }
+}
 function onNavPosition(pos) {
   const nav = state.nav;
   if (!nav) return;
@@ -3174,7 +3194,9 @@ function onNavPosition(pos) {
   nav.status = nav.follow ? 'Following your location' : 'Tracking GPS · map exploration paused following';
   updateNavMarker(fix, Number.isFinite(nav.compassHeading) ? nav.compassHeading : nav.heading);
   navFollowCamera();
-  maybeAdvanceNavigation(nav, fix);
+  if (document.body.classList.contains('rove-accessible')) checkBlindExit(nav);
+  else if (nav.steps[nav.i]?.type === 'ride') checkBlindExit(nav);
+  if (!document.body.classList.contains('rove-accessible')) maybeAdvanceNavigation(nav, fix);
   const distance = routeLegDistance(nav, fix.point);
   if (distance != null && fix.accuracy <= 75 && distance > Math.max(85, fix.accuracy * 2.5)) {
     nav.offRouteFixes = seconds < 20 ? nav.offRouteFixes + 1 : 1;
