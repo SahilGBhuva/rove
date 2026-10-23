@@ -5,7 +5,13 @@ export default function handler(req, res) {
   return res.status(200).json({
     routing:{available:true,engine:'EXPERIMENTAL_SCHEDULE_ONLY',access:['WALK'],walkSteps:true,maxDriveMinutes:null},
     search:{addresses:false},
-    agencies:['bart','muni','caltrain','vta','act'].map(id=>({id,arrivalsReasons:['LIVE_DATA_UNAVAILABLE']})),
-    warning:'Scheduled stop-to-stop preview only. Walking directions depend on an external free pedestrian router; GPS guidance is beta and available only for routes with validated walking geometry. No live arrivals.'
+    agencies:['bart','muni','caltrain','vta','act'].map(id=>({
+      id,
+      arrivalsReasons: process.env.SF_511_API_KEY && ['muni','act'].includes(id)
+        ? [] : ['LIVE_DATA_UNAVAILABLE'],
+      arrivalsCapability: process.env.SF_511_API_KEY && ['muni','act'].includes(id)
+        ? 'VERIFIED_WHEN_FRESH' : 'UNVERIFIED'
+    })),
+    warning:'Trip-planning itineraries are schedule-only. Separate real-time departures are supported for certain Muni and AC Transit stops only when a fresh feed is available. No physical boarding confirmation or verified pedestrian safety guidance.'
   });
 }

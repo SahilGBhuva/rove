@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#0e0f11" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f4f8fc" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#192739" media="(prefers-color-scheme: dark)" />
   <title>Rove | Bay Area Transit</title>
   <meta name="description" content="Door-to-door transit directions and live times for the San Francisco Bay Area: BART, Muni, Caltrain, VTA, and AC Transit." />
+  <link rel="icon" type="image/svg+xml" href="public/rove-mark.svg" />
   <link rel="preload" href="public/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=35" />
+  <link rel="stylesheet" href="styles.css?v=30" />
 </head>
 <body>
   <a class="skip-link" href="#panelBody">Skip to transit information</a>
+  <div id="roveAccessAnnouncement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <main class="map-area" aria-label="Map">
     <div id="map" class="map" role="region" aria-label="Interactive map of Bay Area transit lines and stops"></div>
@@ -23,7 +23,9 @@
       <span>Loading the Bay Area transit network</span>
     </div>
     <div class="map-status" id="mapStatus" role="status" aria-live="polite" hidden></div>
+    <div class="map-mobile-brand" aria-hidden="true"><span class="map-mobile-mark"><svg viewBox="0 0 20 20"><circle cx="5" cy="15" r="2.5"/><circle cx="15" cy="5" r="2.5"/><path d="M7 13.5c4-1 2-6 6-7"/></svg></span><span class="map-mobile-name">rove</span><span class="map-mobile-sep"></span><span class="map-mobile-caption">BAY AREA</span></div>
   </main>
+  <button type="button" id="mobileMapClose" class="mobile-map-close" hidden>Return to directions</button>
 
   <aside class="panel" id="panel" aria-label="Transit information">
     <div class="sheet-grabber" id="sheetGrabber" role="button" tabindex="0" aria-label="Resize panel. Use the up and down arrow keys."><span></span></div>
@@ -36,18 +38,20 @@
       </div>
       <div class="search-field" role="search">
         <svg class="search-glyph" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M12.6 12.6 17 17"/></svg>
-        <input id="searchInput" type="search" placeholder="Search places, stops, and lines" autocomplete="off" spellcheck="false" aria-label="Search places, stops, and lines" aria-controls="panelBody" />
+        <input id="searchInput" type="search" placeholder="Search for a stop or destination" autocomplete="off" spellcheck="false" aria-label="Search places, stops, and lines" aria-controls="panelBody" />
         <button class="search-clear" id="searchClear" aria-label="Clear search" hidden>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15"/></svg>
         </button>
       </div>
     </header>
-    <div class="panel-body" id="panelBody" tabindex="-1" aria-live="polite"></div>
+    <div class="panel-body" id="panelBody" tabindex="-1"></div>
   </aside>
 
   <div class="menu" id="menu" role="menu" hidden>
     <button role="menuitem" data-menu="lines">All lines</button>
     <button role="menuitem" data-menu="intro">Show the introduction</button>
+    <button role="menuitem" data-menu="access">Accessibility & voice</button>
+
     <button role="menuitem" data-menu="sources">Data sources and credits</button>
   </div>
 
@@ -86,7 +90,7 @@
     <h2 id="introTitle"></h2>
     <p id="introText"></p>
     <div class="intro-actions">
-      <button class="text-button" id="introSkip">Skip</button>
+      <button class="text-button" id="introSkip">Skip tutorial</button>
       <button class="button primary" id="introNext">Next</button>
     </div>
   </div>
@@ -100,7 +104,9 @@
 
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
   <script src="public/js/navigation-core.js?v=2"></script>
-  <script src="public/js/search-intelligence.js?v=1"></script>
-  <script src="app.js?v=39"></script>
+  <script src="public/js/vehicle-motion.js?v=1"></script>
+  <script src="public/js/blind-navigation.js?v=1"></script>
+  <script src="public/js/journey-assist.js?v=2"></script>
+  <script src="app.js?v=41"></script>
 </body>
 </html>
