@@ -1319,41 +1319,17 @@ function alertsHtml(alerts, max = 2) {
 
 /* ---------- Home ---------- */
 function viewHome() {
-  const parts = [];
-  const places = savedPlaces();
-  const home = places.find(p => p.label === 'Home'), work = places.find(p => p.label === 'Work');
-  const quick = [`<button type="button" class="quick" data-action="plan">${MODE_ICONS.directions}<span>Directions</span></button>`];
-  if (home) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Home">${MODE_ICONS.home}<span>Home</span></button>`);
-  if (work) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Work">${MODE_ICONS.work}<span>Work</span></button>`);
-  if (!state.userLocation) quick.push(`<button type="button" class="quick" data-action="locate"><svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" stroke="none" d="M10 2.5 16.5 16 10 12.8 3.5 16Z" transform="rotate(45 10 10)"/></svg><span>Near me</span></button>`);
-  if (document.body.classList.contains('rove-accessible')) parts.push(`<section class="audio-home"><h2>Navigate by listening</h2><p>Plan a trip, hear your options, and follow each transit step without relying on the map.</p><button class="button primary" data-action="access-toggle" aria-pressed="${document.body.classList.contains('rove-accessible')}">${document.body.classList.contains('rove-accessible') ? 'Switch back to classic Rove' : 'Turn on audio-first mode'}</button><button class="button secondary" data-action="plan">Plan an accessible-audio trip</button><button class="button secondary" data-action="access">Audio-first settings</button><button class="button secondary" data-action="access-nearby">Nearby stops</button></section>`);
-  else parts.push(`<div class="classic-mode-toggle"><button class="button secondary" data-action="access-toggle">Switch to audio-first mode</button></div>`);
-  parts.push(`<div class="home-heading"><span class="home-eyebrow">BAY AREA / TRANSIT</span><h1>Go somewhere.</h1><p>Every line. One map.</p></div><div class="quick-row">${quick.join('')}</div>`);
-
-  const others = places.filter(p => p.label !== 'Home' && p.label !== 'Work');
-  if (others.length) {
-    parts.push(`<section class="section"><h2 class="label">Your places</h2><ul class="rows">${others.map(p => placeOptionRow(p, 'search-place', 'saved')).join('')}</ul></section>`);
-  }
-
-  if (state.userLocation) {
-    const nearby = nearbyPlaces(state.userLocation, 6);
-    parts.push(`<section class="section"><h2 class="label">Nearby</h2>${nearby.length ? `<ul class="rows">${nearby.map(n => placeRow(n.place, distanceLabel(n.d))).join('')}</ul>` : '<p class="empty">No stops within a mile of your location.</p>'}</section>`);
-  }
-
-  const savedStops = state.saved.map(x => placeFor(x.a, x.id)).filter(Boolean);
-  if (savedStops.length) {
-    parts.push(`<section class="section"><h2 class="label">Saved stops</h2><ul class="rows">${savedStops.map(p => placeRow(p)).join('')}</ul></section>`);
-  }
-
-  parts.push(`<section class="section"><h2 class="label">Explore</h2><ul class="rows">
-    <li><button class="row" data-action="access"><span class="row-main"><span class="row-title">Accessibility & voice</span><span class="row-meta">Larger controls and spoken navigation steps</span></span>${ICONS.chevron}</button></li>
-    <li><button class="row" data-action="lines"><span class="row-main"><span class="row-title">All lines</span><span class="row-meta">${idx.routes.size} lines across 5 agencies</span></span>${ICONS.chevron}</button></li>
-
-  </ul></section>`);
-  parts.push(`<div class="home-agencies" aria-label="Transit agencies">${state.network.agencies.map(a => `<span class="home-agency"><i style="background:${esc(a.color)}" aria-hidden="true"></i>${esc(AGENCY_SHORT[a.id] || a.name)}</span>`).join('')}</div>`);
-  parts.push(`<section class="rove-impact" aria-label="Why transit matters"><span class="impact-kicker">A BETTER WAY AROUND</span><h2>Less traffic. Lighter footprint.</h2><p>Choose a bus or train instead of driving alone. Shared transit can reduce emissions per passenger, especially on busy routes.</p><button class="text-button" data-action="impact">How we estimate impact →</button></section>`);
-  parts.push(`<div class="home-footer"><p class="note home-service-status">${esc(liveStatusLine())}</p><div class="home-footer-links"><button class="text-button" data-action="sources">Data & credits</button><button class="text-button" data-action="intro">How Rove works</button></div></div>`);
-  return parts.join('');
+ const active=!!state.nav;
+ const places=savedPlaces();
+ const shortcuts=places.slice(0,3).map(p=>`<button class="rove-destination" data-action="go-saved" data-label="${esc(p.label)}">${esc(p.label)}</button>`).join('');
+ return `<main class="rove-home" aria-labelledby="roveHomeTitle">
+ <div class="rove-home-intro"><span class="rove-kicker">Your journey, your way</span><h1 id="roveHomeTitle">Where do you want to go?</h1><p>Find your route and follow your journey with clear, spoken guidance.</p></div>
+ <button class="rove-destination-search" data-action="plan" aria-label="Choose a destination and plan a trip"><span aria-hidden="true">⌕</span><span>Search for a destination</span><span aria-hidden="true">→</span></button>
+ ${active?`<section class="rove-active"><h2>Your journey is in progress</h2><p>Return to your current step and hear the next instruction.</p><button class="button primary" data-action="access-my-journey">Continue journey</button></section>`:''}
+ <nav class="rove-home-actions" aria-label="Journey actions"><button data-action="plan"><span class="rove-action-icon" aria-hidden="true">↗</span><span>Plan a trip</span></button><button data-action="access-nearby"><span class="rove-action-icon" aria-hidden="true">◎</span><span>Nearby transit</span></button><button data-action="access-my-journey"><span class="rove-action-icon" aria-hidden="true">◉</span><span>My journey</span></button></nav>
+ ${shortcuts?`<section class="rove-saved"><h2>Saved places</h2><div>${shortcuts}</div></section>`:''}
+ <div class="rove-home-footer"><button class="text-button" data-action="access">Voice and accessibility settings</button><button class="text-button" data-action="sources">Transit data</button></div>
+ </main>`;
 }
 
 /* Stations lead the list only when the query names one; otherwise addresses and places do. */
@@ -1761,9 +1737,9 @@ function viewAccessNearby() {
  <section class="section"><h2>Closest stops</h2>${items.length?`<ol class="access-nearby-list">${items.map(({place,d})=>`<li><h3>${esc(place.s.n)}</h3><p>${esc(AGENCY_SHORT[place.a.id]||place.a.name)} · Approximately ${Math.round(d/10)*10} metres straight-line distance${uncertain?' (low confidence)':''}</p><p>Routes: ${esc(place.routes.slice(0,7).map(r=>r.title).join(', ')||'Not listed')}</p><button class="button primary" data-action="access-select-stop" data-agency="${esc(place.a.id)}" data-stop="${esc(place.s.id)}">Select this stop and check departures</button></li>`).join('')}</ol>`:'<p class="empty">No nearby stops available yet. Refresh location, or search for a stop by name.</p>'}</section>`;
 }
 function viewAccess() {
- const on = document.body.classList.contains('rove-accessible');
+ const on = true;
  return `${backHeader()}<div class="hero"><h1 class="title-1">Rove audio-first</h1><p class="caption">Transit designed to work without looking at a map</p></div>
- <section class="section access-controls"><button class="button primary" data-action="access-toggle" aria-pressed="${on}">${on ? 'Audio-first mode is on. Turn off' : 'Turn on audio-first mode'}</button>
+ <section class="section access-controls"><p>Spoken guidance and large controls are always available.</p>
  <button class="button secondary" data-action="plan">Plan a journey</button><button class="button secondary" data-action="access-nearby">Find nearby transit stops</button><button class="button secondary" data-action="access-dictate">Speak a destination</button>
  <button class="button secondary" data-action="access-stop-speech">Stop speaking</button>
  <label class="access-setting"><input type="checkbox" data-access-setting="haptics" ${accessPreference('haptics',true) ? 'checked' : ''}/> Vibrate for important confirmations (when supported)</label>
@@ -2576,6 +2552,7 @@ function handleAction(el) {
     case 'stop': openStop(el.dataset.agency, el.dataset.stop); break;
     case 'lines': clearSearchField(); pushView({ name: 'lines' }, { detent: 'full' }); break;
     case 'impact': clearSearchField(); pushView({ name: 'impact' }, { detent: 'full' }); break;
+    case 'access-my-journey': if(state.nav) pushView({name:'navigate'},{detent:'full'}); else announceAccess('No journey is currently active. Plan a trip to begin.'); break;
     case 'access-nearby': pushView({name:'accessNearby'},{detent:'full'}); if(!state.userLocation) locate(); break;
     case 'access-refresh-location': locate(); break;
     case 'access-select-stop': { const place=placeFor(el.dataset.agency,el.dataset.stop); if(place){announceAccess('Selected '+place.s.n+'. Confirm the physical stop and direction before boarding.'); openStop(el.dataset.agency,el.dataset.stop);} break; }
@@ -2593,7 +2570,7 @@ function handleAction(el) {
     }
     case 'access-demo': { if (!('speechSynthesis' in window)) { toast('Speech is not available in this browser.'); break; } window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance('Example: Board the 38 R bus toward downtown at the next stop. Check the vehicle sign before boarding.'); u.rate = 0.9; window.speechSynthesis.speak(u); break; }
     case 'access': clearSearchField(); pushView({ name: 'access' }, { detent: 'full' }); break;
-    case 'access-toggle': document.body.classList.toggle('rove-accessible'); try { localStorage.setItem('rove-accessible', document.body.classList.contains('rove-accessible') ? 'yes' : 'no'); } catch {} render(); announceAccess(document.body.classList.contains('rove-accessible') ? 'Audio-first mode on' : 'Classic Rove restored'); break;
+    case 'access-toggle': announceAccess('Accessible navigation is always enabled.'); break;
     case 'nav-read': readNavInstruction(); break;
     case 'sources': clearSearchField(); pushView({ name: 'sources' }, { detent: 'full' }); break;
     case 'intro': showIntro(0); break;
@@ -3923,7 +3900,7 @@ window.addEventListener('offline', updateOnlineStatus);
 window.addEventListener('online', () => { updateOnlineStatus(); loadRealtime(); });
 
 async function init() {
-  try { if (localStorage.getItem('rove-accessible') === 'yes') document.body.classList.add('rove-accessible'); } catch { /* private browsing */ }
+  document.body.classList.add('rove-accessible');
   try {
     const response = await fetch('public/data/network.json');
     if (!response.ok) throw new Error(`The transit network could not be loaded (${response.status}).`);
