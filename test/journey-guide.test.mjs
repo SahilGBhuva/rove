@@ -60,7 +60,10 @@ test('app normalizeItinerary still provides every field the journey guide reads'
 
 const JOURNEYS = {
   BART: { coords: [37.78461, -122.40734, 37.79740, -122.26510], agency: 'bart', name: /^BART Blue line$/ },
-  Muni: { coords: [37.7622, -122.4350, 37.7930, -122.3965], agency: 'muni', name: /^Muni K train$/ },
+  // K, L and M all run Castro -> Embarcadero. The 8:16 K is no longer offered to an 8:15 request:
+  // the planner now requires a 60 s boarding margin after the walk to the stop (it used to allow 17 s
+  // to reach an underground platform), so the next train, an L, is the honest answer.
+  Muni: { coords: [37.7622, -122.4350, 37.7930, -122.3965], agency: 'muni', name: /^Muni [KLM] train$/ },
   VTA: { coords: [37.3361, -121.8906, 37.4087, -121.9541], agency: 'vta', name: /^VTA .*Line$/ },
   Caltrain: { coords: [37.7765, -122.3943, 37.4434, -122.1650], agency: 'caltrain', name: /^Caltrain (Express|Limited|Local)/ },
   'AC Transit': { coords: [37.7570, -122.2530, 37.7748, -122.2242], agency: 'act', name: /^AC Transit \d+ bus$/ }

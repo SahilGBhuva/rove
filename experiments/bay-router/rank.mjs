@@ -1,33 +1,104 @@
-// Pareto-aware selection: preserve a useful fastest, fewest-transfer and least-walk option.
-// All comparisons are on complete door-to-door itineraries, including access and egress.
-export function rankItineraries(itineraries, limit = 3) {
-  const end = it => Date.parse(it.end);
-  const duration = it => Number(it.durationSeconds) || Infinity;
-  const transfers = it => Number(it.transfers) || 0;
-  const walk = it => Number(it.walkMeters) || 0;
-  const signature = it => it.legs.filter(l => l.transit).map(l => `${l.agency?.id}:${l.route?.id}:${l.trip?.id}`).join('|');
-  const fastest = (a,b) => end(a)-end(b) || duration(a)-duration(b) || transfers(a)-transfers(b) || walk(a)-walk(b);
-  const fewest = (a,b) => transfers(a)-transfers(b) || end(a)-end(b) || walk(a)-walk(b);
-  const leastWalk = (a,b) => walk(a)-walk(b) || end(a)-end(b) || transfers(a)-transfers(b);
-  // Keep the best endpoint access for each distinct transit trip sequence.
+// Itinerary quality, Pareto filtering and generalized-cost ranking for the schedule-only planner.
+// All comparisons are on complete door-to-door itineraries, including access and egress walks.
+// The weights are documented in docs/ROUTING.md; keep the two in sync.
+export const RANKING = Object.freeze({
+  TRANSFER_PENALTY_SECONDS: 300,  // each extra vehicle costs 5 minutes (transfers are hard without sight)
+  WALK_RELUCTANCE: 2,             // a walking second costs 2 seconds (it is already in the duration once)
+  STOP_WAIT_RELUCTANCE: 1.5,      // a second spent waiting at a stop between vehicles costs 1.5 s
+  LONG_WAIT_SECONDS: 15 * 60,     // waits at a stop beyond this cost one extra second per second
+  DETOUR_PENALTY_SECONDS: 3600,   // riding away and coming back through the same stations
+  BACKTRACK_SECONDS_PER_METER: 1, // net movement away from the destination, beyond a 2 km allowance
+  REASONABLE_EXTRA_COST_SECONDS: 45 * 60, // alternatives costing more than best + this are not shown
+});
+
+const num = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
+const end = it => Date.parse(it.end);
+const transfers = it => num(it.transfers);
+const walk = it => num(it.walkMeters);
+const initialWait = it => num(it.initialWaitSeconds);
+const transferWait = it => num(it.transferWaitSeconds);
+const longestWait = it => num(it.longestWaitSeconds);
+// Same vehicles in the same order = same option, even if it boards or alights one stop apart.
+const signature = it => it.legs.filter(l => l.transit)
+  .map(l => `${l.agency?.id}:${l.route?.id}:${l.trip?.id}`).join('|');
+
+/**
+ * Generalized cost in seconds. `referenceMs` is the requested departure time, so waiting at home
+ * before a later departure counts like travel time (it delays arrival), while waiting at a stop
+ * between vehicles, walking and transfers cost more than riding.
+ */
+export function generalizedCost(it, referenceMs) {
+  const reference = Number.isFinite(referenceMs) ? referenceMs : Date.parse(it.start);
+  const walkSeconds = num(it.walkSeconds, walk(it) / 1.2);
+  return (end(it) - reference) / 1000
+    + RANKING.TRANSFER_PENALTY_SECONDS * transfers(it)
+    + (RANKING.WALK_RELUCTANCE - 1) * walkSeconds
+    + (RANKING.STOP_WAIT_RELUCTANCE - 1) * transferWait(it)
+    + Math.max(0, longestWait(it) - RANKING.LONG_WAIT_SECONDS)
+    + (it.detour ? RANKING.DETOUR_PENALTY_SECONDS : 0)
+    + RANKING.BACKTRACK_SECONDS_PER_METER * Math.max(0, num(it.backtrackMeters) - 2000);
+}
+
+// A dominates B when it arrives no later, with no more transfers, walking or waiting of any kind,
+// and is strictly better in at least one of those.
+export function dominates(a, b) {
+  const pairs = [[end(a), end(b)], [transfers(a), transfers(b)], [walk(a), walk(b)],
+    [initialWait(a), initialWait(b)], [transferWait(a), transferWait(b)], [longestWait(a), longestWait(b)],
+    [a.detour ? 1 : 0, b.detour ? 1 : 0]];
+  return pairs.every(([x, y]) => x <= y) && pairs.some(([x, y]) => x < y);
+}
+
+export function paretoFilter(itineraries) {
+  return itineraries.filter(b => !itineraries.some(a => a !== b && dominates(a, b)));
+}
+
+/**
+ * Detour test on the stations each transit leg actually passes (board, intermediate, alight).
+ * A journey is a detour when a later vehicle passes within `meters` of a station an earlier vehicle
+ * already served, ignoring the immediate surroundings of the transfer point itself.
+ * legVisits: one array per transit leg of {lat, lon} in travel order.
+ */
+export function revisitsEarlierStations(legVisits, meters = 250) {
+  const d = (p, q) => Math.hypot((p.lat - q.lat) * 111200, (p.lon - q.lon) * 111200 * Math.cos(p.lat * Math.PI / 180));
+  for (let j = 1; j < legVisits.length; j++) {
+    const later = legVisits[j];
+    if (!later.length) continue;
+    const boardPoint = later[0];
+    for (let i = 0; i < j; i++) {
+      const earlier = legVisits[i];
+      if (!earlier.length) continue;
+      const alightPoint = earlier.at(-1);
+      const transferZone = p => d(p, boardPoint) <= meters || d(p, alightPoint) <= meters;
+      for (const p of later) {
+        if (transferZone(p)) continue;
+        if (earlier.some(q => !transferZone(q) && d(p, q) <= meters)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Rank complete itineraries:
+ *  1. keep the cheapest copy of each identical vehicle sequence;
+ *  2. drop detours when any non-detour option exists;
+ *  3. Pareto filter on arrival, transfers, walking, initial wait, transfer wait, longest wait;
+ *  4. order by generalized cost and drop options far more expensive than the best one.
+ */
+export function rankItineraries(itineraries, limit = 3, options = {}) {
+  if (!itineraries.length) return [];
+  const reference = Number.isFinite(options.requestMs) ? options.requestMs
+    : Math.min(...itineraries.map(it => Date.parse(it.start)).filter(Number.isFinite));
+  const cost = new Map(itineraries.map(it => [it, generalizedCost(it, reference)]));
   const unique = new Map();
   for (const it of itineraries) {
-    const key = signature(it);
-    if (!unique.has(key) || fastest(it, unique.get(key)) < 0) unique.set(key,it);
+    const key = signature(it), seen = unique.get(key);
+    if (!seen || cost.get(it) < cost.get(seen) || (cost.get(it) === cost.get(seen) && end(it) < end(seen))) unique.set(key, it);
   }
-  const pool = [...unique.values()];
-  if (!pool.length) return [];
-  // Do not recommend an extreme detour solely to save a few metres of walking.
-  const earliest=Math.min(...pool.map(end));
-  const minTransfers=Math.min(...pool.map(transfers));
-  const reasonable=pool.filter(it=>end(it)<=earliest+40*60000 && transfers(it)<=minTransfers+2);
-  const options=reasonable.length?reasonable:pool;
-  const selected = [];
-  const add = it => { if (it && !selected.includes(it) && selected.length < limit) selected.push(it); };
-  // Always expose the earliest arrival. Then genuinely different tradeoffs.
-  add(pool.toSorted(fastest)[0]);
-  if (limit > 1) add(options.toSorted(fewest)[0]);
-  if (limit > 2) add(options.toSorted(leastWalk)[0]);
-  for (const it of options.toSorted(fastest)) add(it);
-  return selected;
+  let pool = [...unique.values()];
+  if (pool.some(it => !it.detour)) pool = pool.filter(it => !it.detour);
+  pool = paretoFilter(pool);
+  pool.sort((a, b) => cost.get(a) - cost.get(b) || end(a) - end(b) || transfers(a) - transfers(b));
+  const best = cost.get(pool[0]);
+  return pool.filter(it => cost.get(it) <= best + RANKING.REASONABLE_EXTRA_COST_SECONDS).slice(0, limit);
 }
