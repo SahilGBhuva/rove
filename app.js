@@ -1326,7 +1326,8 @@ function viewHome() {
   if (home) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Home">${MODE_ICONS.home}<span>Home</span></button>`);
   if (work) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Work">${MODE_ICONS.work}<span>Work</span></button>`);
   if (!state.userLocation) quick.push(`<button type="button" class="quick" data-action="locate"><svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" stroke="none" d="M10 2.5 16.5 16 10 12.8 3.5 16Z" transform="rotate(45 10 10)"/></svg><span>Near me</span></button>`);
-  parts.push(`<section class="audio-home"><h2>Navigate by listening</h2><p>Plan a trip, hear your options, and follow each transit step without relying on the map.</p><button class="button primary" data-action="access-toggle" aria-pressed="${document.body.classList.contains('rove-accessible')}">${document.body.classList.contains('rove-accessible') ? 'Audio-first mode on' : 'Turn on audio-first mode'}</button><button class="button secondary" data-action="plan">Plan an accessible-audio trip</button><button class="button secondary" data-action="access">Audio-first settings</button></section>`);
+  if (document.body.classList.contains('rove-accessible')) parts.push(`<section class="audio-home"><h2>Navigate by listening</h2><p>Plan a trip, hear your options, and follow each transit step without relying on the map.</p><button class="button primary" data-action="access-toggle" aria-pressed="${document.body.classList.contains('rove-accessible')}">${document.body.classList.contains('rove-accessible') ? 'Switch back to classic Rove' : 'Turn on audio-first mode'}</button><button class="button secondary" data-action="plan">Plan an accessible-audio trip</button><button class="button secondary" data-action="access">Audio-first settings</button></section>`);
+  else parts.push(`<div class="classic-mode-toggle"><button class="button secondary" data-action="access-toggle">Switch to audio-first mode</button></div>`);
   parts.push(`<div class="home-heading"><span class="home-eyebrow">BAY AREA / TRANSIT</span><h1>Go somewhere.</h1><p>Every line. One map.</p></div><div class="quick-row">${quick.join('')}</div>`);
 
   const others = places.filter(p => p.label !== 'Home' && p.label !== 'Work');
@@ -1674,7 +1675,7 @@ function viewStop({ agency, stop }) {
       <h1 class="title-1">${esc(s.n)}</h1>
       <p class="caption">${esc(a.name)}${isStation ? ' · Station' : ' · Stop'}${esc(ageText)}${staleText}</p>
     </div>
-    <section class="section" style="margin-top:4px"><h2 class="label">Departures</h2><button class="button secondary" data-action="access-departures" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Read next departures aloud</button>${departures}${canceled}</section>
+    <section class="section" style="margin-top:4px"><h2 class="label">Departures</h2>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary" data-action="access-departures" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Read next departures aloud</button>` : ''}${departures}${canceled}</section>
     ${alerts.length ? `<div style="margin-top:16px">${alertsHtml(alerts, 1)}</div>` : ''}
     <div class="action-bar" style="margin-top:20px">
       <button class="button primary" data-action="plan-to" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Directions</button>
@@ -2062,7 +2063,7 @@ function viewResults() {
       <div class="trip-ends"><p><span class="marker"><i></i></span><span>${esc(plan.from?.name)}</span></p><p><span class="marker to"><i></i></span><span>${esc(plan.to?.name)}</span></p></div>
       <button type="button" class="text-button" data-action="back">Edit</button>
     </div>
-    <section class="access-results-intro"><h2>Choose a journey</h2><p>Listen to a route to hear the stops, transfers, and walking estimates before deciding.</p><button class="button secondary" data-action="access-all-routes">Read route choices aloud</button></section>
+    ${document.body.classList.contains('rove-accessible') ? `<section class="access-results-intro"><h2>Choose a journey</h2><p>Listen to a route to hear the stops, transfers, and walking estimates before deciding.</p><button class="button secondary" data-action="access-all-routes">Read route choices aloud</button></section>` : ''}
     <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
     ${plan.results?.notes?.length ? `<ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${areaNoteHtml()}
@@ -2073,7 +2074,7 @@ function viewResults() {
       return `<li><button class="itinerary" data-action="it-toggle" data-index="${i}" aria-expanded="${open}">
         <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
-        <div class="it-meta">${itinerarySummary(it)}</div></button><button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Read full spoken itinerary for option ${order.indexOf(i)+1}">Listen to route ${order.indexOf(i)+1}</button>
+        <div class="it-meta">${itinerarySummary(it)}</div></button>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Read full spoken itinerary for option ${order.indexOf(i)+1}">Listen to route ${order.indexOf(i)+1}</button>` : ''}
         ${carbonComparison(it)}
         ${open ? `<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start navigation</button></div>${itineraryTimeline(it)}` : ''}</li>`;
     }).join('')}</ul>
@@ -2497,13 +2498,13 @@ function viewNavigate() {
       ${meta ? `<p class="caption" style="margin:6px 0 0">${esc(meta)}</p>` : ''}
       ${step.leg ? legAlertsHtml(step.leg) : ''}
       ${transitRecovery}
-      ${(step.type === 'wait' || step.type === 'ride') ? `<section class="blind-boarding"><p>${nav.boarded ? 'Boarding manually confirmed. Rove has not independently verified the vehicle.' : 'Before boarding, check the route and destination shown or announced on the vehicle.'}</p><button class="button primary" data-action="nav-board" aria-pressed="${nav.boarded}">${nav.boarded ? 'Boarding confirmed' : 'I have boarded this vehicle'}</button></section>` : ''}
-      ${step.type === 'ride' ? `<section class="blind-exit" role="status"><h3>Exit-stop assistant</h3><p>${esc(nav.exitHint || 'Waiting for accurate GPS. Use vehicle stop announcements to confirm your exit.')}</p><button class="button secondary" data-action="nav-exit-check">Check exit-stop proximity</button></section>` : ''}
+      ${document.body.classList.contains('rove-accessible') && (step.type === 'wait' || step.type === 'ride') ? `<section class="blind-boarding"><p>${nav.boarded ? 'Boarding manually confirmed. Rove has not independently verified the vehicle.' : 'Before boarding, check the route and destination shown or announced on the vehicle.'}</p><button class="button primary" data-action="nav-board" aria-pressed="${nav.boarded}">${nav.boarded ? 'Boarding confirmed' : 'I have boarded this vehicle'}</button></section>` : ''}
+      ${document.body.classList.contains('rove-accessible') && step.type === 'ride' ? `<section class="blind-exit" role="status"><h3>Exit-stop assistant</h3><p>${esc(nav.exitHint || 'Waiting for accurate GPS. Use vehicle stop announcements to confirm your exit.')}</p><button class="button secondary" data-action="nav-exit-check">Check exit-stop proximity</button></section>` : ''}
       ${turns}
     </div>
-    <div class="access-navigation-help" role="note">Check your vehicle and stop independently. Rove does not automatically confirm boarding or safe pedestrian routes.</div>
+    ${document.body.classList.contains('rove-accessible') ? `<div class="access-navigation-help" role="note">Check your vehicle and stop independently. Rove does not automatically confirm boarding or safe pedestrian routes.</div>` : ''}
     <div class="action-bar">
-      <button class="button secondary" data-action="access-stop-speech">Stop speech</button>
+      ${document.body.classList.contains('rove-accessible') ? `<button class="button secondary" data-action="access-stop-speech">Stop speech</button>` : ''}
       ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
       <button class="button secondary" data-action="nav-read">Repeat current instruction</button>
       <button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'I have arrived' : 'Next step'}</button>
@@ -2578,7 +2579,7 @@ function handleAction(el) {
     }
     case 'access-demo': { if (!('speechSynthesis' in window)) { toast('Speech is not available in this browser.'); break; } window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance('Example: Board the 38 R bus toward downtown at the next stop. Check the vehicle sign before boarding.'); u.rate = 0.9; window.speechSynthesis.speak(u); break; }
     case 'access': clearSearchField(); pushView({ name: 'access' }, { detent: 'full' }); break;
-    case 'access-toggle': document.body.classList.toggle('rove-accessible'); try { localStorage.setItem('rove-accessible', document.body.classList.contains('rove-accessible') ? 'yes' : 'no'); } catch {} render(); announceAccess(document.body.classList.contains('rove-accessible') ? 'Audio-first mode on' : 'Audio-first mode off'); break;
+    case 'access-toggle': document.body.classList.toggle('rove-accessible'); try { localStorage.setItem('rove-accessible', document.body.classList.contains('rove-accessible') ? 'yes' : 'no'); } catch {} render(); announceAccess(document.body.classList.contains('rove-accessible') ? 'Audio-first mode on' : 'Classic Rove restored'); break;
     case 'nav-read': readNavInstruction(); break;
     case 'sources': clearSearchField(); pushView({ name: 'sources' }, { detent: 'full' }); break;
     case 'intro': showIntro(0); break;
