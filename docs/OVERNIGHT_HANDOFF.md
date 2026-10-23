@@ -4,7 +4,7 @@
 - Branch: `feature/rove-a11y-journey-20261023` (pushed to origin; never force-pushed)
 - Base: `origin/integration/rove-accessible-preview` @ `03ec00c`
 - Merged in: `claude/routing-quality-20261023` (routing subagent; local branch, not pushed separately)
-- Preview: https://rove-cac-preview-jd42rrjge-sahilgbhuva.vercel.app (Vercel Preview, behind deployment protection). Production was not touched by this session.
+- Preview: https://rove-cac-preview-m4au73b38-sahilgbhuva.vercel.app (Vercel Preview, behind deployment protection). Production was not touched by this session.
 
 ## Resume
 ```

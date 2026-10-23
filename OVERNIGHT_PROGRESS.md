@@ -59,9 +59,35 @@ NOT verified: audible playback on a physical iPhone. Manual check:
 - https://rove-cac-preview-jd42rrjge-sahilgbhuva.vercel.app (Vercel **Preview**, project rove-cac-preview). Verified through `vercel curl` that it serves this branch and the fixed planner. Behind Vercel deployment protection, so judges need a share link or protection turned off (owner decision).
 - Note: other sessions also deployed to this project tonight, including a Production deployment about 28 minutes before mine. That was not this session.
 
+### 6. QA audit and fixes (commits da396b2, 6ceaf30)
+- A QA subagent drove headless Chrome (puppeteer-core) at 320–1440 px, light and dark, reduced motion and zoom. Report: docs/qa/QA_REPORT.md (screenshots are a pre-fix baseline).
+- P0 fixed: with Help scrolled to the end, the sticky dock covered "Close help". A tap there hit Repeat or Confirm and recorded a false "I've boarded". While Help is open, the dock now holds only Close help, and the confirm handler refuses to advance. Re-verified in the browser.
+- P1 fixed: designed control heights (68/64/56 px) were overridden to 48 px; design-layer text is now rem-based and follows iOS Dynamic Type; the desktop speech bar moved to the top; the dock is not sticky on short or zoomed screens.
+- P2 fixed: reminder banner restyled so it doesn't look like Confirm, results gutters and colours unified, warm theme-color.
+- Passed per QA: no horizontal overflow at any width, focus moves to the instruction after each Confirm, sensible tab order, visible focus ring, all trip text ≥ 7.29:1 contrast, no console errors.
+- Still open (P2): the arrival screen could show a short trip summary; 768 px has extra top space; MapLibre warnings on desktop.
+
+### 7. Preview (current)
+https://rove-cac-preview-m4au73b38-sahilgbhuva.vercel.app. Vercel target "preview", verified through `vercel curl` to serve styles v33 / app v39 with the P0 fix.
+
 ### Tests now
-`npm test`: 191 tests, 186 pass, 0 fail, 5 skipped (need OTP or a 511 key).
+`npm test`: 193 tests, 188 pass, 0 fail, 5 skipped (need OTP or a 511 key).
+
+## Merge instructions (safe, no force-push)
+`feature/rove-a11y-journey-20261023` is based on `origin/integration/rove-accessible-preview` @ 03ec00c, which has not moved, so it fast-forwards.
+```
+git -C ~/rove-claude fetch origin
+git -C ~/rove-claude worktree add ~/rove-merge-check -b merge/a11y-journey-20261023 origin/integration/rove-accessible-preview
+cd ~/rove-merge-check
+git merge --ff-only origin/feature/rove-a11y-journey-20261023
+npm ci && npm test            # expect 0 failures
+node scripts/preview-site.mjs # optional: click through the demo at http://localhost:4321
+git push origin merge/a11y-journey-20261023
+gh pr create --base integration/rove-accessible-preview --head merge/a11y-journey-20261023
+```
+Do not also merge `feature/rove-voice-first-20261023` or `chatgpt/mobile-guidance-hardening` as they are. They patch the same functions (viewNavigate, readNavInstruction, nav-board, speakText) that this branch replaces with the tested guide and speech modules, so merging them would conflict and bring back the cancel-then-speak path and the duplicate Speak buttons. Their intent (boarding confirmation, step-specific speech, platform narration, recovery) is covered here.
 
 ## Next
-- Apply the QA agent's findings (docs/qa/QA_REPORT.md).
-- docs/CAC_SUBMISSION.md drafted: student sections must be written by the students.
+- Manual iPhone checks (section 2 and docs/OVERNIGHT_HANDOFF.md).
+- Student-written sections and AI disclosure in docs/CAC_SUBMISSION.md.
+- Decide preview access for judges (Vercel deployment protection).

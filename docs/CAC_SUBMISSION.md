@@ -50,7 +50,7 @@ These describe the code in this repository. **[Student]** must mark which parts 
 3. **Never guessing about boarding.** Phone GPS cannot tell which vehicle a rider is on, so auto-advancing on location could tell someone they are on the right train when they are not. The journey became a state machine where only the rider's confirmation moves it forward, and GPS only gives clearly labeled estimates.
 
 ## Testing evidence (23 October 2026)
-- `npm test`: 191 tests, 186 pass, 0 fail, 5 skipped. The skipped tests need a running OpenTripPlanner or live 511 key. Rerun before submitting and update these numbers.
+- `npm test`: 193 tests, 188 pass, 0 fail, 5 skipped. The skipped tests need a running OpenTripPlanner or live 511 key. Rerun before submitting and update these numbers.
 - Journey-guide tests use real scheduled journeys from the bundled timetables for BART, Muni, VTA, Caltrain and AC Transit, plus a Muni-to-BART transfer.
 - Routing regression matrix (`test/routing-quality.test.mjs`): Sunnyvale → Chase Center at 00:24 and 08:15, Sunnyvale → UC Berkeley, Powell → Oakland, single-agency trips for each agency, BART + AC Transit, cross-midnight, invalid coordinates, missing timetable day, long walk. Each itinerary is checked for time order, transfer buffers and no repeated stops.
 - Browser checks (desktop Chromium emulating a 390×844 phone): the full demo journey, voice entry with a simulated recognizer (success and denied microphone), route-choice speech, Stop speaking, and the overnight service-gap message. See `OVERNIGHT_PROGRESS.md` and `docs/qa/QA_REPORT.md`.
