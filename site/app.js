@@ -1184,7 +1184,7 @@ function audioTripSummary(it) {
   for (const leg of it.legs || []) {
     if (leg.mode === 'WALK') pieces.push(`Walk to ${leg.to?.name || 'the next stop'}. Walking directions may be approximate.`);
     else if (leg.mode === 'CAR') pieces.push(`Drive to ${leg.to?.name || 'transit'}.`);
-    else pieces.push(`Board ${legInfo(leg).badge}${leg.headsign ? ' toward '+displayName(leg.headsign) : ''} at ${leg.from?.name || 'the stop'}. Exit at ${leg.to?.name || 'the destination'}.`);
+    else pieces.push(`Board ${legInfo(leg).badge}${leg.headsign ? ' toward '+displayName(leg.headsign) : ''} at ${leg.from?.name || 'the stop'}${leg.from?.platform ? ', platform '+leg.from.platform : ''}. Check the vehicle announcement or ask staff before boarding. Exit at ${leg.to?.name || 'the destination'}.`);
   }
   return pieces.join(' ');
 }
@@ -1323,8 +1323,9 @@ function viewHome() {
  const places=savedPlaces();
  const shortcuts=places.slice(0,3).map(p=>`<button class="rove-destination" data-action="go-saved" data-label="${esc(p.label)}">${esc(p.label)}</button>`).join('');
  return `<div class="rove-home" aria-labelledby="roveHomeTitle">
- <div class="rove-home-intro"><span class="rove-kicker">Your journey, your way</span><h1 id="roveHomeTitle">Where do you want to go?</h1><p>Find your route and follow your journey with clear, spoken guidance.</p></div>
+ <div class="rove-home-intro"><span class="rove-kicker">Your journey, your way</span><h1 id="roveHomeTitle">Where do you want to go?</h1><p>Choose Search to type, or Speak a destination. Review a route, then start guidance. You confirm boarding and exiting.</p></div>
  <button class="rove-destination-search" data-action="plan" aria-label="Choose a destination and plan a trip"><span aria-hidden="true">⌕</span><span>Search for a destination</span><span aria-hidden="true">→</span></button>
+ <button class="rove-voice-start" type="button" data-action="access-dictate" aria-label="Speak a destination using the microphone">Speak a destination</button>
  <button type="button" class="rove-speak-destination" data-action="access-speak-destination" aria-label="Speak your destination">Speak destination</button>
  <p class="rove-voice-hint">Say where you want to go, or use Search for a destination.</p>
  ${active?`<section class="rove-active"><h2>Your journey is in progress</h2><p>Return to your current step and hear the next instruction.</p><button class="button primary" data-action="access-my-journey">Continue journey</button></section>`:''}
@@ -1718,14 +1719,28 @@ function accessVibrate(pattern = [90]) {
   if (accessPreference('haptics', true) && navigator.vibrate) navigator.vibrate(pattern);
 }
 function voiceInputStart() {
+  const target = document.querySelector('#panelBody input[data-plan-field="to"]');
+  if (!target) { announceAccess('Open directions and type a destination.'); return; }
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) { announceAccess('Voice input is not available. Use the destination search field.'); return; }
-  const target = document.querySelector('#panelBody input[data-plan-field="to"], #searchInput, #panelBody input[type="search"]');
-  if (!target) { announceAccess('Open trip planning to choose a destination.'); return; }
-  const recognition = new Recognition(); recognition.lang = 'en-US'; recognition.interimResults = false; recognition.maxAlternatives = 1;
-  recognition.onresult = e => { const words=e.results?.[0]?.[0]?.transcript?.trim(); if (!words) return; target.focus(); target.value=words; target.dispatchEvent(new Event('input',{bubbles:true})); announceAccess('Heard '+words+'. Check the result before continuing.'); accessVibrate([70,60,70]); };
-  recognition.onerror = () => announceAccess('Voice recognition was unsuccessful. Type the destination instead.');
-  recognition.start(); announceAccess('Listening for a destination.');
+  if (!Recognition) { target.focus(); announceAccess('Voice input is unavailable. Type a destination instead.'); return; }
+  let recognition;
+  try { recognition = new Recognition(); } catch { target.focus(); announceAccess('Microphone unavailable. Type a destination.'); return; }
+  recognition.lang = 'en-US'; recognition.interimResults = false; recognition.maxAlternatives = 1;
+  recognition.onresult = e => {
+    const words = e.results?.[0]?.[0]?.transcript?.trim();
+    if (!words) { announceAccess('Nothing was heard. Try again or type your destination.'); return; }
+    target.focus(); target.value = words; target.dispatchEvent(new Event('input', { bubbles: true }));
+    announceAccess('Heard '+words+'. Choose the correct search result before continuing.');
+  };
+  recognition.onerror = e => {
+    target.focus();
+    announceAccess(e.error === 'not-allowed' || e.error === 'service-not-allowed' ?
+      'Microphone permission denied. Type your destination instead.' :
+      'Speech recognition failed. Type your destination or try again.');
+  };
+  recognition.onnomatch = () => announceAccess('No matching destination heard. Please try again.');
+  try { recognition.start(); announceAccess('Listening for your destination.'); }
+  catch { target.focus(); announceAccess('Microphone could not start. Type your destination.'); }
 }
 function viewAccessNearby() {
  const fix=state.accessLocationFix;
@@ -1838,6 +1853,7 @@ function viewPlan() {
     <div class="hero" style="padding-bottom:8px"><h1 class="title-2">Directions</h1></div>
     <div id="planNotice">${planNoticeHtml()}</div>
     <form class="plan-form${plan.focus ? ' suggesting' : ''}" data-plan-form novalidate>
+      <button type="button" class="rove-voice-start" data-action="access-dictate" aria-label="Speak your destination">Speak destination</button>
       <div class="plan-fields">
         ${field('planFrom', 'from', 'Starting point')}
         ${field('planTo', 'to', 'Destination')}
@@ -2398,7 +2414,7 @@ async function startNavigation(index) {
   renderJourney(); applyMapState();
   pushView({ name: 'navigate' }, { detent: 'half' });
   focusStep();
-  if (document.body.classList.contains('rove-accessible')) { announceAccess('Navigation started. Confirm your boarding stop and vehicle.'); }
+  if (document.body.classList.contains('rove-accessible')) { announceAccess('Navigation started. Repeat instruction reads your first step. Confirm your boarding stop and vehicle.'); }
   // Request a fix on Start even when the rider never tapped the location button.
   if ('geolocation' in navigator && window.isSecureContext) {
     nav.watchId = navigator.geolocation.watchPosition(onNavPosition, error => {
@@ -2449,7 +2465,7 @@ function viewNavigate() {
     <div class="nav-head"><div class="title-2">Arrive ${esc(clock(new Date(nav.it.endTime)))}</div><div class="caption">${esc(durationLabel((new Date(nav.it.endTime) - Date.now()) / 1000))} remaining${nav.it.usesRealtime ? '' : ' · Scheduled times'}</div>
     <p class="nav-gps-status" role="status">${esc(nav.status || 'Waiting for location')}</p>
     ${nav.it.legs.some(l => l.mode === 'WALK' && l.approximate) ? '<p class="caption">Walking segments are estimates, not verified turn-by-turn paths. Follow safe pedestrian routes.</p>' : ''}
-    <div class="nav-camera-controls" role="group" aria-label="Navigation map controls">
+    <div class="nav-camera-controls" role="group" aria-label="Navigation map controls" ${document.body.classList.contains('rove-accessible') ? 'hidden' : ''}>
       <button type="button" class="button secondary" data-action="nav-follow" aria-pressed="${nav.follow}">Follow</button>
       <button type="button" class="button secondary" data-action="nav-bearing" aria-pressed="${nav.headingUp}">${nav.headingUp ? 'Heading up' : 'North up'}</button>
       <button type="button" class="button secondary" data-action="nav-overview">Overview</button>
@@ -2488,17 +2504,16 @@ function viewNavigate() {
       ${meta ? `<p class="caption" style="margin:6px 0 0">${esc(meta)}</p>` : ''}
       ${step.leg ? legAlertsHtml(step.leg) : ''}
       ${transitRecovery}
-      ${document.body.classList.contains('rove-accessible') && (step.type === 'wait' || step.type === 'ride') ? `<section class="blind-boarding"><p>${nav.boarded ? 'Boarding manually confirmed. Rove has not independently verified the vehicle.' : 'Before boarding, check the route and destination shown or announced on the vehicle.'}</p><button class="button primary" data-action="nav-board" aria-pressed="${nav.boarded}">${nav.boarded ? 'Boarding confirmed' : 'I have boarded this vehicle'}</button></section>` : ''}
+      ${nav.showHelp ? `<section class="rove-nav-help" role="note"><h3>Travel help</h3><p>Stop somewhere safe. Check announcements or ask transit staff to confirm the vehicle, direction, and stop. GPS cannot verify crossings or platform edges. If service was missed or canceled, request a new route when location is available.</p><button type="button" class="button secondary" data-action="nav-missed" ${!nav.fix || nav.rerouting ? 'disabled' : ''}>Find another route</button><button type="button" class="button secondary" data-action="nav-help">Close help</button></section>` : ''}
+      ${document.body.classList.contains('rove-accessible') && (step.type === 'wait' || step.type === 'ride') ? `<section class="blind-boarding"><p>${nav.boarded ? 'You confirmed boarding. Rove cannot verify the vehicle.' : 'Verify the vehicle route and direction using announcements or transit staff.'}</p></section>` : ''}
       ${document.body.classList.contains('rove-accessible') && step.type === 'wait' ? `<section class="blind-boarding-check" role="note"><h3>Check before boarding</h3><p>Expected: ${esc(step.li?.badge || 'your transit route')}${step.leg.headsign ? ` toward ${esc(displayName(step.leg.headsign))}` : ''}. Confirm the route and destination using the vehicle announcement or driver. Rove cannot identify the vehicle from GPS.</p></section>` : ''}
+      ${document.body.classList.contains('rove-accessible') && step.type === 'ride' ? `<section class="blind-boarding-check" role="note"><h3>Before your exit</h3><p>Get off at ${esc(step.leg.to?.name || 'the destination stop')}. Listen for the onboard stop announcement. GPS is only an estimate; ask staff if you are unsure. After exiting, choose Next step to continue${nav.steps.slice(nav.i+1).some(s=>s.type==='wait') ? ' to your transfer' : ''}.</p></section>` : ''}
       ${document.body.classList.contains('rove-accessible') && step.type === 'ride' ? `<section class="blind-exit" role="status"><h3>Exit-stop assistant</h3><p>${esc(nav.exitHint || 'Waiting for accurate GPS. Use vehicle stop announcements to confirm your exit.')}</p><button class="button secondary" data-action="nav-exit-check">Check exit-stop proximity</button></section>` : ''}
       ${turns}
     </div>
     ${document.body.classList.contains('rove-accessible') ? `<div class="access-navigation-help" role="note">Check your vehicle and stop independently. Rove does not automatically confirm boarding or safe pedestrian routes.</div>` : ''}
-    <div class="action-bar">
-      ${document.body.classList.contains('rove-accessible') ? `<button class="button secondary" data-action="access-stop-speech">Stop speech</button>` : ''}
-      ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
-      <button class="button secondary" data-action="nav-read">Repeat current instruction</button>
-      <button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'I have arrived' : 'Next step'}</button>
+    <div class="action-bar ${document.body.classList.contains('rove-accessible') ? 'rove-nav-primary' : ''}" role="group" aria-label="Journey actions">
+      ${document.body.classList.contains('rove-accessible') ? `<button class="button secondary" data-action="nav-read">Repeat instruction</button><button class="button primary" data-action="${step.type === 'wait' && !nav.boarded ? 'nav-board' : 'nav-next'}">${step.type === 'wait' && !nav.boarded ? "I've boarded" : step.type === 'ride' ? "I've exited" : nav.i === total - 1 ? 'I have arrived' : 'Confirm / Next'}</button><button class="button secondary" data-action="nav-help">Help</button>` : `${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}<button class="button secondary" data-action="nav-read">Repeat current instruction</button><button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'I have arrived' : 'Next step'}</button>`}
     </div>
     <ol class="step-list" style="margin-top:20px">${list}</ol>`;
 }
@@ -2653,6 +2668,7 @@ function handleAction(el) {
     case 'leg-focus': focusLeg(Number(el.dataset.leg)); break;
     case 'nav-start': startNavigation(Number(el.dataset.index)); break;
     case 'nav-board': if (state.nav) { state.nav.boarded = true; accessVibrate([120,70,120]); announceAccess('You confirmed boarding. Rove cannot independently verify the vehicle.',true); render(); } break;
+    case 'nav-help': { const nav = state.nav; if (!nav) break; const step = nav.steps[nav.i]; announceAccess('If you are uncertain, stop in a safe place. Verify the stop, vehicle, and direction with announcements or transit staff. Rove cannot confirm safe crossings or platform edges. If you missed a service, choose Help and use Find another route when location is available. Current step: '+(step?.title || 'unknown')+'.', false); nav.showHelp = !nav.showHelp; render(); break; }
     case 'nav-exit-check': if (state.nav) { checkBlindExit(state.nav,true); render(); } break;
     case 'nav-follow': navChangeFollow('follow'); break;
     case 'nav-compass': enableNavCompass(); break;
@@ -2671,7 +2687,10 @@ function handleAction(el) {
         announceAccess('Boarding has not been confirmed. Verify your vehicle before continuing.', true);
         break;
       }
-      if (current?.type === 'ride') state.nav.boarded = false;
+      if (current?.type === 'ride') {
+        // Never silently mark an exit as complete based on GPS.
+        state.nav.boarded = false;
+      }
  state.nav.i++; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
     case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
     case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
