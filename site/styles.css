@@ -1349,3 +1349,13 @@ body.theme-dark.rove-accessible .plan-fields:focus-within {
 .rove-speak-destination:focus-visible{outline:3px solid #d48b17!important;outline-offset:3px}
 .rove-voice-hint{font-size:.9rem;line-height:1.5;color:var(--ink-2);margin:8px 0 0}
 body.theme-dark .rove-speak-destination{background:#a4e2b8;color:#123421;border-color:#a4e2b8}
+
+/* Accessible voice entry and the three primary journey actions. */
+.rove-voice-start { display:block; width:100%; min-height:56px; margin:12px 0; padding:12px 18px; border:1.5px solid #286647; border-radius:12px; background:#f3f8f4; color:#174b32; font:inherit; font-size:17px; font-weight:700; text-align:center; cursor:pointer; }
+.rove-voice-start:focus-visible { outline:2px solid #286647; outline-offset:3px; }
+.rove-nav-primary { display:grid; grid-template-columns:1fr; gap:12px; }
+.rove-nav-primary button { min-height:58px; font-size:17px; border-radius:12px; }
+.rove-nav-help { margin:16px 0; padding:16px; border:1px solid var(--rule); border-radius:12px; }
+.rove-nav-help button { min-height:48px; margin:8px 8px 0 0; }
+@media(min-width:640px) { .rove-nav-primary { grid-template-columns:1fr 1.2fr 1fr; } }
+@media(prefers-reduced-motion:reduce) { .rove-voice-start,.rove-nav-primary button { transition:none!important; } }
