@@ -5,7 +5,11 @@ import {diverseCandidateStops,planExperimental} from '../api/v2/experimental-pla
 const make=(id,end,transfers,walk)=>({start:'2026-10-23T09:00:00Z',end:`2026-10-23T09:${String(end).padStart(2,'0')}:00Z`,durationSeconds:end*60,transfers,walkMeters:walk,legs:[{transit:true,agency:{id:'caltrain'},route:{id:'x'},trip:{id}}]});
 test('ranking retains fastest, fewest transfers and least walking',()=>{
  const a=make('a',20,3,900),b=make('b',25,0,1000),c=make('c',30,2,100),d=make('d',35,4,1200);
- assert.deepEqual(rankItineraries([d,c,b,a],3),[a,b,c]);
+ // All three non-dominated trade-offs are still returned; d (later, more transfers, more walking
+ // than a) is Pareto-dominated and dropped. The ORDER is now the documented generalized cost
+ // (docs/ROUTING.md: 5 min per transfer, walking counts double) rather than "fastest first":
+ // b (0 transfers, +5 min) ranks above a (3 transfers), which is the right call for a blind rider.
+ assert.deepEqual(rankItineraries([d,c,b,a],3),[b,c,a]);
 });
 test('duplicate trips keep the best arrival',()=>{
  const a=make('same',30,1,300),b=make('same',20,1,400);
