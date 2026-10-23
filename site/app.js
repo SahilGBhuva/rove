@@ -2269,6 +2269,7 @@ function maybeAdvanceNavigation(nav, fix) {
   const rideNearArrival = step.type !== 'ride' || Date.now() >= legEnd(step.leg).getTime() - 3 * 60000;
   if ((step.type === 'walk' || step.type === 'drive' || step.type === 'ride') && rideNearArrival &&
       RoveNavigation.meters(here, target) < radius) {
+    if (step.type === 'ride') return; // GPS proximity is advisory, never proof of exit.
     nav.i = Math.min(nav.i + 1, nav.steps.length - 1);
     nav.maneuver = null; nav.spokenKey = null;
     render();
@@ -2301,7 +2302,7 @@ async function navReroute(nav) {
     if (state.nav !== nav) return;
     nav.it = alternatives[0];
     nav.steps = buildSteps(nav.it);
-    nav.i = 0; nav.maneuver = null; nav.spokenKey = null;
+    nav.i = 0; nav.boarded = false; nav.maneuver = null; nav.spokenKey = null;
     state.journey = nav.it;
     nav.status = 'Route updated from your current location';
     nav.error = null;
@@ -2486,6 +2487,7 @@ function viewNavigate() {
       ${step.leg ? legAlertsHtml(step.leg) : ''}
       ${transitRecovery}
       ${document.body.classList.contains('rove-accessible') && (step.type === 'wait' || step.type === 'ride') ? `<section class="blind-boarding"><p>${nav.boarded ? 'Boarding manually confirmed. Rove has not independently verified the vehicle.' : 'Before boarding, check the route and destination shown or announced on the vehicle.'}</p><button class="button primary" data-action="nav-board" aria-pressed="${nav.boarded}">${nav.boarded ? 'Boarding confirmed' : 'I have boarded this vehicle'}</button></section>` : ''}
+      ${document.body.classList.contains('rove-accessible') && step.type === 'wait' ? `<section class="blind-boarding-check" role="note"><h3>Check before boarding</h3><p>Expected: ${esc(step.li?.badge || 'your transit route')}${step.leg.headsign ? ` toward ${esc(displayName(step.leg.headsign))}` : ''}. Confirm the route and destination using the vehicle announcement or driver. Rove cannot identify the vehicle from GPS.</p></section>` : ''}
       ${document.body.classList.contains('rove-accessible') && step.type === 'ride' ? `<section class="blind-exit" role="status"><h3>Exit-stop assistant</h3><p>${esc(nav.exitHint || 'Waiting for accurate GPS. Use vehicle stop announcements to confirm your exit.')}</p><button class="button secondary" data-action="nav-exit-check">Check exit-stop proximity</button></section>` : ''}
       ${turns}
     </div>
@@ -2630,7 +2632,18 @@ function handleAction(el) {
     case 'nav-overview': navChangeFollow('overview'); break;
     case 'nav-replan': if (state.nav?.fix) navReroute(state.nav); break;
     case 'nav-missed': if (state.nav?.fix) navReroute(state.nav); break;
-    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
+    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) {
+      const current = state.nav.steps[state.nav.i];
+      if (current?.type === 'wait' && !state.nav.boarded) {
+        announceAccess('Confirm the route and destination with the vehicle or driver, then choose I have boarded this vehicle before continuing.', true);
+        break;
+      }
+      if (current?.type === 'ride' && !state.nav.boarded) {
+        announceAccess('Boarding has not been confirmed. Verify your vehicle before continuing.', true);
+        break;
+      }
+      if (current?.type === 'ride') state.nav.boarded = false;
+ state.nav.i++; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
     case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
     case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
     default: break;
