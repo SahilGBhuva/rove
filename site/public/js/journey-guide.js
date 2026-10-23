@@ -15,7 +15,13 @@
   const time = v => { const t = v instanceof Date ? v.getTime() : Date.parse(v); return Number.isFinite(t) ? t : null; };
   const defaultClock = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' });
   const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
-  const roundMeters = m => (m < 100 ? Math.max(10, Math.round(m / 10) * 10) : Math.round(m / 50) * 50);
+  /* US riders: feet under about 0.2 miles, then tenths of a mile. Always spelled out for speech. */
+  function distanceWords(meters) {
+    const feet = meters * 3.28084;
+    if (feet < 1000) { const f = feet < 200 ? Math.max(10, Math.round(feet / 10) * 10) : Math.round(feet / 50) * 50; return `${f} feet`; }
+    const miles = Math.round((meters / 1609.34) * 10) / 10;
+    return `${miles} ${miles === 1 ? 'mile' : 'miles'}`;
+  }
   const squash = s => s.replace(/\s+/g, ' ').trim();
 
   /* Rider-facing description of a transit leg, by agency and mode. */
@@ -81,7 +87,7 @@
           place: target,
           facts: [
             between ? `Walk to ${target}` : null,
-            meters != null ? `About ${roundMeters(meters)} metres${verified || drive ? '' : ', straight-line estimate'}` : null,
+            meters != null ? `About ${distanceWords(meters)}${verified || drive ? '' : ', straight-line estimate'}` : null,
             verified || drive ? null : 'Walking path not verified. Use your usual mobility aids for crossings and obstacles.'
           ].filter(Boolean),
           confirmLabel: last ? "I've arrived" : `I'm at ${target}`,
@@ -143,7 +149,7 @@
   function speech(phase, opts = {}) {
     const clock = opts.clock || defaultClock;
     if (!phase) return '';
-    if (phase.kind === 'arrive') return `${phase.heading}. Choose End trip when you are done.`;
+    if (phase.kind === 'arrive') return `${phase.heading}. Choose Done to finish.`;
     if (phase.kind === 'board') {
       const headsign = clean(phase.leg.headsign, '');
       const platform = clean(phase.leg.from?.platform, '');
@@ -241,7 +247,7 @@
     return `${gps} Rove does not detect crossings or obstacles.`;
   }
 
-  const api = Object.freeze({ vehicle, buildGuide, speech, createState, reduce, departureStatus, dueReminders, certainty });
+  const api = Object.freeze({ distanceWords, vehicle, buildGuide, speech, createState, reduce, departureStatus, dueReminders, certainty });
   root.RoveJourneyGuide = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

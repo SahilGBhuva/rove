@@ -980,7 +980,7 @@ function setupMapInteractions() {
   });
 
   map.on('dragstart', () => {
-    if (state.nav) { state.nav.follow = false; state.nav.status = 'Exploring map · tap Follow to recenter'; render(); }
+    if (state.nav) { state.nav.follow = false; state.nav.status = 'Exploring map · tap Follow to recenter'; updateGuideLive(); }
     if (isMobile() && state.detent !== 'peek' && !['plan', 'navigate'].includes(currentView().name)) setDetent('peek');
     closePopovers();
   });
@@ -1175,8 +1175,10 @@ function announceAccess(message, speak = false) {
   const live = document.getElementById('roveAccessAnnouncement');
   if (!live) return;
   // Clearing first makes screen readers repeat an identical message (for example, Repeat).
+  // A newer announcement replaces a pending one, so messages never land out of order.
+  clearTimeout(announceAccess.timer);
   live.textContent = '';
-  setTimeout(() => { live.textContent = text; }, 30);
+  announceAccess.timer = setTimeout(() => { live.textContent = text; }, 30);
 }
 
 /* All of Rove's speech goes through RoveSpeech (public/js/speech.js). Must be called directly
@@ -1199,6 +1201,7 @@ function renderSpeechBar(status) {
   const bar = document.getElementById('speechBar');
   if (!bar) return;
   const { state, reason } = status;
+  document.body.classList.toggle('has-speech-bar', ['starting', 'speaking', 'failed', 'unsupported'].includes(state));
   if (state === 'starting' || state === 'speaking') {
     bar.hidden = false;
     bar.dataset.state = 'speaking';
@@ -1220,7 +1223,7 @@ function renderSpeechBar(status) {
 speaker?.onChange(renderSpeechBar);
 document.addEventListener('click', event => {
   if (event.target.closest('[data-speech-stop]')) { stopSpeaking(); announceAccess('Speech stopped.'); }
-  if (event.target.closest('[data-speech-dismiss]')) { const bar = document.getElementById('speechBar'); if (bar) { bar.hidden = true; bar.innerHTML = ''; } }
+  if (event.target.closest('[data-speech-dismiss]')) { const bar = document.getElementById('speechBar'); if (bar) { bar.hidden = true; bar.innerHTML = ''; } document.body.classList.remove('has-speech-bar'); }
 });
 function audioTripSummary(it) {
   const pieces = [durationLabel(it.durationSeconds || (new Date(it.endTime)-new Date(it.startTime))/1000), `${it.transfers || 0} transfers`];
@@ -1242,9 +1245,10 @@ function routeChoiceSpeech(it, n) {
   const minutes = Math.round((it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000) / 60);
   const lines = transitLineNames(it);
   const transfers = Math.max(0, lines.length - 1);
-  const walk = Number.isFinite(it.walkMeters) && it.walkMeters >= 50 ? ` About ${Math.round(it.walkMeters / 50) * 50} metres walking.` : '';
+  const walk = Number.isFinite(it.walkMeters) && it.walkMeters >= 50 ? ` About ${RoveJourneyGuide.distanceWords(it.walkMeters)} of walking.` : '';
   const live = it.legs.some(l => l.mode === 'TRANSIT' && l.realtime);
-  return `Route ${n}: ${durationLabel(minutes * 60)}. ${lines.length ? lines.join(', then ') : 'Walking only'}. ${transfers ? plural(transfers, 'transfer') : 'No transfers'}.${walk} Leaves ${clock(new Date(it.startTime))}, arrives ${clock(new Date(it.endTime))}. ${live ? 'Includes live times.' : 'Scheduled times, not live.'}${it.hasCancellation ? ' Warning: includes a canceled trip.' : ''}`;
+  const spokenDuration = minutes < 60 ? plural(minutes, 'minute') : `${plural(Math.floor(minutes / 60), 'hour')}${minutes % 60 ? ' ' + plural(minutes % 60, 'minute') : ''}`;
+  return `Route ${n}: ${spokenDuration}. ${lines.length ? lines.join(', then ') : 'Walking only'}. ${transfers ? plural(transfers, 'transfer') : 'No transfers'}.${walk} Leaves ${clock(new Date(it.startTime))}, arrives ${clock(new Date(it.endTime))}. ${live ? 'Includes live times.' : 'Scheduled times, not live.'}${it.hasCancellation ? ' Warning: includes a canceled trip.' : ''}`;
 }
 function speakText(text) {
   announceAccess(text, true);
@@ -1299,7 +1303,7 @@ function onLeaveFocus() {
 function render() {
   const view = currentView();
   const body = $('#panelBody');
-  const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources, impact: viewImpact, access: viewAccess, accessNearby: viewAccessNearby, place: viewPlace };
+  const renderers = { home: viewHome, search: viewSearch, route: viewRoute, stop: viewStop, lines: viewLines, plan: viewPlan, results: viewResults, navigate: viewNavigate, sources: viewSources, impact: viewImpact, access: viewAccess, accessNearby: viewAccessNearby, place: viewPlace, demo: viewDemo };
   // Keep the caret where it was if a field inside the panel has focus while the view refreshes.
   const active = document.activeElement;
   const keep = active && body.contains(active) && active.id && active.tagName === 'INPUT' && !(active.dataset.planField && !state.plan.focus) ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
@@ -1313,7 +1317,7 @@ function render() {
     const again = document.getElementById(keep.id);
     if (again) { again.focus({ preventScroll: true }); try { again.setSelectionRange(keep.start, keep.end); } catch { /* not a text field */ } }
   }
-  const hideSearch = ['plan', 'results', 'navigate'].includes(view.name) || (isMobile() && ['route', 'stop', 'lines', 'sources', 'place'].includes(view.name));
+  const hideSearch = ['home', 'demo', 'plan', 'results', 'navigate'].includes(view.name) || (isMobile() && ['route', 'stop', 'lines', 'sources', 'place'].includes(view.name));
   $('#searchInput').closest('.search-field').hidden = hideSearch;
   $('#panel').classList.toggle('search-hidden', hideSearch);
   if (view.name === 'plan') updatePlanSuggestions();
@@ -1325,7 +1329,8 @@ function render() {
 
 function refreshLiveViews() {
   const view = currentView();
-  if (!['home', 'route', 'stop', 'sources'].includes(view.name)) return;
+  // Home has no live data; re-rendering it would only move screen-reader focus.
+  if (!['route', 'stop', 'sources'].includes(view.name)) return;
   const body = $('#panelBody');
   if (body.contains(document.activeElement) && document.activeElement.matches('input, select')) return;
   const scroll = body.scrollTop;
@@ -1376,17 +1381,25 @@ function alertsHtml(alerts, max = 2) {
 
 /* ---------- Home ---------- */
 function viewHome() {
- const active=!!state.nav;
- const places=savedPlaces();
- const shortcuts=places.slice(0,3).map(p=>`<button class="rove-destination" data-action="go-saved" data-label="${esc(p.label)}">${esc(p.label)}</button>`).join('');
- return `<div class="rove-home" aria-labelledby="roveHomeTitle">
- <div class="rove-home-intro"><span class="rove-kicker">Your journey, your way</span><h1 id="roveHomeTitle">Where do you want to go?</h1><p>Find your route and follow your journey with clear, spoken guidance.</p></div>
- <button class="rove-destination-search" data-action="plan" aria-label="Choose a destination and plan a trip"><span aria-hidden="true">⌕</span><span>Search for a destination</span><span aria-hidden="true">→</span></button>
- ${active?`<section class="rove-active"><h2>Your journey is in progress</h2><p>Return to your current step and hear the next instruction.</p><button class="button primary" data-action="access-my-journey">Continue journey</button></section>`:''}
- <nav class="rove-home-actions" aria-label="Journey actions"><button data-action="plan"><span class="rove-action-icon" aria-hidden="true">↗</span><span>Plan a trip</span></button><button data-action="access-nearby"><span class="rove-action-icon" aria-hidden="true">◎</span><span>Nearby transit</span></button><button data-action="access-my-journey"><span class="rove-action-icon" aria-hidden="true">◉</span><span>My journey</span></button></nav>
- ${shortcuts?`<section class="rove-saved"><h2>Saved places</h2><div>${shortcuts}</div></section>`:''}
- <div class="rove-home-footer"><button class="text-button" data-action="access">Voice and accessibility settings</button><button class="text-button" data-action="sources">Transit data</button></div>
- </div>`;
+  const saved = !state.nav && loadTrip();
+  const places = savedPlaces().slice(0, 4);
+  const resume = state.nav ? `<section class="rg-resume" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle">Trip in progress</h2><p>${esc(guidePhase()?.heading || '')}</p><button type="button" class="rg-primary small" data-action="access-my-journey">Return to trip</button></section>`
+    : saved ? `<section class="rg-resume" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle">Unfinished trip${saved.demo ? ' (demo)' : ''}</h2><p>To ${esc(saved.destination?.name || 'your destination')} · step ${saved.gs.index + 1}</p><div class="rg-resume-actions"><button type="button" class="rg-primary small" data-action="trip-resume">Resume trip</button><button type="button" class="rg-text-button" data-action="trip-discard">Discard</button></div></section>` : '';
+  return `<div class="rg-home">
+    ${resume}
+    <h1 id="roveHomeTitle" class="rg-home-title" tabindex="-1">Where to?</h1>
+    <div class="rg-stack">
+      <button type="button" class="rg-primary" data-action="voice-destination">${MIC_ICON}<span>Speak destination</span></button>
+      <button type="button" class="rg-field" data-action="plan">${SEARCH_ICON}<span>Type a destination</span></button>
+    </div>
+    ${places.length ? `<section class="rg-saved" aria-labelledby="rgSavedTitle"><h2 id="rgSavedTitle" class="rg-label">Saved places</h2><div class="rg-chips">${places.map(p => `<button type="button" class="rg-chip" data-action="go-saved" data-label="${esc(p.label)}">${esc(p.label)}</button>`).join('')}</div></section>` : ''}
+    <nav class="rg-links" aria-label="More">
+      <button type="button" class="rg-link" data-action="demo"><span>Try the demo journey</span><small>Simulated trip with a transfer</small></button>
+      <button type="button" class="rg-link" data-action="access-nearby"><span>Nearby stops</span><small>Uses your location</small></button>
+      <button type="button" class="rg-link" data-action="access"><span>Voice and accessibility</span><small>Rove voice, vibration, how it works</small></button>
+      <button type="button" class="rg-link" data-action="sources"><span>Transit data</span><small>Sources and what is live</small></button>
+    </nav>
+  </div>`;
 }
 
 /* Stations lead the list only when the query names one; otherwise addresses and places do. */
@@ -1772,16 +1785,6 @@ function accessSetting(key, enabled) {
 function accessVibrate(pattern = [90]) {
   if (accessPreference('haptics', true) && navigator.vibrate) navigator.vibrate(pattern);
 }
-function voiceInputStart() {
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) { announceAccess('Voice input is not available. Use the destination search field.'); return; }
-  const target = document.querySelector('#panelBody input[data-plan-field="to"], #searchInput, #panelBody input[type="search"]');
-  if (!target) { announceAccess('Open trip planning to choose a destination.'); return; }
-  const recognition = new Recognition(); recognition.lang = 'en-US'; recognition.interimResults = false; recognition.maxAlternatives = 1;
-  recognition.onresult = e => { const words=e.results?.[0]?.[0]?.transcript?.trim(); if (!words) return; target.focus(); target.value=words; target.dispatchEvent(new Event('input',{bubbles:true})); announceAccess('Heard '+words+'. Check the result before continuing.'); accessVibrate([70,60,70]); };
-  recognition.onerror = () => announceAccess('Voice recognition was unsuccessful. Type the destination instead.');
-  recognition.start(); announceAccess('Listening for a destination.');
-}
 function viewAccessNearby() {
  const fix=state.accessLocationFix;
  const valid=state.userLocation && fix && Date.now()-fix.time<60000 && Number.isFinite(fix.accuracy);
@@ -1862,7 +1865,8 @@ function openPlan({ from, to } = {}) {
   pushView({ name: 'plan' }, { detent: 'full' });
   fetchPlanStatus();
   updatePlanMarkers();
-  requestAnimationFrame(() => { if (!plan.to) $('#planTo')?.focus(); else if (!plan.from) $('#planFrom')?.focus(); });
+  // The voice flow manages its own focus (listening state, then the first match).
+  requestAnimationFrame(() => { if (plan.voice) return; if (!plan.to) $('#planTo')?.focus(); else if (!plan.from) $('#planFrom')?.focus(); });
 }
 
 
@@ -1890,6 +1894,7 @@ function viewPlan() {
   return `${backHeader()}
     <div class="hero" style="padding-bottom:8px"><h1 class="title-2">Directions</h1></div>
     <div id="planNotice">${planNoticeHtml()}</div>
+    <div class="rg-voice-row"><button type="button" class="rg-mic" data-action="voice-destination" aria-label="Speak destination">${MIC_ICON}<span>Speak</span></button><div class="rg-voice-slot">${voiceStatusHtml()}</div></div>
     <form class="plan-form${plan.focus ? ' suggesting' : ''}" data-plan-form novalidate>
       <div class="plan-fields">
         ${field('planFrom', 'from', 'Starting point')}
@@ -1996,6 +2001,8 @@ async function submitPlan() {
     state.journey = itineraries[plan.expanded];
     pushView({ name: 'results' }, { detent: 'half' });
     renderJourney(); revealJourney(); applyMapState(); updatePlanMarkers(); fitJourney(state.journey);
+    const best = sortedItineraryIndexes()[0];
+    announceAccess(`${plural(Math.min(itineraries.length, 3), 'route')} found. ${routeChoiceSpeech(itineraries[best], 1)}`);
   } catch (error) {
     plan.loading = false;
     // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
@@ -2105,21 +2112,23 @@ function viewResults() {
       <div class="trip-ends"><p><span class="marker"><i></i></span><span>${esc(plan.from?.name)}</span></p><p><span class="marker to"><i></i></span><span>${esc(plan.to?.name)}</span></p></div>
       <button type="button" class="text-button" data-action="back">Edit</button>
     </div>
-    ${document.body.classList.contains('rove-accessible') ? `<section class="access-results-intro"><h2>Choose a journey</h2><p>Listen to a route to hear the stops, transfers, and walking estimates before deciding.</p><button class="button secondary" data-action="access-all-routes">Read route choices aloud</button></section>` : ''}
+    ${plan.results?.demo ? '<p class="rg-note rg-results-demo"><strong>Demo.</strong> Times are copied from published Muni and BART timetables and shifted to start now. Nothing is live.</p>' : ''}
+    <div class="rg-results-head"><h2 class="rg-label">${plural(Math.min(order.length, plan.showAll ? order.length : 3), 'route')}</h2><button type="button" class="rg-read" data-action="access-all-routes">${MIC_ICON}<span>Read route choices aloud</span></button></div>
     <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
     ${plan.results?.notes?.length ? `<ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${areaNoteHtml()}
     ${its.length > 1 ? `<div class="segmented sort-switch" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
-    <ul class="itineraries">${order.map(i => {
+    <ul class="itineraries">${order.slice(0, plan.showAll ? order.length : 3).map((i, n) => {
       const it = its[i];
       const open = plan.expanded === i;
-      return `<li><button class="itinerary" data-action="it-toggle" data-index="${i}" aria-expanded="${open}">
+      return `<li><button class="itinerary" data-action="it-toggle" data-index="${i}" aria-expanded="${open}" aria-label="${esc(routeChoiceSpeech(it, n + 1))}">
         <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
-        <div class="it-meta">${itinerarySummary(it)}</div></button>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Read full spoken itinerary for option ${order.indexOf(i)+1}">Listen to route ${order.indexOf(i)+1}</button>` : ''}
+        <div class="it-meta">${itinerarySummary(it)}</div></button>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Listen to route ${n + 1} stop by stop">Listen to route ${n + 1}</button>` : ''}
         ${carbonComparison(it)}
-        ${open ? `<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start navigation</button></div>${itineraryTimeline(it)}` : ''}</li>`;
+        ${open ? `<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start route ${n + 1}</button></div>${itineraryTimeline(it)}` : ''}</li>`;
     }).join('')}</ul>
+    ${!plan.showAll && order.length > 3 ? `<button type="button" class="rg-text-button rg-more" data-action="it-more">Show ${plural(order.length - 3, 'more route')}</button>` : ''}
     <p class="note">${plan.results?.scheduledOnly ? 'These routes use published schedules. Check live departures at your stop before you leave.' : 'Live times are shown where agencies provide them. Other times are scheduled.'}</p>`;
 }
 
@@ -2356,18 +2365,21 @@ async function navReroute(nav) {
     if (state.nav !== nav) return;
     nav.it = alternatives[0];
     nav.steps = buildSteps(nav.it);
-    nav.i = 0; nav.maneuver = null; nav.spokenKey = null;
+    nav.i = 0; nav.maneuver = null; nav.spokenKey = null; nav.showHelp = false;
+    nav.guide = guideFor(nav.it, nav.destination?.name);
+    nav.gs = Guide.createState(nav.guide, navNow(nav));
     state.journey = nav.it;
     nav.status = 'Route updated from your current location';
     nav.error = null;
     renderJourney(); applyMapState();
-    render();
+    guideEnter(nav, 'New route from your location.');
     navFollowCamera();
   } catch (error) {
     if (state.nav !== nav) return;
-    nav.error = 'Unable to recalculate now. Check the map and choose an available route.';
-    nav.status = 'Off route · ' + nav.error;
-    render();
+    nav.error = 'Rove could not find another route right now.';
+    nav.status = nav.error;
+    guideSay(`${nav.error} ${navigator.onLine ? 'Ask transit staff for help, or try again in a minute.' : 'You are offline. Try again when you have a connection.'}`, { force: true });
+    updateGuideLive();
   } finally {
     clearTimeout(timeout);
     if (state.nav === nav) { nav.rerouting = false; nav.controller = null; }
@@ -2426,43 +2438,10 @@ function updateNavManeuver(nav, fix) {
   }
 }
 
-async function startNavigation(index) {
+function startNavigation(index) {
   const it = state.plan.results?.itineraries?.[index];
   if (!it) return;
-  releaseWakeLock();
-  state.journey = it;
-  const nav = {
-    it, steps: buildSteps(it), i: 0, tracking: false, watchId: null, boarded: false, exitAlerted: false, exitHint: null,
-    destination: { ...state.plan.to }, access: state.plan.results?.request?.access || 'WALK',
-    follow: true, headingUp: true, voice: false, fix: null, heading: null, compassHeading: null, compassEnabled: false, lastCompassAt: 0, lastCameraAt: 0,
-    offRouteFixes: 0, lastOffRouteAt: 0, rerouteAt: 0, rerouting: false,
-    maneuver: null, spokenKey: null, speechAllowed: false, lastUiAt: 0,
-    status: it.legs.some(l => l.mode === 'WALK' && l.approximate) ? 'Walking directions are estimates. Follow marked streets and crossings; GPS tracks your location.' : 'Waiting for GPS permission…', error: null, controller: null
-  };
-  state.nav = nav;
-  renderJourney(); applyMapState();
-  pushView({ name: 'navigate' }, { detent: 'half' });
-  focusStep();
-  if (document.body.classList.contains('rove-accessible')) { announceAccess('Navigation started. Confirm your boarding stop and vehicle.'); }
-  // Request a fix on Start even when the rider never tapped the location button.
-  if ('geolocation' in navigator && window.isSecureContext) {
-    nav.watchId = navigator.geolocation.watchPosition(onNavPosition, error => {
-      if (state.nav !== nav) return;
-      nav.tracking = false;
-      nav.status = error?.code === 1 ? 'Location denied. Enable browser location permissions to follow your trip.' :
-        'Waiting for a usable GPS signal. Map following is paused.';
-      render();
-    }, { enableHighAccuracy: true, maximumAge: 1500, timeout: 20000 });
-    nav.tracking = true;
-  } else nav.status = 'Live navigation needs location permission and HTTPS (or localhost).';
-  render();
-  try {
-    if ('wakeLock' in navigator) {
-      const lock = await navigator.wakeLock.request('screen');
-      if (state.nav === nav) state.wakeLock = lock;
-      else lock.release();
-    }
-  } catch { /* screen wake lock unavailable; tracking still runs in foreground */ }
+  beginNav(it, { destination: state.plan.to, access: state.plan.results?.request?.access || 'WALK', demo: Boolean(state.plan.results?.demo) });
 }
 
 function releaseWakeLock() {
@@ -2485,66 +2464,354 @@ function focusStep() {
   else fitCoordinates(Array.isArray(c) && c.length ? c : [[step.leg.from?.lon, step.leg.from?.lat], [step.leg.to?.lon, step.leg.to?.lat]], 16);
 }
 
+/* ---------- Guided journey: voice destination, confirmed steps, help, demo ----------
+ * The journey rules live in public/js/journey-guide.js (tested in test/journey-guide.test.mjs).
+ * This section only renders them and wires rider actions. Never re-render the navigation view
+ * on timers or GPS: replacing the DOM moves VoiceOver focus. Use updateGuideLive() instead. */
+const Guide = window.RoveJourneyGuide;
+const TRIP_KEY = 'rove-active-trip-v1';
+const rgClock = ms => clock(new Date(ms));
+const navNow = nav => Date.now() + (nav?.clockOffset || 0);
+const MIC_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>';
+const SEARCH_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></svg>';
+
+function guideFor(it, destinationName) { return Guide.buildGuide(it, { destinationName, clock: rgClock }); }
+function guidePhase(nav = state.nav) { return nav?.gs ? nav.guide.phases[nav.gs.index] : null; }
+function guideSpeech(phase) { return Guide.speech(phase, { clock: rgClock }); }
+
+/* Rove's voice when the rider wants it, otherwise the screen reader. `force` is for explicit
+ * requests such as Repeat, which always try to speak. */
+function guideSay(text, { force = false } = {}) {
+  if ((force || accessPreference('speak', true)) && speakOut(text)) return;
+  announceAccess(text);
+}
+
+function navFixQuality(nav) {
+  const f = nav?.fix;
+  if (nav?.demo || !f || Date.now() - f.time > 30000) return null;
+  return f.accuracy <= 30 ? 'good' : 'poor';
+}
+
+/* Keep the legacy step index (used by the map camera and off-route checks) aligned with the guide. */
+function syncNavSteps(nav) {
+  const phase = guidePhase(nav);
+  if (!phase) return;
+  const leg = nav.it.legs[phase.legIndex];
+  const idx = nav.steps.findIndex(s => s.leg === leg && (phase.kind !== 'ride' || s.type === 'ride'));
+  nav.i = idx >= 0 ? idx : nav.steps.length - 1;
+}
+
+function saveTrip(nav = state.nav) {
+  if (!nav?.gs) return;
+  const { index, history, given, snoozeUntil, startedAt } = nav.gs;
+  store.set(TRIP_KEY, { v: 1, savedAt: Date.now(), it: nav.it, destination: nav.destination, access: nav.access, demo: nav.demo, clockOffset: nav.clockOffset || 0, gs: { index, history, given, snoozeUntil, startedAt } });
+}
+function loadTrip() {
+  const t = store.get(TRIP_KEY, null);
+  if (!t || t.v !== 1 || !Array.isArray(t.it?.legs) || !t.it.legs.length || !Number.isInteger(t.gs?.index)) return null;
+  const end = Date.parse(t.it.endTime);
+  if (Date.now() - t.savedAt > 12 * 3600e3 || !Number.isFinite(end) || Date.now() + (t.clockOffset || 0) > end + 2 * 3600e3) { clearTrip(); return null; }
+  return t;
+}
+function clearTrip() { try { localStorage.removeItem(TRIP_KEY); } catch { /* storage unavailable */ } }
+
+function guideStatus(nav) {
+  const phase = guidePhase(nav);
+  if (!phase) return null;
+  if (nav.alert && nav.alert.index === nav.gs.index) return nav.alert;
+  const now = navNow(nav);
+  if (phase.kind === 'board') {
+    const st = Guide.departureStatus(nav.gs, now, { clock: rgClock });
+    return st && { message: st.message, level: st.state === 'maybe-missed' || st.state === 'canceled' ? 'uncertain' : 'info' };
+  }
+  if (phase.kind === 'ride' && phase.arrives != null) {
+    const m = Math.round((phase.arrives - now) / 60000);
+    return { message: m > 0 ? `About ${plural(m, 'minute')} to ${phase.place}, ${phase.live ? 'live time' : 'by the schedule'}.` : `${phase.place} is expected about now. Listen for the announcement.`, level: 'info' };
+  }
+  return null;
+}
+function guideCertainty(nav) {
+  const phase = guidePhase(nav);
+  const base = nav.demo ? (phase?.kind === 'arrive' ? '' : 'Demo: simulated times, location not used.') : Guide.certainty(phase, navFixQuality(nav));
+  return `${base}${!navigator.onLine ? ' You are offline; your steps still work, new routes need a connection.' : ''}`.trim();
+}
+
+/* Patch the live text in place (timers, GPS, connectivity). Never replaces focused elements. */
+function updateGuideLive() {
+  const nav = state.nav;
+  if (!nav?.gs || currentView().name !== 'navigate') return;
+  const status = guideStatus(nav);
+  const el = document.getElementById('rgStatus');
+  if (el) { el.textContent = status?.message || ''; el.dataset.level = status?.level || 'info'; el.hidden = !status; }
+  const c = document.getElementById('rgCertainty');
+  if (c) c.textContent = guideCertainty(nav);
+}
+
+function guideTick() {
+  const nav = state.nav;
+  if (!nav?.gs || document.hidden) return;
+  const due = Guide.dueReminders(nav.gs, navNow(nav), { clock: rgClock });
+  if (due.length) {
+    for (const r of due) nav.gs = Guide.reduce(nav.gs, { type: 'REMINDED', key: r.key });
+    const r = due[due.length - 1];
+    nav.alert = { ...r, index: nav.gs.index };
+    accessVibrate(r.level === 'exit' ? [250, 120, 250, 120, 250] : r.level === 'uncertain' ? [450] : [150, 100, 150]);
+    guideSay(r.message);
+    saveTrip(nav);
+  }
+  updateGuideLive();
+}
+
+/* After any phase change: re-render, move focus to the new instruction, and say it. */
+function guideEnter(nav, preface = '') {
+  nav.alert = null;
+  syncNavSteps(nav);
+  saveTrip(nav);
+  render();
+  document.getElementById('rgHeading')?.focus({ preventScroll: true });
+  $('#panelBody').scrollTop = 0;
+  focusStep();
+  guideSay(`${preface ? preface + ' ' : ''}${guideSpeech(guidePhase(nav))}`);
+}
+
+function beginNav(it, { destination, access = 'WALK', demo = false, restore = null } = {}) {
+  releaseWakeLock();
+  state.journey = it;
+  const nav = {
+    it, steps: buildSteps(it), i: 0, tracking: false, watchId: null, boarded: false, exitAlerted: false, exitHint: null,
+    destination: destination ? { ...destination } : null, access, demo, clockOffset: restore?.clockOffset || 0,
+    follow: true, headingUp: true, voice: false, fix: null, heading: null, compassHeading: null, compassEnabled: false, lastCompassAt: 0, lastCameraAt: 0,
+    offRouteFixes: 0, lastOffRouteAt: 0, rerouteAt: 0, rerouting: false,
+    maneuver: null, spokenKey: null, speechAllowed: false, lastUiAt: 0, showHelp: false, alert: null,
+    status: demo ? 'Demo journey' : 'Waiting for GPS permission…', error: null, controller: null
+  };
+  nav.guide = guideFor(it, destination?.name);
+  nav.gs = Guide.createState(nav.guide, navNow(nav));
+  if (restore) nav.gs = { ...nav.gs, ...restore.gs, index: Math.min(restore.gs.index, nav.guide.phases.length - 1) };
+  state.nav = nav;
+  renderJourney(); applyMapState();
+  pushView({ name: 'navigate' }, { detent: 'full' });
+  guideEnter(nav, restore ? 'Trip resumed.' : demo ? 'Demo journey started. Times are simulated.' : 'Trip started.');
+  // Location is advisory only (exit-stop estimates, Where am I, rerouting). Never used in the demo.
+  if (!demo && 'geolocation' in navigator && window.isSecureContext) {
+    nav.watchId = navigator.geolocation.watchPosition(onNavPosition, error => {
+      if (state.nav !== nav) return;
+      nav.tracking = false;
+      nav.fix = null;
+      nav.status = error?.code === 1 ? 'Location is off. Steps still work; Where am I and new routes need location.' : 'No usable GPS signal yet.';
+      updateGuideLive();
+    }, { enableHighAccuracy: true, maximumAge: 1500, timeout: 20000 });
+    nav.tracking = true;
+  }
+  if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then(lock => { if (state.nav === nav) state.wakeLock = lock; else lock.release(); }).catch(() => { /* wake lock unavailable */ });
+  return nav;
+}
+
+function endTrip() {
+  releaseWakeLock();
+  state.nav = null;
+  clearTrip();
+  goHome();
+  announceAccess('Trip ended.');
+  document.getElementById('roveHomeTitle')?.focus({ preventScroll: true });
+}
+
+function guideHelpHtml(nav, phase) {
+  const st = phase.kind === 'board' ? Guide.departureStatus(nav.gs, navNow(nav), { clock: rgClock }) : null;
+  const speakOn = accessPreference('speak', true);
+  return `<section id="rgHelp" class="rg-help" aria-labelledby="rgHelpHeading">
+    <h2 id="rgHelpHeading" tabindex="-1">Help</h2>
+    <div class="rg-help-actions">
+      ${st?.state === 'maybe-missed' ? '<button type="button" class="rg-row-button" data-action="rg-wait">I\'m still waiting</button>' : ''}
+      <button type="button" class="rg-row-button" data-action="rg-replan">Find another route</button>
+      <button type="button" class="rg-row-button" data-action="rg-where">Where am I?</button>
+      ${nav.gs.history.length ? '<button type="button" class="rg-row-button" data-action="rg-back">Undo last confirmation</button>' : ''}
+      <button type="button" class="rg-row-button" data-action="rg-voice" aria-pressed="${speakOn}">Rove voice: ${speakOn ? 'On' : 'Off'}</button>
+    </div>
+    <dl class="rg-tips">
+      <dt>Lost or unsure</dt><dd>Stop somewhere safe. Ask transit staff or the operator, then use Where am I.</dd>
+      <dt>Wrong vehicle or missed stop</dt><dd>Get off at the next stop when it is safe, then choose Find another route.</dd>
+      <dt>Missed or canceled service</dt><dd>Choose Find another route. If you are still waiting, Rove checks again in a few minutes.</dd>
+      <dt>No internet</dt><dd>Your current steps stay on this phone. Finding a new route needs a connection.</dd>
+      <dt>What Rove cannot do</dt><dd>Rove cannot detect obstacles, safe crossings, platform edges, or which vehicle you are on.</dd>
+    </dl>
+    <button type="button" class="rg-text-button" data-action="rg-help" aria-expanded="true" aria-controls="rgHelp">Close help</button>
+  </section>`;
+}
+
 function viewNavigate() {
   const nav = state.nav;
-  if (!nav) return viewHome();
-  const step = nav.steps[nav.i];
-  const total = nav.steps.length - 1;
-  const head = `<div class="view-head"><button class="back-button" data-action="nav-end">${ICONS.back}<span>End trip</span></button></div>
-    <div class="nav-head"><div class="title-2">Arrive ${esc(clock(new Date(nav.it.endTime)))}</div><div class="caption">${esc(durationLabel((new Date(nav.it.endTime) - Date.now()) / 1000))} remaining${nav.it.usesRealtime ? '' : ' · Scheduled times'}</div>
-    <p class="nav-gps-status" role="status">${esc(nav.status || 'Waiting for location')}</p>
-    ${nav.it.legs.some(l => l.mode === 'WALK' && l.approximate) ? '<p class="caption">Walking segments are estimates, not verified turn-by-turn paths. Follow safe pedestrian routes.</p>' : ''}
-    <div class="nav-camera-controls" role="group" aria-label="Navigation map controls">
-      <button type="button" class="button secondary" data-action="nav-follow" aria-pressed="${nav.follow}">Follow</button>
-      <button type="button" class="button secondary" data-action="nav-bearing" aria-pressed="${nav.headingUp}">${nav.headingUp ? 'Heading up' : 'North up'}</button>
-      <button type="button" class="button secondary" data-action="nav-overview">Overview</button>
-      <button type="button" class="button secondary" data-action="nav-compass" aria-pressed="${nav.compassEnabled}">${nav.compassEnabled ? 'Compass on' : 'Use phone compass'}</button>
-      <button type="button" class="button secondary" data-action="nav-voice" aria-pressed="${nav.voice}" ${!speaker?.supported() ? 'disabled' : ''}>${nav.voice ? 'Mute voice' : 'Voice guidance'}</button>
-      <button type="button" class="button secondary" data-action="nav-replan" ${!nav.fix || nav.rerouting ? 'disabled' : ''}>${nav.rerouting ? 'Recalculating…' : 'New route'}</button>
-    </div></div>`;
-  if (step.type === 'arrive') {
-    return `${head}<div class="arrived"><h2 class="title-1">${esc(step.title)}</h2><p class="caption" style="margin-top:8px">${esc(clock(new Date()))}</p><div style="margin-top:20px"><button class="button primary" data-action="nav-end">Done</button></div></div>`;
-  }
-  let big = step.big || '', meta = step.meta || '';
-  if (step.type === 'wait') {
-    const m = minutesLabel(step.departs.getTime() / 1000);
-    big = m.value === 'Now' ? 'Now' : m.unit ? `${m.value} min` : m.value;
-    meta = step.leg.canceled ? 'This trip is canceled. Plan again for another option.' : `Departs ${clock(step.departs)}${step.leg.realtime ? '' : ' · Scheduled'}`;
-  }
-  // GPS alone cannot prove whether a rider boarded. Never silently mark a
-  // train or bus as missed; offer an explicit replanning action instead.
-  const transitProblem = step.leg && (step.type === 'wait' || step.type === 'ride') &&
-    (step.leg.canceled || (step.type === 'wait' && step.departs && Date.now() > step.departs.getTime() + 90000));
-  const transitRecovery = transitProblem
-    ? `<div class="nav-transit-recovery" role="status"><strong>${step.leg.canceled ? 'Service canceled' : 'Did you miss this departure?'}</strong><p>Rove cannot confirm boarding from GPS alone. If you are still waiting, recalculate from your current location.</p><button type="button" class="button secondary" data-action="nav-missed" ${!nav.fix || nav.rerouting ? 'disabled' : ''}>Find another route</button></div>`
-    : '';
-  const color = step.li?.color || 'var(--ink)';
-  const glyph = step.leg ? modeIcon(step.leg) : '';
-  const activeManeuver = nav.maneuver && (step.type === 'walk' || step.type === 'drive') ? nav.maneuver : null;
-  const turns = (step.type === 'walk' || step.type === 'drive') && step.leg.steps?.length > 1
-    ? `<ol class="turns-now">${step.leg.steps.map(s => `<li><span>${esc(stepText(s))}</span>${s.distanceMeters ? `<span class="caption">${esc(distanceLabel(s.distanceMeters))}</span>` : ''}</li>`).join('')}</ol>` : '';
-  const list = nav.steps.slice(0, total).map((s, i) => `<li class="${i < nav.i ? 'done' : ''}" ${i === nav.i ? 'aria-current="step" style="color:var(--ink);font-weight:600"' : ''}>${i < nav.i ? ICONS.check : ICONS.circle}<span>${esc(s.title)}</span></li>`).join('');
-  return `${head}
-    <div class="step-card" style="--leg-color:${esc(color)}">
-      <p class="label step-label">${glyph}<span>Step ${nav.i + 1} of ${total}</span></p>
-      <h2>${esc(activeManeuver?.step ? stepText(activeManeuver.step) : step.title)}</h2>
-      ${activeManeuver ? `<p class="nav-maneuver-distance">${esc(distanceLabel(activeManeuver.metersAhead))} ${activeManeuver.step ? 'to next instruction' : 'left on this leg'}</p>` : ''}
-      <div class="big${step.leg?.canceled ? ' status-canceled' : ''}">${esc(big)}</div>
-      ${meta ? `<p class="caption" style="margin:6px 0 0">${esc(meta)}</p>` : ''}
-      ${step.leg ? legAlertsHtml(step.leg) : ''}
-      ${transitRecovery}
-      ${document.body.classList.contains('rove-accessible') && (step.type === 'wait' || step.type === 'ride') ? `<section class="blind-boarding"><p>${nav.boarded ? 'Boarding manually confirmed. Rove has not independently verified the vehicle.' : 'Before boarding, check the route and destination shown or announced on the vehicle.'}</p><button class="button primary" data-action="nav-board" aria-pressed="${nav.boarded}">${nav.boarded ? 'Boarding confirmed' : 'I have boarded this vehicle'}</button></section>` : ''}
-      ${document.body.classList.contains('rove-accessible') && step.type === 'ride' ? `<section class="blind-exit" role="status"><h3>Exit-stop assistant</h3><p>${esc(nav.exitHint || 'Waiting for accurate GPS. Use vehicle stop announcements to confirm your exit.')}</p><button class="button secondary" data-action="nav-exit-check">Check exit-stop proximity</button></section>` : ''}
-      ${turns}
+  if (!nav?.gs) return viewHome();
+  const phases = nav.guide.phases;
+  const i = nav.gs.index;
+  const phase = phases[i];
+  const next = phases[i + 1];
+  const leg = phase.leg;
+  const li = leg?.mode === 'TRANSIT' ? legInfo(leg) : null;
+  const kind = { walk: 'Walk', transfer: 'Transfer', drive: 'Drive', board: phase.isTransfer ? 'Transfer · Board' : 'Board', ride: 'On board', arrive: 'Arrived' }[phase.kind];
+  const mark = li ? `<span class="rg-badge" style="background:${esc(li.color)};color:${esc(li.text)}" aria-hidden="true">${esc(li.badge)}</span>`
+    : `<span class="rg-glyph" aria-hidden="true">${phase.kind === 'arrive' ? ICONS.check : MODE_ICONS.walk}</span>`;
+  const status = guideStatus(nav);
+  const dots = phases.map((p, n) => `<li class="${n < i ? 'done' : n === i ? 'now' : ''}"></li>`).join('');
+  const arrive = phase.kind === 'arrive';
+  return `<div class="rg-nav${nav.demo ? ' is-demo' : ''}${arrive ? ' is-arrived' : ''}">
+    <div class="rg-top">
+      ${arrive ? '<span></span>' : '<button type="button" class="rg-end" data-action="rg-end">End trip</button>'}
+      <p class="rg-step">Step ${i + 1} of ${phases.length}</p>
     </div>
-    ${document.body.classList.contains('rove-accessible') ? `<div class="access-navigation-help" role="note">Check your vehicle and stop independently. Rove does not automatically confirm boarding or safe pedestrian routes.</div>` : ''}
-    <div class="action-bar">
-      ${document.body.classList.contains('rove-accessible') ? `<button class="button secondary" data-action="access-stop-speech">Stop speech</button>` : ''}
-      ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
-      <button class="button secondary" data-action="nav-read">Repeat current instruction</button>
-      <button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'I have arrived' : 'Next step'}</button>
+    ${nav.demo ? `<div class="rg-demo-banner"><p><strong>Demo</strong> Simulated times from a published timetable. Not live.</p>${['ride', 'board'].includes(phase.kind) ? '<button type="button" class="rg-demo-skip" data-action="rg-demo-skip">Skip ahead</button>' : ''}</div>` : ''}
+    <ol class="rg-progress" aria-hidden="true">${dots}</ol>
+    <section class="rg-card" aria-labelledby="rgHeading">
+      <p class="rg-kind">${mark}<span>${esc(kind)}</span></p>
+      <h1 id="rgHeading" tabindex="-1">${esc(phase.heading)}</h1>
+      ${phase.facts.length ? `<ul class="rg-facts">${phase.facts.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      ${phase.check ? `<p class="rg-check"><strong>Check before boarding.</strong> ${esc(phase.check)}</p>` : ''}
+      <p id="rgStatus" class="rg-status" data-level="${esc(status?.level || 'info')}" ${status ? '' : 'hidden'}>${esc(status?.message || '')}</p>
+    </section>
+    <p id="rgCertainty" class="rg-certainty">${esc(guideCertainty(nav))}</p>
+    ${next && !arrive ? `<p class="rg-next"><span>Next</span>${esc(next.heading)}</p>` : ''}
+    ${nav.showHelp && !arrive ? guideHelpHtml(nav, phase) : ''}
+    <div class="rg-dock" role="group" aria-label="Trip controls">
+      <button type="button" class="rg-confirm" data-action="rg-confirm" data-phase="${i}"${phase.confirmAria ? ` aria-label="${esc(phase.confirmAria)}"` : ''}>${esc(arrive ? 'Done' : phase.confirmLabel)}</button>
+      ${arrive ? '' : `<div class="rg-dock-row">
+        <button type="button" class="rg-secondary" data-action="rg-repeat">Repeat</button>
+        <button type="button" class="rg-secondary" data-action="rg-help" aria-expanded="${Boolean(nav.showHelp)}" aria-controls="rgHelp">Help</button>
+      </div>`}
     </div>
-    <ol class="step-list" style="margin-top:20px">${list}</ol>`;
+  </div>`;
+}
+
+/* ---- Voice destination ---- */
+let recognition = null;
+const VOICE_ERRORS = {
+  'not-allowed': 'Microphone access is off for this site. Type your destination instead. To use voice later, allow the microphone in your browser settings for this site.',
+  'service-not-allowed': 'Voice input is turned off in this browser. Type your destination instead.',
+  'no-speech': "I didn't hear anything. Try again, or type your destination.",
+  'audio-capture': 'No microphone was found. Type your destination instead.',
+  network: 'Voice input needs an internet connection. Type your destination instead.',
+  aborted: 'Stopped listening.',
+  unsupported: "Voice input isn't available in this browser. Type your destination. Your keyboard's dictation key also works."
+};
+function voiceStatusHtml() {
+  const v = state.plan.voice;
+  if (!v) return '';
+  if (v.state === 'listening') return `<div class="rg-listening" role="status"><span class="rg-pulse" aria-hidden="true"></span><span>Listening. Say a place, address, or station.</span><button type="button" class="rg-text-button" data-action="voice-stop">Stop</button></div>`;
+  if (v.state === 'heard') return `<p class="rg-heard">Heard <q>${esc(v.heard)}</q>${v.matches === 0 ? '. No matches; try again or type.' : '. Choose the right match below.'}</p>`;
+  if (v.state === 'error') return `<div class="rg-voice-error" role="alert"><p>${esc(VOICE_ERRORS[v.error] || "Voice input didn't work. Try again, or type your destination.")}</p>${['not-allowed', 'service-not-allowed', 'unsupported', 'audio-capture'].includes(v.error) ? '' : '<button type="button" class="rg-text-button" data-action="voice-destination">Try again</button>'}</div>`;
+  return '';
+}
+function planDestinationResults() { return $$('#planSuggest .result:not([data-action="plan-map"]):not([data-action="plan-locate"]):not([data-action="plan-pick-location"])'); }
+function voiceResultsReady() {
+  const plan = state.plan;
+  if (!plan.voicePending || currentView().name !== 'plan') return;
+  const heard = plan.voicePending;
+  plan.voicePending = null;
+  const results = planDestinationResults();
+  plan.voice = { state: 'heard', heard, matches: results.length };
+  const slot = document.querySelector('.rg-voice-slot');
+  if (slot) slot.innerHTML = voiceStatusHtml();
+  if (!results.length) { announceAccess(`Heard ${heard}. No matching places. Try again, or type your destination.`); return; }
+  const first = results[0].querySelector('.row-title')?.textContent || results[0].textContent.trim();
+  announceAccess(`Heard ${heard}. ${plural(results.length, 'match', 'matches')}. First: ${first}. Choose one to confirm.`);
+  results[0].focus({ preventScroll: true });
+}
+function voiceDestination({ demo = false } = {}) {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const plan = state.plan;
+  stopSpeaking();
+  if (!demo && currentView().name !== 'plan') openPlan({});
+  const fail = error => {
+    plan.voice = { state: 'error', error };
+    render();
+    announceAccess(VOICE_ERRORS[error] || "Voice input didn't work. Try again, or type your destination.");
+    if (!demo && error !== 'no-speech' && error !== 'network') $('#planTo')?.focus({ preventScroll: true });
+  };
+  if (!Recognition) { fail('unsupported'); return; }
+  try { recognition?.abort(); } catch { /* none active */ }
+  let r;
+  try { r = new Recognition(); } catch { fail('unsupported'); return; }
+  recognition = r;
+  r.lang = 'en-US'; r.interimResults = false; r.maxAlternatives = 1; r.continuous = false;
+  let got = false;
+  r.onresult = e => {
+    const words = e.results?.[0]?.[0]?.transcript?.trim();
+    if (!words) return;
+    got = true;
+    if (demo) { plan.voice = null; startDemo(words); return; }
+    plan.voice = { state: 'heard', heard: words };
+    plan.to = null; plan.draft.to = words; plan.query = words; plan.focus = 'to'; plan.voicePending = words;
+    render();
+    requestAutocomplete(words, 'to');
+    updatePlanSuggestions();
+    if (autocomplete.status !== 'loading') voiceResultsReady();
+    setTimeout(voiceResultsReady, 3000); // geocoder slow or offline: announce local stop matches anyway
+  };
+  r.onerror = e => { got = true; if (recognition === r) fail(e.error || 'unknown'); };
+  r.onend = () => { if (recognition === r) recognition = null; if (!got && plan.voice?.state === 'listening') fail('no-speech'); };
+  plan.voice = { state: 'listening' };
+  render();
+  announceAccess('Listening. Say a place, address, or station.');
+  accessVibrate([40]);
+  try { r.start(); } catch { fail('unknown'); }
+}
+
+/* ---- Demo journey: a real Muni N + BART timetable (Tuesday 20 Oct 2026, 08:15) shifted to now.
+ * Visibly labeled everywhere; uses no location and no live data. ---- */
+function demoItinerary(nowMs = Date.now()) {
+  const shift = nowMs - Date.parse('2026-10-20T15:15:53Z');
+  const t = iso => new Date(Date.parse(iso) + shift).toISOString();
+  const place = (name, lat, lon) => ({ name, lat, lon, platform: null, stopName: name, parking: null, parkingCapacity: null });
+  const base = { routeId: null, routeName: null, routeLongName: null, routeColor: null, routeTextColor: null, headsign: null, tripShortName: null, delaySeconds: null, realtime: false, canceled: false, staySeated: false, intermediateStops: null, geometry: null, steps: [], alerts: [] };
+  const walk = (from, to, s, e, d) => ({ ...base, mode: 'WALK', transitMode: 'WALK', agencyId: null, from, to, startTime: t(s), endTime: t(e), scheduledStart: t(s), distanceMeters: d, durationSeconds: (Date.parse(e) - Date.parse(s)) / 1000, approximate: true });
+  const ride = (o, from, to, s, e) => ({ ...base, ...o, mode: 'TRANSIT', from, to, startTime: t(s), endTime: t(e), scheduledStart: t(s), distanceMeters: null, durationSeconds: (Date.parse(e) - Date.parse(s)) / 1000 });
+  const start = place('La Playa St & Judah St', 37.76, -122.509);
+  const judah = place('Judah/La Playa/Ocean Beach', 37.760304, -122.508181);
+  const civicMuni = place('Civic Center Muni Station', 37.779712, -122.413347);
+  const civicBart = place('Civic Center / UN Plaza', 37.77938, -122.413804);
+  const lake = place('Lake Merritt', 37.797296, -122.265287);
+  const legs = [
+    walk(start, judah, '2026-10-20T15:15:53Z', '2026-10-20T15:17:00Z', 80),
+    ride({ transitMode: 'TRAM', agencyId: 'muni', routeId: 'N', routeName: 'N', headsign: 'Caltrain/Ballpark' }, judah, civicMuni, '2026-10-20T15:17:00Z', '2026-10-20T15:56:15Z'),
+    walk(civicMuni, civicBart, '2026-10-20T15:56:15Z', '2026-10-20T15:57:46Z', 55),
+    ride({ transitMode: 'SUBWAY', agencyId: 'bart', routeId: '12', routeName: 'Blue-N', headsign: 'Dublin/Pleasanton' }, civicBart, lake, '2026-10-20T16:01:00Z', '2026-10-20T16:18:00Z'),
+    walk(lake, place('Lake Merritt BART', 37.7974, -122.2651), '2026-10-20T16:18:00Z', '2026-10-20T16:18:17Z', 21)
+  ];
+  return { id: 'demo', startTime: legs[0].startTime, endTime: legs.at(-1).endTime, durationSeconds: 3744, walkMeters: 156, walkSeconds: 175, waitingSeconds: 194, transfers: 1, usesRealtime: false, hasCancellation: false, demo: true, legs };
+}
+function startDemo(heard = '') {
+  const it = demoItinerary();
+  const plan = state.plan;
+  plan.from = { kind: 'demo', name: 'La Playa St & Judah St (demo start)', lat: 37.76, lon: -122.509 };
+  plan.to = { kind: 'demo', name: 'Lake Merritt BART', lat: 37.7974, lon: -122.2651 };
+  plan.timeMode = 'now'; plan.error = null; plan.voice = null; plan.showAll = false;
+  plan.results = { itineraries: [it], notes: [], request: { time: it.startTime, access: 'WALK' }, scheduledOnly: true, demo: true };
+  plan.sort = 'fastest'; plan.expanded = 0;
+  state.journey = it;
+  pushView({ name: 'results' }, { detent: 'full' });
+  const matched = /lake|merritt/i.test(heard);
+  announceAccess(`${heard ? `Heard ${heard}. ${matched ? '' : 'This demo always goes to Lake Merritt. '}` : ''}Demo route to Lake Merritt BART. ${routeChoiceSpeech(it, 1)}`);
+}
+function viewDemo() {
+  const v = state.plan.voice;
+  return `${backHeader()}
+  <div class="rg-page">
+    <p class="rg-kicker">Demo journey</p>
+    <h1 class="rg-title">Ocean Beach to Lake Merritt</h1>
+    <p class="rg-lede">Try a whole trip from home: walk to a stop, board a Muni N train, transfer to BART, and arrive.</p>
+    <p class="rg-note"><strong>Simulated.</strong> Times come from Muni and BART published timetables and are shifted to start now. Nothing is live, and Rove does not use your location.</p>
+    ${v?.state === 'listening' ? '<div class="rg-listening" role="status"><span class="rg-pulse" aria-hidden="true"></span><span>Listening. Say “Lake Merritt”.</span></div>' : ''}
+    ${v?.state === 'error' ? `<p class="rg-voice-error" role="alert">${esc(VOICE_ERRORS[v.error] || 'Voice input did not work.')} You can continue without speaking.</p>` : ''}
+    <div class="rg-stack">
+      <button type="button" class="rg-primary" data-action="demo-speak">${MIC_ICON}<span>Speak the destination</span></button>
+      <button type="button" class="rg-quiet" data-action="demo-continue">Continue without speaking</button>
+    </div>
+  </div>`;
+}
+
+/* Spoken detail for one route, built from the same phases navigation will use. */
+function routeDetailSpeech(it) {
+  const g = guideFor(it, state.plan.to?.name);
+  return g.phases.map(p => p.kind === 'arrive' ? `Arrive at ${p.place}.` : `${p.heading}. ${p.facts.slice(0, 3).map(f => f.replace(/\.$/, '')).join('. ')}.`).join(' ');
 }
 
 /* ---------- Event handling ---------- */
@@ -2605,14 +2872,14 @@ function handleAction(el) {
     case 'access-refresh-location': locate(); break;
     case 'access-select-stop': { const place=placeFor(el.dataset.agency,el.dataset.stop); if(place){announceAccess('Selected '+place.s.n+'. Confirm the physical stop and direction before boarding.'); openStop(el.dataset.agency,el.dataset.stop);} break; }
     case 'access-stop-speech': stopSpeaking(); announceAccess('Speech stopped.'); break;
-    case 'access-dictate': { if (currentView().name !== 'plan') openPlan({}); voiceInputStart(); break; }
+    case 'access-dictate': voiceDestination(); break;
     case 'access-all-routes': {
       const order = sortedItineraryIndexes().slice(0, 3);
       const its = state.plan.results?.itineraries || [];
       speakText(order.length ? `${plural(order.length, 'route')}. ${order.map((i, n) => routeChoiceSpeech(its[i], n + 1)).join(' ')} Choose Listen on a route for its stops.` : 'No routes are available.');
       break;
     }
-    case 'access-route': { const it = state.plan.results?.itineraries?.[Number(el.dataset.index)]; if (it) speakText(audioTripSummary(it)); break; }
+    case 'access-route': { const it = state.plan.results?.itineraries?.[Number(el.dataset.index)]; if (it) speakText(routeDetailSpeech(it)); break; }
     case 'access-departures': {
       const place = placeFor(el.dataset.agency,el.dataset.stop);
       const data = place && cachedArrivals(place);
@@ -2685,7 +2952,73 @@ function handleAction(el) {
     case 'nav-missed': if (state.nav?.fix) navReroute(state.nav); break;
     case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
     case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
-    case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
+    case 'nav-end': endTrip(); break;
+    case 'rg-confirm': {
+      const nav = state.nav;
+      if (!nav?.gs) break;
+      const before = guidePhase(nav);
+      if (before.kind === 'arrive') { endTrip(); break; }
+      const next = Guide.reduce(nav.gs, { type: 'CONFIRM', phaseIndex: Number(el.dataset.phase), now: navNow(nav) });
+      if (next === nav.gs) break; // stale double tap
+      nav.gs = next;
+      nav.showHelp = false;
+      accessVibrate(before.kind === 'board' ? [120, 70, 120] : [70]);
+      guideEnter(nav, before.confirmSpeech);
+      break;
+    }
+    case 'rg-repeat': { const nav = state.nav; const phase = guidePhase(nav); if (!phase) break; const st = guideStatus(nav); guideSay(`${guideSpeech(phase)}${st ? ' ' + st.message : ''}`, { force: true }); break; }
+    case 'rg-help': {
+      const nav = state.nav;
+      if (!nav) break;
+      nav.showHelp = !nav.showHelp;
+      render();
+      (nav.showHelp ? document.getElementById('rgHelpHeading') : $('.rg-dock [data-action="rg-help"]'))?.focus({ preventScroll: true });
+      if (nav.showHelp) document.getElementById('rgHelp')?.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      break;
+    }
+    case 'rg-back': { const nav = state.nav; if (!nav?.gs?.history.length) break; nav.gs = Guide.reduce(nav.gs, { type: 'BACK', now: navNow(nav) }); nav.showHelp = false; guideEnter(nav, 'Went back one step.'); break; }
+    case 'rg-wait': { const nav = state.nav; if (!nav?.gs) break; nav.gs = Guide.reduce(nav.gs, { type: 'STILL_WAITING', now: navNow(nav) }); nav.alert = null; saveTrip(nav); render(); guideSay('OK. Rove will check again in 5 minutes. Keep listening for announcements.', { force: true }); $('.rg-dock .rg-confirm')?.focus({ preventScroll: true }); break; }
+    case 'rg-replan': {
+      const nav = state.nav;
+      if (!nav) break;
+      if (nav.demo) { guideSay('In the demo, Rove does not use your location. On a real trip, Find another route plans again from where you are.', { force: true }); break; }
+      if (!navigator.onLine) { guideSay('You are offline, so Rove cannot find a new route. Ask transit staff, or try again when you have a connection.', { force: true }); break; }
+      if (!nav.fix) { guideSay('Rove needs your location to plan from here. Turn on location for this site, or end the trip and plan again from a stop name.', { force: true }); break; }
+      guideSay('Finding another route from your location.', { force: true });
+      navReroute(nav);
+      break;
+    }
+    case 'rg-where': {
+      const nav = state.nav;
+      if (nav?.demo) { guideSay('The demo does not use your location.', { force: true }); break; }
+      const f = nav?.fix;
+      if (!f || Date.now() - f.time > 60000) { guideSay('No recent GPS location. Ask someone nearby or transit staff where you are.', { force: true }); break; }
+      const near = nearbyPlaces(f.point, 1)[0];
+      guideSay(`${near ? `Nearest listed stop: ${near.place.s.n}, about ${Math.round(near.d / 10) * 10} metres in a straight line.` : 'No listed stop nearby.'} GPS accuracy is about ${Math.round(f.accuracy)} metres${f.accuracy > 30 ? ', which is too rough to tell which side of the street you are on' : ''}.`, { force: true });
+      break;
+    }
+    case 'rg-voice': { const on = !accessPreference('speak', true); accessSetting('speak', on); render(); $('[data-action="rg-voice"]')?.focus({ preventScroll: true }); announceAccess(on ? 'Rove voice on.' : 'Rove voice off. Your screen reader will announce updates.'); break; }
+    case 'rg-end': if (window.confirm('End this trip?')) endTrip(); break;
+    case 'rg-demo-skip': {
+      const nav = state.nav;
+      const phase = guidePhase(nav);
+      if (!nav?.demo || !phase) break;
+      const now = navNow(nav);
+      const target = phase.kind === 'ride' && phase.arrives != null ? phase.arrives - (phase.arrives - now > 3 * 60000 ? 2.8 * 60000 : 0.8 * 60000)
+        : phase.kind === 'board' && phase.departs != null ? phase.departs - 1.5 * 60000 : now;
+      if (target > now) nav.clockOffset += target - now;
+      announceAccess(`Demo clock moved to ${rgClock(navNow(nav))}.`);
+      guideTick();
+      break;
+    }
+    case 'trip-resume': { const t = loadTrip(); if (!t) { render(); announceAccess('That trip has expired.'); break; } state.plan.to = t.destination; beginNav(t.it, { destination: t.destination, access: t.access, demo: t.demo, restore: t }); break; }
+    case 'trip-discard': clearTrip(); render(); announceAccess('Saved trip discarded.'); document.getElementById('roveHomeTitle')?.focus({ preventScroll: true }); break;
+    case 'voice-destination': voiceDestination(); break;
+    case 'voice-stop': try { recognition?.abort(); } catch { /* none */ } state.plan.voice = null; render(); $('#planTo')?.focus({ preventScroll: true }); break;
+    case 'demo': state.plan.voice = null; pushView({ name: 'demo' }, { detent: 'full' }); break;
+    case 'demo-speak': voiceDestination({ demo: true }); break;
+    case 'demo-continue': startDemo(); break;
+    case 'it-more': plan.showAll = true; render(); break;
     default: break;
   }
 }
@@ -2701,6 +3034,12 @@ function afterPick() {
   document.activeElement?.blur?.();
   render();
   const next = picked === 'from' && !plan.to ? '#planTo' : picked === 'to' && !plan.from ? '#planFrom' : null;
+  // Spoken destination confirmed by choosing a match: go straight to routes when the start is known.
+  if (picked === 'to' && plan.voice?.state === 'heard') {
+    plan.voice = null;
+    if (plan.from) { announceAccess(`Destination: ${plan.to?.name}. Finding routes.`); submitPlan(); return; }
+    announceAccess(`Destination: ${plan.to?.name}. Now choose a starting point. Use my location is first.`);
+  }
   if (next) requestAnimationFrame(() => $(next)?.focus());
   else requestAnimationFrame(() => { document.activeElement?.blur?.(); $('.plan-submit')?.focus({ preventScroll: true }); });
 }
@@ -2884,7 +3223,8 @@ function bindChrome() {
       if (state.nav) {
         if (state.nav.fix && Date.now() - state.nav.fix.time > 30000) state.nav.status = 'Refreshing GPS after returning to Rove…';
         navFollowCamera();
-        render();
+        // Patch in place: a full re-render here would move VoiceOver focus every time the phone unlocks.
+        updateGuideLive();
       }
     }
   });
@@ -3220,6 +3560,20 @@ function checkBlindExit(nav,manual=false) {
     else announceAccess(message);
   }
 }
+/* GPS near the exit stop gives one advisory nudge per ride. It never confirms or advances anything. */
+function guideGpsHint(nav) {
+  const phase = guidePhase(nav);
+  if (phase?.kind !== 'ride' || !window.RoveBlindNavigation) return;
+  const stop = phase.leg?.to;
+  const p = RoveBlindNavigation.exitProximity(nav.fix, stop);
+  const key = `${nav.gs.index}:gps`;
+  if (!p?.near || nav.gs.given[key]) return;
+  nav.gs = Guide.reduce(nav.gs, { type: 'REMINDED', key });
+  nav.alert = { key, level: 'exit', index: nav.gs.index, message: `GPS estimate: ${phase.place} may be close. Confirm with the announcement before getting off.` };
+  accessVibrate([200, 120, 200]);
+  guideSay(nav.alert.message);
+  saveTrip(nav);
+}
 function onNavPosition(pos) {
   const nav = state.nav;
   if (!nav) return;
@@ -3242,9 +3596,7 @@ function onNavPosition(pos) {
   nav.status = nav.follow ? 'Following your location' : 'Tracking GPS · map exploration paused following';
   updateNavMarker(fix, Number.isFinite(nav.compassHeading) ? nav.compassHeading : nav.heading);
   navFollowCamera();
-  if (document.body.classList.contains('rove-accessible')) checkBlindExit(nav);
-  else if (nav.steps[nav.i]?.type === 'ride') checkBlindExit(nav);
-  if (!document.body.classList.contains('rove-accessible')) maybeAdvanceNavigation(nav, fix);
+  guideGpsHint(nav);
   const distance = routeLegDistance(nav, fix.point);
   if (distance != null && fix.accuracy <= 75 && distance > Math.max(85, fix.accuracy * 2.5)) {
     nav.offRouteFixes = seconds < 20 ? nav.offRouteFixes + 1 : 1;
@@ -3252,7 +3604,7 @@ function onNavPosition(pos) {
   updateNavManeuver(nav, fix);
   if (RoveNavigation.shouldReroute(fix, distance, nav.offRouteFixes, Date.now() - nav.rerouteAt)) {
     navReroute(nav);
-  } else if (currentView().name === 'navigate' && Date.now() - nav.lastUiAt >= 1400) { nav.lastUiAt = Date.now(); render(); }
+  } else updateGuideLive();
 }
 
 /* Small start and end markers for the trip being planned. */
@@ -3508,6 +3860,7 @@ function onAutocompleteResults(target) {
   if ((target === 'from' || target === 'to') && currentView().name === 'plan' && state.plan.focus === target) {
     updatePlanSuggestions();
     if (autocomplete.commitOnResults === target) { autocomplete.commitOnResults = null; commitPlanField(target); }
+    if (target === 'to' && state.plan.voicePending) voiceResultsReady();
   }
 }
 
@@ -4038,6 +4391,10 @@ async function init() {
   updateOnlineStatus();
   state.realtimeTimer = setInterval(loadRealtime, 60000);
   setInterval(() => { if (!document.hidden) { prefetchVisibleArrivals(); refreshLiveViews(); } }, 30000);
+  setInterval(guideTick, 5000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) guideTick(); });
+  window.addEventListener('online', updateGuideLive);
+  window.addEventListener('offline', updateGuideLive);
   $('#mapPickCancel').addEventListener('click', () => endMapPick(null));
 }
 
