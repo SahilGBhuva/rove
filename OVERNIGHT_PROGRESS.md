@@ -40,8 +40,28 @@ NOT verified: audible playback on a physical iPhone. Manual check:
 4. Turn VoiceOver on and repeat: Rove's voice plays; VoiceOver reads the button label first. Note whether audio overlaps.
 5. Turn the silent switch on and repeat; record whether iOS mutes Web Speech on this iOS version. If it is muted, the failure bar should appear after about 2.5 s.
 
+### 3. Guided voice-first journey (commit dd4e545)
+- Home: "Where to?" with Speak destination first, typing second; demo, nearby stops, settings and data as quiet secondary links.
+- Voice entry: listening / heard / matches states, shown and announced; focus moves to the first match; choosing it goes straight to routes. Denied mic, silence, no mic, offline and unsupported browsers each get a specific next step.
+- Results: at most 3 routes unless the rider asks; each card's accessible name is a spoken summary (duration, lines, transfers, walking, live vs scheduled, warnings).
+- Trip screen: one instruction, one large Confirm (I'm at… / I've boarded / I've got off / Done), Repeat, Help. Focus goes to each new instruction; timers, GPS and returning to the app patch text in place.
+- Bugs found and fixed in browser testing: returning to the page (unlocking a phone) re-rendered the trip screen and dropped VoiceOver focus; openPlan stole focus from the voice flow; announcements could arrive out of order; the long blurred view transition.
+- Labeled demo journey (real Muni N + BART timetable shifted to now; no location; Skip ahead for reminders). Trip restored after reload.
+- Verified in browser (Chromium, 390×844): whole demo journey by clicks, focus after each step, voice success and denial with simulated recognizers, resume after reload, Done clears state and stops speech.
+
+### 4. Routing quality (subagent branch claude/routing-quality-20261023, merged)
+- Root cause of the Sunnyvale → Chase Center 12:24 AM Tamien reversal: one arrival-only label per stop, trips boarded at the first reachable stop, ranking that ignored waits and direction, no overnight honesty. Full write-up in docs/ROUTING.md.
+- New transfer-bounded search plus a latest-departure pass, Pareto filter, generalized cost, detour detection, minimum transfer buffers, and a service-gap response with real later departures.
+- Verified by me after merge: 00:24 returns no itineraries and next practical departure 4:42 AM (arrive 6:12); 08:15 gives northbound Caltrain first. Warm p50 33 ms / p95 159 ms (45 runs, local).
+- Frontend now says "The next practical trip leaves at 4:42 AM…" with a one-tap "Show the 4:42 AM trip", and shows planner warnings (long walk, leaves later).
+
+### 5. Preview deployment
+- https://rove-cac-preview-jd42rrjge-sahilgbhuva.vercel.app (Vercel **Preview**, project rove-cac-preview). Verified through `vercel curl` that it serves this branch and the fixed planner. Behind Vercel deployment protection, so judges need a share link or protection turned off (owner decision).
+- Note: other sessions also deployed to this project tonight, including a Production deployment about 28 minutes before mine. That was not this session.
+
+### Tests now
+`npm test`: 191 tests, 186 pass, 0 fail, 5 skipped (need OTP or a 511 key).
+
 ## Next
-3. Wire the guide into voice destination entry, route choice and the navigation screen. Persist the trip for restore after a reload.
-4. Clearly labeled demo journey (real Muni N → BART timetable, times shifted, nothing live).
-5. Visual pass (forest green / warm neutral), accessibility audit, browser screenshots at 320–1440.
-6. Merge the routing branch after review; full tests; preview deploy if credentials allow.
+- Apply the QA agent's findings (docs/qa/QA_REPORT.md).
+- docs/CAC_SUBMISSION.md drafted: student sections must be written by the students.
