@@ -1303,3 +1303,18 @@ body .sheet-grabber{display:none}
 @media (max-width: 800px) {
   .map-controls, .map-pick, .layers-popover, .map-mobile-brand { display: none !important; }
 }
+
+/* Override legacy blue search focus styles with one restrained, accessible ring. */
+.search-field:focus-within {
+  border-color: #286647 !important;
+  box-shadow: 0 0 0 2px #286647 !important;
+  transform: none !important;
+}
+.search-field input:focus, .search-field input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+body.theme-dark .search-field:focus-within {
+  border-color: #a5e5b9 !important;
+  box-shadow: 0 0 0 2px #a5e5b9 !important;
+}
