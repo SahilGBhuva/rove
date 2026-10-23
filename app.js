@@ -2596,6 +2596,7 @@ function viewNavigate() {
     <p class="nav-gps-status" role="status">${esc(nav.status || 'Waiting for location')}</p>
     ${nav.it.legs.some(l => l.mode === 'WALK' && l.approximate) ? '<p class="caption">Walking segments are estimates, not verified turn-by-turn paths. Follow safe pedestrian routes.</p>' : ''}
     <p class="caption">Keep Rove open in the foreground for GPS updates. Browsers may pause tracking when your phone locks.</p>
+    ${!navigator.onLine ? '<p class="nav-offline" role="status"><strong>Offline.</strong> Saved trip instructions are not live. Departure predictions and route changes cannot be verified.</p>' : ''}
     <details class="nav-extra"><summary>Map and advanced route options</summary><button class="button secondary nav-show-map" data-action="nav-show-map">Open optional map</button><div class="nav-camera-controls" role="group" aria-label="Navigation map controls">
       <button type="button" class="button secondary" data-action="nav-follow" aria-pressed="${nav.follow}">Follow</button>
       <button type="button" class="button secondary" data-action="nav-bearing" aria-pressed="${nav.headingUp}">${nav.headingUp ? 'Heading up' : 'North up'}</button>
@@ -2657,6 +2658,7 @@ function viewNavigate() {
     ${document.body.classList.contains('rove-accessible') ? `<div class="access-navigation-help" role="note">Check your vehicle and stop independently. Rove does not automatically confirm boarding or safe pedestrian routes.</div>` : ''}
     <div class="action-bar nav-primary-actions">
       <button class="button secondary" data-action="nav-help">Need help?</button>
+      <button class="button secondary" data-action="nav-voice" aria-pressed="${nav.voice}" ${!('speechSynthesis' in window) ? 'disabled' : ''}>${nav.voice ? 'Turn voice off' : 'Turn voice on'}</button>
       ${document.body.classList.contains('rove-accessible') ? `<button class="button secondary" data-action="access-stop-speech">Stop speech</button>` : ''}
       ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
       <button class="button secondary" data-action="nav-read">Repeat current instruction</button>
