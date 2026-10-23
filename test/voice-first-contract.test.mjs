@@ -24,3 +24,11 @@ test('foreground-first speech and minimal controls',()=>{
   assert.match(css,/\.rove-nav-primary/);
   assert.match(html,/styles\.css\?v=32/);
 });
+
+test('boarding advances once, and instructions identify stops without GPS safety claims',()=>{
+  assert.match(app,/following\?\.type === 'ride' && following\.leg === nav\.steps\[nav\.i\]\.leg/);
+  assert.match(app,/function currentNavInstruction/);
+  assert.match(app,/GPS cannot verify the exit/);
+  assert.match(app,/function focusNavAction/);
+  assert.match(app,/tracking and speech may have paused in the background/);
+});

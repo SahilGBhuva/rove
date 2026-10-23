@@ -1765,12 +1765,36 @@ function viewAccess() {
  <section class="section"><h2>What Rove cannot verify</h2><p class="empty">Rove cannot detect obstacles, locate safe crossings, confirm platform edges, verify accessible entrances or elevators, or prove that you boarded a bus or train. GPS can be inaccurate. Use your established mobility aids and check signs or ask transit staff when needed.</p></section>`;
 }
 
+function currentNavInstruction(nav = state.nav) {
+  const step = nav?.steps[nav.i];
+  if (!step) return 'No current navigation instruction.';
+  if (step.type === 'wait') {
+    const route = step.li?.badge || 'your transit route';
+    const direction = step.leg?.headsign ? ' toward ' + displayName(step.leg.headsign) : '';
+    const platform = step.leg?.from?.platform ? ', platform ' + step.leg.from.platform : '';
+    return `At ${step.leg?.from?.name || 'your boarding stop'}${platform}, verify ${route}${direction} using the vehicle announcement or transit staff. ${step.leg?.realtime ? 'Check the displayed departure for updates.' : 'Departure time is scheduled, not confirmed live.'} Once you have boarded the correct vehicle, select I've boarded. GPS cannot verify boarding.`;
+  }
+  if (step.type === 'ride') {
+    const next = nav.steps.slice(nav.i + 1).find(s => s.type === 'wait');
+    return `Stay on ${step.li?.badge || 'your vehicle'} until ${step.leg?.to?.name || 'your exit stop'}. Listen for the stop announcement. ${next ? 'After exiting, your transfer is ' + next.title + '. ' : ''}Only select I've exited once you have actually left the vehicle. GPS cannot verify the exit.`;
+  }
+  if (step.type === 'walk') return `${step.title}. ${step.meta || ''}. Walking directions may be approximate. Check crossings and obstacles independently; GPS cannot confirm a safe path.`;
+  return `${step.title}. ${step.meta || ''}`;
+}
 function readNavInstruction() {
- const step = state.nav?.steps[state.nav.i];
- if (!step || !('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) { toast('Speech is not available in this browser.'); return; }
- window.speechSynthesis.cancel();
- const speech = new SpeechSynthesisUtterance(`${step.title}. ${step.meta || ''}. Confirm boarding and safe paths independently.`);
- speech.rate = 0.9; window.speechSynthesis.speak(speech);
+  const text = currentNavInstruction();
+  announceAccess(text);
+  if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const speech = new SpeechSynthesisUtterance(text);
+    speech.rate = 0.9; window.speechSynthesis.speak(speech);
+  } catch { announceAccess(text); }
+}
+function focusNavAction() {
+  if (!document.body.classList.contains('rove-accessible')) return;
+  const button = document.querySelector('#panelBody .rove-nav-primary button[data-action="nav-board"], #panelBody .rove-nav-primary button[data-action="nav-next"]');
+  button?.focus({ preventScroll: true });
 }
 function viewSources() {
   const rows = state.network.agencies.map(a => `<li><div class="row"><span class="dot" style="background:${esc(a.color)}"></span><span class="row-main"><span class="row-title">${esc(a.name)}</span><span class="row-meta">${plural(a.routes.length, 'line')} · Schedule valid ${esc(formatGtfsDate(a.feed?.start))} to ${esc(formatGtfsDate(a.feed?.end))}</span></span></div></li>`).join('');
@@ -2667,7 +2691,15 @@ function handleAction(el) {
     }
     case 'leg-focus': focusLeg(Number(el.dataset.leg)); break;
     case 'nav-start': startNavigation(Number(el.dataset.index)); break;
-    case 'nav-board': if (state.nav) { state.nav.boarded = true; accessVibrate([120,70,120]); announceAccess('You confirmed boarding. Rove cannot independently verify the vehicle.',true); render(); } break;
+    case 'nav-board': if (state.nav && state.nav.steps[state.nav.i]?.type === 'wait') {
+      const nav = state.nav;
+      nav.boarded = true;
+      const following = nav.steps[nav.i + 1];
+      if (following?.type === 'ride' && following.leg === nav.steps[nav.i].leg) nav.i++;
+      nav.exitAlerted = false; nav.exitHint = null; nav.spokenKey = null;
+      accessVibrate([120,70,120]);
+      render(); focusNavAction(); readNavInstruction();
+    } break;
     case 'nav-help': { const nav = state.nav; if (!nav) break; const step = nav.steps[nav.i]; announceAccess('If you are uncertain, stop in a safe place. Verify the stop, vehicle, and direction with announcements or transit staff. Rove cannot confirm safe crossings or platform edges. If you missed a service, choose Help and use Find another route when location is available. Current step: '+(step?.title || 'unknown')+'.', false); nav.showHelp = !nav.showHelp; render(); break; }
     case 'nav-exit-check': if (state.nav) { checkBlindExit(state.nav,true); render(); } break;
     case 'nav-follow': navChangeFollow('follow'); break;
@@ -2675,8 +2707,8 @@ function handleAction(el) {
     case 'nav-voice': toggleNavVoice(); break;
     case 'nav-bearing': navChangeFollow('bearing'); break;
     case 'nav-overview': navChangeFollow('overview'); break;
-    case 'nav-replan': if (state.nav?.fix) navReroute(state.nav); break;
-    case 'nav-missed': if (state.nav?.fix) navReroute(state.nav); break;
+    case 'nav-replan': if (state.nav?.fix) navReroute(state.nav); else announceAccess('Location is unavailable. Enable location permission or return to trip planning to choose a new route.'); break;
+    case 'nav-missed': if (state.nav?.fix) navReroute(state.nav); else announceAccess('Location is unavailable. Enable location permission or return to trip planning to choose a new route.'); break;
     case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) {
       const current = state.nav.steps[state.nav.i];
       if (current?.type === 'wait' && !state.nav.boarded) {
@@ -2691,7 +2723,7 @@ function handleAction(el) {
         // Never silently mark an exit as complete based on GPS.
         state.nav.boarded = false;
       }
- state.nav.i++; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
+ state.nav.i++; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); focusNavAction(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
     case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.exitAlerted = false; state.nav.exitHint = null; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
     case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
     default: break;
@@ -2890,7 +2922,7 @@ function bindChrome() {
     else {
       loadRealtime();
       if (state.nav) {
-        if (state.nav.fix && Date.now() - state.nav.fix.time > 30000) state.nav.status = 'Refreshing GPS after returning to Rove…';
+        state.nav.status = 'Rove resumed. Check your current stop and repeat your instruction; tracking and speech may have paused in the background.';
         navFollowCamera();
         render();
       }
@@ -3224,7 +3256,7 @@ function checkBlindExit(nav,manual=false) {
   if (manual || (proximity?.near && !nav.exitAlerted)) {
     if(proximity?.near)nav.exitAlerted=true;
     if(proximity?.near)accessVibrate([200,120,200,120,200]);
-    if(manual || document.body.classList.contains('rove-accessible'))speakText(message);
+    if(manual)speakText(message);
     else announceAccess(message);
   }
 }
