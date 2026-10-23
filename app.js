@@ -522,7 +522,7 @@ const BASEMAP = {
     water: '#132e43', waterway: '#214d63', building: '#2a3745', aeroway: '#303a47', runway: '#394553',
     path: '#3a4654', minor: '#344353', majorCasing: '#273542', major: '#435161', majorSubtle: 'rgba(103, 128, 148, 0.22)',
     motorwayCasing: '#394350', motorway: '#62606a', motorwaySubtle: 'rgba(133, 133, 150, 0.26)', rail: '#465362', railDash: '#202b38',
-    boundary: '#536170', label: '#edf4fb', labelSoft: '#bdcad7', roadLabel: '#b4c0cd', waterLabel: '#8cb9d3', halo: 'rgba(26, 38, 52, 0.95)' 
+    boundary: '#536170', label: '#edf4fb', labelSoft: '#bdcad7', roadLabel: '#b4c0cd', waterLabel: '#8cb9d3', halo: 'rgba(26, 38, 52, 0.95)'
   }
 };
 
@@ -844,6 +844,8 @@ function highlightPlace(place) {
   map.setFilter('st-place', place ? ['all', ['==', ['get', 'agency'], place.a.id], ['==', ['get', 'id'], place.s.id]] : ['==', ['get', 'id'], '__none__']);
 }
 
+let lastVehicleData = null;
+let vehicleMotionFrame = null;
 function renderVehicles() {
   const source = state.map?.getSource('vehicles');
   if (!source) return;
@@ -858,8 +860,27 @@ function renderVehicles() {
     };
   });
   const data = { type: 'FeatureCollection', features };
-  source.setData(data);
-  state.map.getSource('vehicle-labels')?.setData(data);
+  if (vehicleMotionFrame != null) cancelAnimationFrame(vehicleMotionFrame);
+  const previous = lastVehicleData;
+  lastVehicleData = data;
+  const map = state.map;
+  const paint = frame => {
+    if (state.map !== map || !map.getSource('vehicles')) return;
+    map.getSource('vehicles').setData(frame);
+    map.getSource('vehicle-labels')?.setData(frame);
+  };
+  const motion = window.RoveVehicleMotion;
+  const animate = previous?.features?.length && data.features.length && motion &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches && !document.hidden;
+  if (!animate) { paint(data); return; }
+  const start = performance.now();
+  const tick = now => {
+    const progress = Math.min(1, (now - start) / 8000);
+    paint(motion.interpolateVehicles(previous, data, progress));
+    if (progress < 1 && state.map === map && !document.hidden) vehicleMotionFrame = requestAnimationFrame(tick);
+    else vehicleMotionFrame = null;
+  };
+  vehicleMotionFrame = requestAnimationFrame(tick);
 }
 
 function journeyFeatures(itinerary) {
@@ -1591,12 +1612,12 @@ function viewStop({ agency, stop }) {
   const isStation = s.k || idx.children.has(stopKey(a.id, s.id));
   const cov = coverage(a.id);
   const alerts = activeAlerts({ agencyId: a.id, routeKeys: place.routes.map(r => r.key), stopIds: place.ids });
-  const arrivals = rtConfigured() && cov.arrivals ? cachedArrivals(place) : null;
+  const arrivals = state.realtime?.version === 2 ? cachedArrivals(place) : rtConfigured() && cov.arrivals ? cachedArrivals(place) : null;
 
   let departures;
   if (!rtConfigured()) {
     departures = '<p class="empty">Live arrivals are not connected on this server. The lines that serve this stop are listed below.</p>';
-  } else if (!cov.arrivals || arrivals?.status === 'unverified') {
+  } else if ((state.realtime?.version !== 2 && !cov.arrivals) || arrivals?.status === 'unverified') {
     const why = liveUnavailableReason(arrivals?.reasons?.length ? arrivals.reasons : state.planStatus?.liveReasons?.[a.id]);
     departures = `<p class="empty">Live arrivals for ${esc(AGENCY_SHORT[a.id])} are unavailable right now. ${esc(why || 'Rove only shows predictions it can match to the schedule.')} The lines that serve this stop are listed below.</p>`;
   } else if (!arrivals) {
@@ -2292,7 +2313,7 @@ async function startNavigation(index) {
     follow: true, headingUp: true, voice: false, fix: null, heading: null, compassHeading: null, compassEnabled: false, lastCompassAt: 0, lastCameraAt: 0,
     offRouteFixes: 0, lastOffRouteAt: 0, rerouteAt: 0, rerouting: false,
     maneuver: null, spokenKey: null, speechAllowed: false, lastUiAt: 0,
-    status: 'Waiting for GPS permission…', error: null, controller: null
+    status: it.legs.some(l => l.mode === 'WALK' && l.approximate) ? 'Walking directions are estimates. Follow marked streets and crossings; GPS tracks your location.' : 'Waiting for GPS permission…', error: null, controller: null
   };
   state.nav = nav;
   renderJourney(); applyMapState();
@@ -2347,6 +2368,7 @@ function viewNavigate() {
   const head = `<div class="view-head"><button class="back-button" data-action="nav-end">${ICONS.back}<span>End trip</span></button></div>
     <div class="nav-head"><div class="title-2">Arrive ${esc(clock(new Date(nav.it.endTime)))}</div><div class="caption">${esc(durationLabel((new Date(nav.it.endTime) - Date.now()) / 1000))} remaining${nav.it.usesRealtime ? '' : ' · Scheduled times'}</div>
     <p class="nav-gps-status" role="status">${esc(nav.status || 'Waiting for location')}</p>
+    ${nav.it.legs.some(l => l.mode === 'WALK' && l.approximate) ? '<p class="caption">Walking segments are estimates, not verified turn-by-turn paths. Follow safe pedestrian routes.</p>' : ''}
     <div class="nav-camera-controls" role="group" aria-label="Navigation map controls">
       <button type="button" class="button secondary" data-action="nav-follow" aria-pressed="${nav.follow}">Follow</button>
       <button type="button" class="button secondary" data-action="nav-bearing" aria-pressed="${nav.headingUp}">${nav.headingUp ? 'Heading up' : 'North up'}</button>
@@ -2881,10 +2903,11 @@ function prefetchVisibleArrivals() {
   let places = [];
   if (view.name === 'stop') places = [placeFor(view.agency, view.stop)];
   else if (view.name === 'home') {
-    if (state.userLocation) places.push(...nearbyPlaces(state.userLocation, 6).map(n => n.place));
-    places.push(...state.saved.map(x => placeFor(x.a, x.id)));
+    // Avoid fan-out of per-stop 511 requests; the active stop gets priority.
+    if (state.userLocation) places.push(...nearbyPlaces(state.userLocation, 1).map(n => n.place));
+    places.push(...state.saved.slice(0, 1).map(x => placeFor(x.a, x.id)));
   }
-  places.filter(Boolean).filter(p => coverage(p.a.id).arrivals).forEach(p => fetchArrivals(p));
+  places.filter(Boolean).filter(p => state.realtime?.version === 2 ? ['muni','act'].includes(p.a.id) : coverage(p.a.id).arrivals).forEach(p => fetchArrivals(p));
 }
 
 /* A point picked on the map is named after the nearest stop when one is close. */
