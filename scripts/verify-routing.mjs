@@ -50,7 +50,9 @@ for (const c of CASES) {
   const its = body.itineraries || [];
   if (!its.length) problems.push(`no itineraries (${(body.errors || []).map(e => e.code).join(', ') || 'no error code'})`);
   for (const it of its) {
-
+    if (it.hasCancellation || it.legs.some(l => l.canceled || l.realtimeState === 'CANCELED')) {
+      problems.push(`${it.id}: canceled transit service offered as a usable journey`);
+    }
     let prev = null;
     for (const l of it.legs) {
       const s = Date.parse(l.start.scheduled), e = Date.parse(l.end.scheduled);
