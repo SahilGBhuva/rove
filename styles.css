@@ -1269,3 +1269,16 @@ body.theme-dark .itinerary[aria-expanded="true"] { box-shadow: 0 6px 24px rgba(8
 .rove-accessible .audio-route,.rove-accessible .action-bar button{min-height:58px;font-size:18px}
 .rove-accessible #panelBody h1:focus,.rove-accessible #panelBody h2:focus{outline:3px solid #006bc1;outline-offset:4px;border-radius:4px}
 @media(prefers-reduced-motion:reduce){.audio-home,.audio-route{transition:none!important;animation:none!important}}
+
+/* Blind-first journey controls */
+.access-controls{display:flex;flex-direction:column;gap:12px}
+.access-controls>.button{min-height:56px;text-align:center}
+.access-setting{display:flex;align-items:center;gap:14px;line-height:1.5;padding:10px 4px;font-size:16px}
+.access-setting input{width:26px;height:26px;flex-shrink:0;accent-color:#075aa0}
+.access-guide{padding-left:25px;line-height:1.65}.access-guide li{padding:7px 0}
+.access-results-intro{padding:16px;border-radius:16px;background:var(--surface-secondary,var(--fill));margin:14px 0}
+.access-results-intro h2{font-size:20px}.access-results-intro p{margin:8px 0 14px;line-height:1.5}
+.access-navigation-help{padding:14px 16px;border-radius:12px;line-height:1.5;margin:16px 0;background:var(--fill)}
+.rove-accessible button,.rove-accessible input,.rove-accessible select{min-height:48px}
+.rove-accessible button:focus-visible,.rove-accessible input:focus-visible,.rove-accessible select:focus-visible{outline:4px solid #0678cc!important;outline-offset:3px!important}
+@media(prefers-reduced-motion:reduce){.rove-accessible *{scroll-behavior:auto!important}}

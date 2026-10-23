@@ -1326,7 +1326,7 @@ function viewHome() {
   if (home) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Home">${MODE_ICONS.home}<span>Home</span></button>`);
   if (work) quick.push(`<button type="button" class="quick" data-action="go-saved" data-label="Work">${MODE_ICONS.work}<span>Work</span></button>`);
   if (!state.userLocation) quick.push(`<button type="button" class="quick" data-action="locate"><svg class="mode-icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" stroke="none" d="M10 2.5 16.5 16 10 12.8 3.5 16Z" transform="rotate(45 10 10)"/></svg><span>Near me</span></button>`);
-  parts.push(`<section class="audio-home"><h2>Navigate by listening</h2><p>Plan a trip, hear your options, and follow each transit step without relying on the map.</p><button class="button primary" data-action="access-toggle" aria-pressed="${document.body.classList.contains('rove-accessible')}">${document.body.classList.contains('rove-accessible') ? 'Audio-first mode on' : 'Turn on audio-first mode'}</button><button class="button secondary" data-action="plan">Plan an accessible-audio trip</button></section>`);
+  parts.push(`<section class="audio-home"><h2>Navigate by listening</h2><p>Plan a trip, hear your options, and follow each transit step without relying on the map.</p><button class="button primary" data-action="access-toggle" aria-pressed="${document.body.classList.contains('rove-accessible')}">${document.body.classList.contains('rove-accessible') ? 'Audio-first mode on' : 'Turn on audio-first mode'}</button><button class="button secondary" data-action="plan">Plan an accessible-audio trip</button><button class="button secondary" data-action="access">Audio-first settings</button></section>`);
   parts.push(`<div class="home-heading"><span class="home-eyebrow">BAY AREA / TRANSIT</span><h1>Go somewhere.</h1><p>Every line. One map.</p></div><div class="quick-row">${quick.join('')}</div>`);
 
   const others = places.filter(p => p.label !== 'Home' && p.label !== 'Work');
@@ -1729,15 +1729,42 @@ function carbonComparison(it) {
 function viewImpact() {
  return `${backHeader()}<div class="hero"><h1 class="title-1">A lighter way to move</h1><p class="caption">The impact of a shared ride</p></div><section class="section"><div class="impact-visual" aria-hidden="true"><span>🚘 Driving alone</span><div class="impact-track"><i style="width:100%"></i></div><span>🚆 Shared transit</span><div class="impact-track"><i style="width:40%"></i></div></div><h2 class="label">How the comparison works</h2><p class="empty">Our route cards use illustrative factors of 0.25 kg CO₂e per passenger-km for a solo car and 0.10 kg CO₂e per passenger-km for transit. This is an example, not a verified emissions inventory or a promise for a particular trip.</p><p class="empty">Real emissions depend on vehicle type, energy source, ridership, detours, and whether you would otherwise drive. Walking and biking generally have very low operational emissions. We do not count construction or full lifecycle impacts in these estimates.</p></section>`;
 }
+function accessPreference(key, defaultValue = false) {
+  try { const value = localStorage.getItem('rove-access-'+key); return value == null ? defaultValue : value === 'yes'; } catch { return defaultValue; }
+}
+function accessSetting(key, enabled) {
+  try { localStorage.setItem('rove-access-'+key, enabled ? 'yes' : 'no'); } catch {}
+}
+function accessVibrate(pattern = [90]) {
+  if (accessPreference('haptics', true) && navigator.vibrate) navigator.vibrate(pattern);
+}
+function voiceInputStart() {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) { announceAccess('Voice input is not available. Use the destination search field.'); return; }
+  const target = document.querySelector('#panelBody input[data-plan-field="to"], #searchInput, #panelBody input[type="search"]');
+  if (!target) { announceAccess('Open trip planning to choose a destination.'); return; }
+  const recognition = new Recognition(); recognition.lang = 'en-US'; recognition.interimResults = false; recognition.maxAlternatives = 1;
+  recognition.onresult = e => { const words=e.results?.[0]?.[0]?.transcript?.trim(); if (!words) return; target.focus(); target.value=words; target.dispatchEvent(new Event('input',{bubbles:true})); announceAccess('Heard '+words+'. Check the result before continuing.'); accessVibrate([70,60,70]); };
+  recognition.onerror = () => announceAccess('Voice recognition was unsuccessful. Type the destination instead.');
+  recognition.start(); announceAccess('Listening for a destination.');
+}
 function viewAccess() {
  const on = document.body.classList.contains('rove-accessible');
- return `${backHeader()}<div class="hero"><h1 class="title-1">Accessible travel</h1><p class="caption">Travel information beyond the map</p></div><section class="section"><button class="button primary" data-action="access-toggle" aria-pressed="${on}">${on ? 'Turn off' : 'Turn on'} easier-to-read mode</button><p class="empty">Larger controls, stronger focus outlines, and higher contrast. Use the search and stop lists without needing the map.</p><p class="empty">During navigation, choose “Read instruction aloud” to hear the current boarding, transfer, or walking step. Voice playback is optional and requires browser speech support.</p><button class="button secondary" data-action="access-demo">Hear an example trip instruction</button><p class="empty">Use the search, route choices, and stop lists without the map. Route results include Listen to route buttons, and stops include Read next departures aloud. Audio-first mode focuses headings on screen changes.</p><p class="empty"><strong>Safety:</strong> Rove does not currently provide verified accessible pathways, curb and crossing guidance, elevator reliability, or obstacle detection. Do not rely on it as a sole mobility aid.</p></section>`;
+ return `${backHeader()}<div class="hero"><h1 class="title-1">Rove audio-first</h1><p class="caption">Transit designed to work without looking at a map</p></div>
+ <section class="section access-controls"><button class="button primary" data-action="access-toggle" aria-pressed="${on}">${on ? 'Audio-first mode is on. Turn off' : 'Turn on audio-first mode'}</button>
+ <button class="button secondary" data-action="plan">Plan a journey</button><button class="button secondary" data-action="access-dictate">Speak a destination</button>
+ <button class="button secondary" data-action="access-stop-speech">Stop speaking</button>
+ <label class="access-setting"><input type="checkbox" data-access-setting="haptics" ${accessPreference('haptics',true) ? 'checked' : ''}/> Vibrate for important confirmations (when supported)</label>
+ <label class="access-setting"><input type="checkbox" data-access-setting="autoVoice" ${accessPreference('autoVoice',false) ? 'checked' : ''}/> Read route choices automatically</label></section>
+ <section class="section"><h2>How to travel with Rove</h2><ol class="access-guide"><li>Enter or speak your destination and confirm the search result.</li><li>Choose a route. Select Listen to route to hear each boarding and exit stop.</li><li>Start navigation and use Repeat instruction or Next step. Confirm boarding and transfers yourself.</li><li>Open any stop to hear available live departures, with uncertainty clearly stated.</li></ol></section>
+ <section class="section"><h2>What Rove cannot verify</h2><p class="empty">Rove cannot detect obstacles, locate safe crossings, confirm platform edges, verify accessible entrances or elevators, or prove that you boarded a bus or train. GPS can be inaccurate. Use your established mobility aids and check signs or ask transit staff when needed.</p></section>`;
 }
+
 function readNavInstruction() {
  const step = state.nav?.steps[state.nav.i];
  if (!step || !('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) { toast('Speech is not available in this browser.'); return; }
  window.speechSynthesis.cancel();
- const speech = new SpeechSynthesisUtterance(`${step.title}. ${step.meta || ''}`);
+ const speech = new SpeechSynthesisUtterance(`${step.title}. ${step.meta || ''}. Confirm boarding and safe paths independently.`);
  speech.rate = 0.9; window.speechSynthesis.speak(speech);
 }
 function viewSources() {
@@ -2035,6 +2062,7 @@ function viewResults() {
       <div class="trip-ends"><p><span class="marker"><i></i></span><span>${esc(plan.from?.name)}</span></p><p><span class="marker to"><i></i></span><span>${esc(plan.to?.name)}</span></p></div>
       <button type="button" class="text-button" data-action="back">Edit</button>
     </div>
+    <section class="access-results-intro"><h2>Choose a journey</h2><p>Listen to a route to hear the stops, transfers, and walking estimates before deciding.</p><button class="button secondary" data-action="access-all-routes">Read route choices aloud</button></section>
     <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
     ${plan.results?.notes?.length ? `<ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${areaNoteHtml()}
@@ -2470,7 +2498,9 @@ function viewNavigate() {
       ${transitRecovery}
       ${turns}
     </div>
+    <div class="access-navigation-help" role="note">Check your vehicle and stop independently. Rove does not automatically confirm boarding or safe pedestrian routes.</div>
     <div class="action-bar">
+      <button class="button secondary" data-action="access-stop-speech">Stop speech</button>
       ${nav.i > 0 ? '<button class="button secondary" data-action="nav-prev">Previous</button>' : ''}
       <button class="button secondary" data-action="nav-read">Repeat current instruction</button>
       <button class="button primary" data-action="nav-next">${nav.i === total - 1 ? 'I have arrived' : 'Next step'}</button>
@@ -2481,6 +2511,12 @@ function viewNavigate() {
 /* ---------- Event handling ---------- */
 
 
+document.addEventListener('change', event => {
+  const key = event.target?.dataset?.accessSetting;
+  if (key !== 'haptics' && key !== 'autoVoice') return;
+  accessSetting(key, Boolean(event.target.checked));
+  announceAccess(key === 'haptics' ? 'Vibration '+(event.target.checked?'on':'off') : 'Automatic route speech '+(event.target.checked?'on':'off'));
+});
 function clearSearchField() {
   state.searchQuery = '';
   $('#searchInput').value = '';
@@ -2525,6 +2561,9 @@ function handleAction(el) {
     case 'stop': openStop(el.dataset.agency, el.dataset.stop); break;
     case 'lines': clearSearchField(); pushView({ name: 'lines' }, { detent: 'full' }); break;
     case 'impact': clearSearchField(); pushView({ name: 'impact' }, { detent: 'full' }); break;
+    case 'access-stop-speech': window.speechSynthesis?.cancel(); announceAccess('Speech stopped.'); break;
+    case 'access-dictate': { if (currentView().name !== 'plan') openPlan({}); voiceInputStart(); break; }
+    case 'access-all-routes': { const its=state.plan.results?.itineraries || []; speakText(its.length ? its.slice(0,3).map((it,i)=>`Option ${i+1}. ${audioTripSummary(it)}`).join(' ') : 'No routes are available.'); break; }
     case 'access-route': { const it = state.plan.results?.itineraries?.[Number(el.dataset.index)]; if (it) speakText(audioTripSummary(it)); break; }
     case 'access-departures': {
       const place = placeFor(el.dataset.agency,el.dataset.stop);
@@ -2594,8 +2633,8 @@ function handleAction(el) {
     case 'nav-overview': navChangeFollow('overview'); break;
     case 'nav-replan': if (state.nav?.fix) navReroute(state.nav); break;
     case 'nav-missed': if (state.nav?.fix) navReroute(state.nav); break;
-    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); } break;
-    case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); } break;
+    case 'nav-next': if (state.nav && state.nav.i < state.nav.steps.length - 1) { state.nav.i++; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); accessVibrate([100,70,100]); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
+    case 'nav-prev': if (state.nav && state.nav.i > 0) { state.nav.i--; state.nav.maneuver = null; state.nav.spokenKey = null; render(); focusStep(); if (document.body.classList.contains('rove-accessible')) readNavInstruction(); } break;
     case 'nav-end': releaseWakeLock(); state.nav = null; goHome(); break;
     default: break;
   }
