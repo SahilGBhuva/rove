@@ -1109,3 +1109,123 @@ body.map-satellite .control-group { background: rgba(255,255,255,.96); }
 .itineraries .it-actions { padding-top: 3px; padding-bottom: 14px; }
 .itineraries .it-actions .button { min-height: 46px; border-radius: 10px; font-size: 14px; font-weight: 740; }
 .itineraries .it-actions + .timeline { border-top: 1px solid var(--rule); }
+
+/* Rove Motion Edition — intentional, spatial motion. No perpetual decoration. */
+:root {
+  --rove-spring: cubic-bezier(.22, 1, .36, 1);
+  --rove-exit: cubic-bezier(.4, 0, 1, 1);
+  --rove-blue: #286aff;
+  --rove-halo: rgba(40,106,255,.16);
+}
+@keyframes rove-reveal {
+  from { opacity: 0; transform: translate3d(0,16px,0) scale(.985); filter: blur(5px); }
+  to { opacity: 1; transform: translate3d(0,0,0) scale(1); filter: blur(0); }
+}
+@keyframes rove-pop {
+  0% { opacity: 0; transform: translate3d(0,9px,0) scale(.95); }
+  65% { opacity: 1; transform: translate3d(0,-2px,0) scale(1.012); }
+  100% { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+}
+@keyframes rove-sweep {
+  from { transform: translateX(-160%) skewX(-18deg); }
+  to { transform: translateX(410%) skewX(-18deg); }
+}
+@keyframes rove-map-arrive {
+  from { opacity: .55; transform: scale(1.018); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes rove-ring {
+  0% { box-shadow: 0 0 0 0 rgba(40,106,255,.28); }
+  100% { box-shadow: 0 0 0 12px rgba(40,106,255,0); }
+}
+@keyframes rove-dash { to { stroke-dashoffset: -40; } }
+.maplibregl-canvas { animation: rove-map-arrive 950ms var(--rove-spring) both; }
+.panel { isolation: isolate; }
+@media (min-width:768px) {
+  .panel { box-shadow: 0 3px 12px rgba(15,36,60,.08), 0 28px 80px rgba(15,36,60,.19); }
+  .panel-top { position: relative; }
+  .panel-top::after {
+    content: ""; position: absolute; inset: auto 22px 0; height: 1px;
+    background: linear-gradient(90deg,transparent,rgba(40,106,255,.20),transparent);
+    pointer-events: none;
+  }
+}
+.panel-body.view-enter > * {
+  animation: rove-reveal 490ms var(--rove-spring) both;
+  filter: none;
+}
+.panel-body.view-enter > :nth-child(2) { animation-delay: 42ms; }
+.panel-body.view-enter > :nth-child(3) { animation-delay: 80ms; }
+.panel-body.view-enter > :nth-child(4) { animation-delay: 115ms; }
+.panel-body.view-enter > :nth-child(5) { animation-delay: 145ms; }
+.home-heading h1 { letter-spacing: -.065em; }
+.search-field, .plan-field {
+  transition: background-color 220ms ease, box-shadow 260ms var(--rove-spring),
+    border-color 220ms ease, transform 260ms var(--rove-spring);
+}
+.search-field:focus-within, .plan-field:focus-within {
+  box-shadow: 0 0 0 4px var(--rove-halo), inset 0 0 0 1px var(--you);
+}
+.button, .quick, .control-group button, .icon-button, .style-picker button,
+.menu button, .text-button, .itinerary, .result, .place-row, .row {
+  transition: transform 260ms var(--rove-spring), background-color 200ms ease,
+    color 200ms ease, box-shadow 260ms var(--rove-spring),
+    border-color 200ms ease, opacity 200ms ease;
+}
+.button.primary, .quick:first-child { position: relative; overflow: hidden; }
+.button.primary::after, .quick:first-child::after {
+  content: ""; position: absolute; inset: -30% auto -30% -40%; width: 32%;
+  background: linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);
+  transform: translateX(-160%) skewX(-18deg); pointer-events: none;
+}
+@media (hover:hover) {
+  .button.primary:hover, .quick:first-child:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 9px 24px rgba(30,78,158,.22);
+  }
+  .button.primary:hover::after, .quick:first-child:hover::after {
+    animation: rove-sweep 750ms ease-out both;
+  }
+  .button.secondary:hover, .quick:not(:first-child):hover { transform: translateY(-2px); }
+  .control-group button:hover, .icon-button:hover { transform: scale(1.07); }
+  .row:hover, .result:hover, .place-row:hover { transform: translateX(3px); }
+  .itinerary:hover { transform: translateY(-2px); box-shadow: 0 9px 24px rgba(21,45,75,.10); }
+}
+.button:active, .quick:active, .control-group button:active, .icon-button:active {
+  transform: scale(.965);
+  transition-duration: 90ms;
+}
+.itinerary[aria-expanded="true"] { box-shadow: 0 6px 24px rgba(40,106,255,.09); }
+.layers-popover:not([hidden]), .menu:not([hidden]), .intro:not([hidden]) {
+  transform-origin: bottom right;
+  animation: rove-pop 370ms var(--rove-spring) both;
+}
+.menu:not([hidden]) { transform-origin: top right; }
+.map-mobile-brand { transition: opacity 250ms ease, transform 380ms var(--rove-spring); }
+.map-controls .control-group { border-radius: 14px; box-shadow: 0 5px 24px rgba(15,35,58,.16); }
+.control-group button[aria-expanded="true"] { background: var(--fill); }
+.map-controls button:focus-visible, .quick:focus-visible, .button:focus-visible {
+  outline: 3px solid var(--you); outline-offset: 3px;
+}
+.step-card { transition: box-shadow 250ms ease, border-color 250ms ease; }
+.nav-head .title-2 { letter-spacing: -.045em; }
+.loader-line { stroke-dasharray: 12 6; animation: rove-dash 1.5s linear infinite; }
+#locateButton.active { animation: rove-ring 1.4s ease-out 1; }
+@media (max-width:767px) {
+  .panel { box-shadow: 0 -2px 12px rgba(20,44,73,.08),0 -24px 65px rgba(20,44,73,.14); }
+  .sheet-grabber span { transition: width 250ms var(--rove-spring), background-color 250ms ease; }
+  .sheet-grabber:active span { width: 54px; background: var(--you); }
+  .map-mobile-brand { animation: rove-pop 560ms var(--rove-spring) both; }
+  .layers-popover:not([hidden]) { transform-origin: bottom right; }
+}
+body.theme-dark .map-controls .control-group { box-shadow: 0 5px 24px rgba(0,0,0,.36); }
+body.theme-dark .itinerary[aria-expanded="true"] { box-shadow: 0 6px 24px rgba(80,143,255,.12); }
+@media (prefers-reduced-motion:reduce) {
+  .maplibregl-canvas,.panel-body.view-enter > *,.layers-popover:not([hidden]),
+  .menu:not([hidden]),.intro:not([hidden]),.map-mobile-brand,.loader-line,
+  #locateButton.active { animation: none !important; }
+  .button,.quick,.control-group button,.icon-button,.style-picker button,
+  .menu button,.text-button,.itinerary,.result,.place-row,.row,
+  .search-field,.plan-field,.sheet-grabber span { transition: none !important; }
+  .button.primary::after,.quick:first-child::after { display: none; }
+}
