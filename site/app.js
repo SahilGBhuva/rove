@@ -2657,7 +2657,6 @@ function guideHelpHtml(nav, phase) {
       <dt>No internet</dt><dd>Your current steps stay on this phone. Finding a new route needs a connection.</dd>
       <dt>What Rove cannot do</dt><dd>Rove cannot detect obstacles, safe crossings, platform edges, or which vehicle you are on.</dd>
     </dl>
-    <button type="button" class="rg-text-button" data-action="rg-help" aria-expanded="true" aria-controls="rgHelp">Close help</button>
   </section>`;
 }
 
@@ -2694,11 +2693,14 @@ function viewNavigate() {
     ${next && !arrive ? `<p class="rg-next"><span>Next</span>${esc(next.heading)}</p>` : ''}
     ${nav.showHelp && !arrive ? guideHelpHtml(nav, phase) : ''}
     <div class="rg-dock" role="group" aria-label="Trip controls">
-      <button type="button" class="rg-confirm" data-action="rg-confirm" data-phase="${i}"${phase.confirmAria ? ` aria-label="${esc(phase.confirmAria)}"` : ''}>${esc(arrive ? 'Done' : phase.confirmLabel)}</button>
+      ${nav.showHelp && !arrive
+        // While Help is open the step cannot be confirmed: a tap meant for Help must never count as I've boarded.
+        ? '<button type="button" class="rg-secondary rg-close-help" data-action="rg-help" aria-expanded="true" aria-controls="rgHelp">Close help</button>'
+        : `<button type="button" class="rg-confirm" data-action="rg-confirm" data-phase="${i}"${phase.confirmAria ? ` aria-label="${esc(phase.confirmAria)}"` : ''}>${esc(arrive ? 'Done' : phase.confirmLabel)}</button>
       ${arrive ? '' : `<div class="rg-dock-row">
         <button type="button" class="rg-secondary" data-action="rg-repeat">Repeat</button>
-        <button type="button" class="rg-secondary" data-action="rg-help" aria-expanded="${Boolean(nav.showHelp)}" aria-controls="rgHelp">Help</button>
-      </div>`}
+        <button type="button" class="rg-secondary" data-action="rg-help" aria-expanded="false" aria-controls="rgHelp">Help</button>
+      </div>`}`}
     </div>
   </div>`;
 }
@@ -2989,6 +2991,7 @@ function handleAction(el) {
       const nav = state.nav;
       if (!nav?.gs) break;
       const before = guidePhase(nav);
+      if (nav.showHelp && before.kind !== 'arrive') break;
       if (before.kind === 'arrive') { endTrip(); break; }
       const next = Guide.reduce(nav.gs, { type: 'CONFIRM', phaseIndex: Number(el.dataset.phase), now: navNow(nav) });
       if (next === nav.gs) break; // stale double tap
@@ -3004,7 +3007,7 @@ function handleAction(el) {
       if (!nav) break;
       nav.showHelp = !nav.showHelp;
       render();
-      (nav.showHelp ? document.getElementById('rgHelpHeading') : $('.rg-dock [data-action="rg-help"]'))?.focus({ preventScroll: true });
+      (nav.showHelp ? document.getElementById('rgHelpHeading') : $('.rg-dock .rg-confirm'))?.focus({ preventScroll: true });
       if (nav.showHelp) document.getElementById('rgHelp')?.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
       break;
     }

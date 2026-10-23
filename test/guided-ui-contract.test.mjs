@@ -93,3 +93,20 @@ test('overnight service gaps are explained with real timetable times, never a ge
   assert.match(app, /case 'plan-show-later':[\s\S]*?These trips leave later than you asked/);
   assert.match(app, /warnings: Array\.isArray\(it\.warnings\)/);
 });
+
+test('QA P0: while Help is open no Confirm button exists and the handler refuses to advance', () => {
+  const nav = fn('viewNavigate');
+  assert.match(nav, /nav\.showHelp && !arrive\s*\n\s*\/\/[^\n]*\n\s*\? '<button type="button" class="rg-secondary rg-close-help" data-action="rg-help"/);
+  const start = app.indexOf("case 'rg-confirm':");
+  assert.match(app.slice(start, start + 600), /if \(nav\.showHelp && before\.kind !== 'arrive'\) break;/);
+  assert.doesNotMatch(fn('guideHelpHtml'), /Close help/, 'Close help lives in the dock, not under it');
+});
+
+test('QA P1: designed control heights override the generic 48px floor; text follows user size', () => {
+  assert.match(css, /\.rove-accessible \.rg-confirm \{ min-height: 68px; \}/);
+  assert.match(css, /font: -apple-system-body/);
+  const layer = css.slice(css.indexOf('Rove guided design layer'));
+  assert.doesNotMatch(layer, /font-size:\s*\d+px/, 'design layer uses rem for text');
+  assert.match(css, /@media \(min-width: 801px\) \{ \.speech-bar \{ top: 16px; bottom: auto; \}/);
+  assert.match(css, /@media \(max-height: 560px\) \{ \.rg-dock \{ position: static;/);
+});
