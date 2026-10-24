@@ -3,14 +3,17 @@
 // Exposed by /api/v2/plan with clear preview warnings and navigation disabled.
 import {readFileSync} from 'node:fs';
 import {gunzipSync} from 'node:zlib';
-import {findJourney, directFootpaths} from '../../experiments/bay-router/route.mjs';
+import {findJourneys, directFootpaths} from '../../experiments/bay-router/route.mjs';
 import {combineServiceDays} from '../../experiments/bay-router/combine-days.mjs';
 import {enrichWalks} from '../../experiments/bay-router/pedestrian.mjs';
 import {rankItineraries} from '../../experiments/bay-router/rank.mjs';
+import {pacificMidnight} from '../../experiments/bay-router/timezone.mjs';
 
 const TZ = 'America/Los_Angeles';
 const MAX_ENDPOINT_METERS = 1100;
 const loaded = new Map();
+const combinedCache = new Map();
+const footpathCache = new WeakMap();
 function localParts(date) {
   return Object.fromEntries(new Intl.DateTimeFormat('en-US', {
     timeZone: TZ, year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',
@@ -21,16 +24,6 @@ function isoDayBefore(day) {
   const d = new Date(day + 'T12:00:00Z');
   d.setUTCDate(d.getUTCDate()-1);
   return d.toISOString().slice(0,10);
-}
-function pacificMidnight(day) {
-  // Evaluate the offset at midday to avoid UTC/local date confusion.
-  // DST boundary days need real wall-clock conversion (handled by tests/gate).
-  const probe = new Date(day+'T12:00:00Z');
-  const tz = new Intl.DateTimeFormat('en-US',{timeZone:TZ,timeZoneName:'shortOffset'})
-    .formatToParts(probe).find(p=>p.type==='timeZoneName')?.value || 'GMT-8';
-  const m = /^GMT([+-]\d+)(?::(\d+))?$/.exec(tz);
-  const minutes = (m ? Number(m[1])*60 + Math.sign(Number(m[1]))*Number(m[2]||0) : -480);
-  return Date.parse(day+'T00:00:00Z') - minutes*60000;
 }
 export function dateContext(instant) {
   const p=localParts(instant);
@@ -49,8 +42,16 @@ function loadDay(day) {
 }
 export function loadFor(instant, loader=loadDay) {
   const context=dateContext(instant);
+  const key=context.previousDay+'|'+context.day;
+  if (loader===loadDay && combinedCache.has(key))
+    return {context,timetable:combinedCache.get(key)};
   const days=[context.previousDay,context.day].map(loader);
-  return {context, timetable:combineServiceDays(days)};
+  const timetable=combineServiceDays(days);
+  if (loader===loadDay) {
+    combinedCache.set(key,timetable);
+    if (combinedCache.size>2) combinedCache.delete(combinedCache.keys().next().value);
+  }
+  return {context,timetable};
 }
 export function straightLineMeters(a,b) {
   const dy=(a.lat-b.lat)*111200;
@@ -107,10 +108,14 @@ export function adaptJourney(journey,data,origin,destination,serviceMidnight) {
       clock+=step.seconds;
       continue;
     }
-    const trip=(data.tripIndex?.get(step.agency+'|'+step.tripId)) || data.trips.find(t=>t[1]===step.tripId && t[0]===step.agency);
+    // A GTFS trip ID can occur on both adjacent service days. Preserve the exact
+    // scanned trip index rather than resolving a duplicate ID from the wrong day.
+    const trip=Number.isInteger(step.tripIndex) ? data.trips[step.tripIndex] :
+      data.trips.find(t=>t[1]===step.tripId && t[0]===step.agency);
     if(!trip)throw new Error('Unrecognized scheduled trip');
     const from=legEndpoint(data.stops[a]),to=legEndpoint(data.stops[b]);
-    legs.push({mode:trip[5]==='1'?'SUBWAY':trip[5]==='0'?'TRAM':'BUS',
+    const mode=trip[5]==='1'?'SUBWAY':trip[5]==='0'?'TRAM':trip[5]==='2'?'RAIL':trip[5]==='5'?'CABLE_CAR':'BUS';
+    legs.push({mode,
       transit:true,agency:{id:step.agency},route:{id:trip[2],shortName:trip[3]},
       trip:{id:step.tripId,headsign:step.headsign},headsign:step.headsign,
       from,to,start:{scheduled:when(step.depart)},end:{scheduled:when(step.arrive)},
@@ -160,40 +165,52 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
   const destinations=diverseCandidateStops(data.stops,to,1500);
   if(!origins.length||!destinations.length)
     return bad(422,'No transit stops within walking reach of one or both places. Try a nearby station or a closer starting point.');
-  const footpaths=directFootpaths(data.stops,260,12);
-  // Avoid repeated linear trip lookups for every candidate itinerary.
-  data.tripIndex=new Map(data.trips.map(t=>[t[0]+'|'+t[1],t]));
+  let footpaths=footpathCache.get(data.stops);
+  if (!footpaths) {
+    footpaths=directFootpaths(data.stops,260,12);
+    footpathCache.set(data.stops,footpaths);
+  }
   const answers=[];
-  for(const a of origins) for(const b of destinations){
-    if(a.index===b.index)continue;
+  const simplerOrigins = new Set([
+    ...origins.slice(0,6).map(s=>s.index),
+    ...origins.filter(s=>/^(bart|caltrain):/.test(data.stops[s.index][0])).map(s=>s.index)
+  ]);
+  for (const penalty of [0, 8*60]) for(const a of origins) {
+    if (penalty && !simplerOrigins.has(a.index)) continue;
     const startSeconds=ctx.seconds+Math.ceil(a.distance/1.2);
-    const trip=findJourney(data,a.index,b.index,startSeconds,{footpaths,maxSeconds:8*3600});
-    if(trip&&trip.legs.some(l=>l.type==='transit')){
-      const it=adaptJourney(trip,data,from,to,pacificMidnight(ctx.previousDay));
-      const egress=Math.ceil(b.distance/1.2);
-      // Make the start/end walking estimates explicit; their geometry is NOT street-verified.
-      const first=it.legs[0];
-      const ingress=Math.max(0,Math.ceil(a.distance/1.2));
-      const firstStart=Date.parse(first.start.scheduled);
-      const originStart=Math.max(time.getTime(), firstStart-ingress*1000);
-      if(a.distance>1 && firstStart>originStart){
-        it.legs.unshift({mode:'WALK',transit:false,from:{name:'Starting point',lat:from.lat,lon:from.lon},to:first.from,
-          start:{scheduled:new Date(originStart).toISOString()},end:{scheduled:new Date(firstStart).toISOString()},
-          durationSeconds:(firstStart-originStart)/1000,distanceMeters:Math.ceil(a.distance),steps:[],geometry:null,approximate:true});
+    // One scan per boarding candidate, not one scan for every boarding/exit pair.
+    const matches=findJourneys(data,a.index,destinations.map(b=>b.index),startSeconds,
+      {footpaths,maxSeconds:8*3600,transferPenaltySeconds:penalty});
+    for (const b of destinations) {
+      if(a.index===b.index)continue;
+      const trip=matches.get(b.index);
+      if(trip&&trip.legs.some(l=>l.type==='transit')){
+        const it=adaptJourney(trip,data,from,to,pacificMidnight(ctx.previousDay));
+        const egress=Math.ceil(b.distance/1.2);
+        // Make the start/end walking estimates explicit; their geometry is NOT street-verified.
+        const first=it.legs[0];
+        const ingress=Math.max(0,Math.ceil(a.distance/1.2));
+        const firstStart=Date.parse(first.start.scheduled);
+        const originStart=Math.max(time.getTime(), firstStart-ingress*1000);
+        if(a.distance>1 && firstStart>originStart){
+          it.legs.unshift({mode:'WALK',transit:false,from:{name:'Starting point',lat:from.lat,lon:from.lon},to:first.from,
+            start:{scheduled:new Date(originStart).toISOString()},end:{scheduled:new Date(firstStart).toISOString()},
+            durationSeconds:(firstStart-originStart)/1000,distanceMeters:Math.ceil(a.distance),steps:[],geometry:null,approximate:true});
+        }
+        if(egress>0){
+          const last=it.legs.at(-1);
+          const end=new Date(Date.parse(last.end.scheduled)+egress*1000).toISOString();
+          it.legs.push({mode:'WALK',transit:false,from:last.to,to:{name:'Destination',lat:to.lat,lon:to.lon},
+            start:{scheduled:last.end.scheduled},end:{scheduled:end},durationSeconds:egress,
+            distanceMeters:Math.ceil(b.distance),steps:[],geometry:null,approximate:true});
+          it.end=end;
+        }
+        it.start=it.legs[0].start.scheduled;
+        it.durationSeconds=Math.round((Date.parse(it.end)-Date.parse(it.start))/1000);
+        it.walkMeters=Math.round(it.legs.filter(l=>!l.transit).reduce((sum,l)=>sum+l.distanceMeters,0));
+        it.walkSeconds=it.legs.filter(l=>!l.transit).reduce((sum,l)=>sum+l.durationSeconds,0);
+        answers.push(it);
       }
-      if(egress>0){
-        const last=it.legs.at(-1);
-        const end=new Date(Date.parse(last.end.scheduled)+egress*1000).toISOString();
-        it.legs.push({mode:'WALK',transit:false,from:last.to,to:{name:'Destination',lat:to.lat,lon:to.lon},
-          start:{scheduled:last.end.scheduled},end:{scheduled:end},durationSeconds:egress,
-          distanceMeters:Math.ceil(b.distance),steps:[],geometry:null,approximate:true});
-        it.end=end;
-      }
-      it.start=it.legs[0].start.scheduled;
-      it.durationSeconds=Math.round((Date.parse(it.end)-Date.parse(it.start))/1000);
-      it.walkMeters=Math.round(it.legs.filter(l=>!l.transit).reduce((sum,l)=>sum+l.distanceMeters,0));
-      it.walkSeconds=it.legs.filter(l=>!l.transit).reduce((sum,l)=>sum+l.durationSeconds,0);
-      answers.push(it);
     }
   }
   const limit=Math.max(1,Math.min(5,Number(q.get('limit')||3)||3));
@@ -208,10 +225,16 @@ export async function planWithWalking(query,now=new Date(),loader=loadDay,fetche
   if (result.status!==200 || !result.body.itineraries.length) return result;
   // Limit requests to the public demonstration router. A failed lookup remains preview-only.
   await Promise.all(result.body.itineraries.slice(0,2).map(it=>enrichWalks(it,fetcher)));
+  // A real pedestrian path that cannot fit the transfer window is not a
+  // catchable itinerary. Keep unverified alternatives clearly labeled, but
+  // never rank a proven impossible connection ahead of a possible one.
+  const feasible=result.body.itineraries.filter(it=>it.transferFeasible!==false);
+  if (feasible.length) result.body.itineraries=feasible;
   result.body.routing.walkingGeometry=result.body.itineraries.some(it=>it.walkingVerified);
   result.body.routing.notes=[
     'Beta: scheduled transit times only. Walking geometry uses an external pedestrian router and may be incomplete or inaccurate. Check crossings, signs and station platforms.',
-    'Live train/bus positions and automatic boarding confirmation are not available. Keep navigation in the foreground and verify each transfer.'
+    'Live train/bus positions and automatic boarding confirmation are not available. Keep navigation in the foreground and verify each transfer.',
+    ...(feasible.length?[]:['A mapped walking transfer exceeds its scheduled connection window; these results are not suitable for navigation.'])
   ];
   for (const it of result.body.itineraries) {
     it.navigationReady=Boolean(it.walkingVerified && it.legs.some(l=>l.transit));

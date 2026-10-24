@@ -1,3 +1,4 @@
+import {serviceDayOffset} from './timezone.mjs';
 // Combine adjacent GTFS service dates without confusing 24:xx/25:xx times.
 // Use local service-day date labels, not UTC timestamps, for DST-safe day offsets.
 export function combineServiceDays(days) {
@@ -9,12 +10,13 @@ export function combineServiceDays(days) {
     if (!Number.isFinite(n) || new Date(n).toISOString().slice(0, 10) !== date) throw new Error('Invalid GTFS service date');
     return n / 86400000;
   };
-  const baseDay = dateNumber(sorted[0].date);
+  const baseDay = sorted[0].date;
   const stops = sorted[0].stops;
   const ids = stops.map(s => s[0]);
   const trips = [], connections = [];
   for (const day of sorted) {
-    const offset = (dateNumber(day.date) - baseDay) * 86400;
+    dateNumber(day.date);
+    const offset = serviceDayOffset(baseDay,day.date);
     if (!Array.isArray(day.stops) || day.stops.length !== ids.length ||
         day.stops.some((s, i) => s[0] !== ids[i])) {
       throw new Error('Service-day stop indexes differ; rebuild from the same GTFS archives');

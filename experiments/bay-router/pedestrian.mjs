@@ -5,6 +5,8 @@ const TIMEOUT_MS = 3800;
 const MAX_WALK_METERS = 1800;
 const MAX_AIR_METERS = 950;
 const cache = new Map();
+// Avoid duplicate network calls when route alternatives share a transfer.
+const inFlight = new WeakMap();
 
 export function decodeShape(shape, precision = 6) {
   const out = []; let index = 0, lat = 0, lon = 0;
@@ -31,7 +33,7 @@ export function metersBetween(a,b) {
   const dx = (a.lon-b.lon)*111200*Math.cos(a.lat*Math.PI/180);
   return Math.hypot(dx,dy);
 }
-export async function walkingPath(from,to,fetcher=fetch) {
+async function walkingPathUncached(from,to,fetcher) {
   const air = metersBetween(from,to);
   if (air < 2) return {distanceMeters:0,durationSeconds:0,geometry:{type:'LineString',coordinates:[[from.lon,from.lat],[to.lon,to.lat]]},steps:[],verified:true};
   if (air > MAX_AIR_METERS) return null;
@@ -67,6 +69,16 @@ export async function walkingPath(from,to,fetcher=fetch) {
   } catch { return null; }
   finally { clearTimeout(timeout); }
 }
+export function walkingPath(from,to,fetcher=fetch) {
+  let pending = inFlight.get(fetcher);
+  if (!pending) { pending = new Map(); inFlight.set(fetcher,pending); }
+  const key = [from,to].map(p=>p.lat.toFixed(5)+','+p.lon.toFixed(5)).join('|');
+  if (pending.has(key)) return pending.get(key);
+  const request = walkingPathUncached(from,to,fetcher);
+  pending.set(key,request);
+  void request.then(()=>pending.delete(key),()=>pending.delete(key));
+  return request;
+}
 export async function enrichWalks(itinerary,fetcher=fetch) {
   if (!itinerary?.legs?.length) return false;
   const walkLegs = itinerary.legs.filter(l=>l.mode==='WALK');
@@ -81,15 +93,15 @@ export async function enrichWalks(itinerary,fetcher=fetch) {
   }
   // A scheduled transfer is not reliable if the street route needs more time
   // than the approximate slot originally allocated to walking.
-  const walkReady=walkLegs.every(l=>{
-    if (!l.verified || !l.geometry?.coordinates?.length) return false;
+  const impossibleTransfer=walkLegs.some(l=>{
+    if (!l.verified) return false;
     const index=itinerary.legs.indexOf(l);
     const followedByTransit=itinerary.legs.slice(index+1).some(next=>next.transit);
-    // The last walk can run longer, but never claim a transit connection is
-    // catchable when the routed pedestrian travel exceeds the walking slot.
-    return !followedByTransit || l.durationSeconds<=l.scheduledWalkSeconds+10;
+    return followedByTransit && l.durationSeconds>l.scheduledWalkSeconds+10;
   });
+  const walkReady=walkLegs.every(l=>l.verified && l.geometry?.coordinates?.length) && !impossibleTransfer;
   itinerary.walkingVerified=walkReady;
+  itinerary.transferFeasible=!impossibleTransfer;
   const last=itinerary.legs.at(-1);
   if (last.mode==='WALK' && last.verified) {
     last.end.scheduled=new Date(Date.parse(last.start.scheduled)+last.durationSeconds*1000).toISOString();
