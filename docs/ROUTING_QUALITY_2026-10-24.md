@@ -15,9 +15,9 @@
 
 ## Demo examples checked against the Oct 23 schedule
 
-- Haight/Ashbury → Chase Center: first result uses Muni 37 + 22, one transfer, approximately 43 minutes.
+- Haight/Ashbury → Chase Center: first result uses Muni 37 + 22, one transfer, approximately 46 minutes.
 - Sunnyvale → downtown Berkeley: with conservative street-access and platform-transfer times, the 09:00 sample can favor Caltrain → VTA Rapid 500 → BART via San Jose, two transfers, approximately 138 minutes. Exact recommendations depend on departure time.
-- Powell → Oakland: BART with zero transfers, approximately 16 minutes.
+- Powell → Oakland: BART with zero transfers, approximately 24 minutes.
 
 These are **scheduled example results, not live trip predictions**. Durations and service depend on the requested time and date. Warm local algorithm-only checks were approximately 0.5–1.5 seconds for several sample journeys when the machine was not under load; external pedestrian routing can add up to 3.8 seconds. No production latency SLA is established.
 
