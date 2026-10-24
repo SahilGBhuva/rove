@@ -1034,131 +1034,385 @@ function measureSafeArea() {
 }
 
 const DETENTS = ['peek', 'half', 'full'];
+const DETENT_NAMES = { peek: 'collapsed', half: 'half height', full: 'full height' };
+
+/* Classic (map-first) phones get the draggable sheet. Audio-first phones keep the full-screen panel,
+ * so every sheet geometry below is inert there and the legacy heights stay exactly as they were. */
+const classicSheet = () => isMobile() && document.body.classList.contains('mode-classic');
+
+/* Sheet geometry. `box` is the panel's laid-out height, `h` the visible height. While a drag or a
+ * settle is in flight the box is the full height and the visible height comes from a transform,
+ * so moving the sheet never re-lays out its content. When it comes to rest the box shrinks to fit. */
+const sheet = { h: 0, box: 0, timer: 0, peekVh: 0, peekH: 0, kb: 0, gestureEnd: 0 };
 
 function detentHeight(name) {
   const vh = window.innerHeight;
-  if (name === 'peek') return Math.round(148 + safeArea.bottom);
-  if (name === 'half') return Math.round(Math.max(vh * 0.5, Math.min(360, vh - 120)));
-  return Math.round(vh - 56 - safeArea.top);
+  if (!classicSheet()) {
+    if (name === 'peek') return Math.round(148 + safeArea.bottom);
+    if (name === 'half') return Math.round(Math.max(vh * 0.5, Math.min(360, vh - 120)));
+    return Math.round(vh - 56 - safeArea.top);
+  }
+  // Full leaves a strip of map (and the brand chip) visible under the status bar.
+  const full = Math.round(vh - Math.max(56, safeArea.top + 48));
+  // Peek ends just below the first thing a rider acts on: the search field, the home entry
+  // buttons, or the title block of a detail screen. It is measured from the rendered view.
+  const body = $('#panelBody');
+  const panel = $('#panel');
+  // Re-measured whenever the sheet is at rest (two cheap rect reads); held steady while it moves.
+  if (!sheet.peekH || sheet.peekVh !== vh || !panel.matches('.dragging, .sheet-settling')) {
+    const search = $('.panel-top .search-field:not([hidden])');
+    const target = search || ['.rg-hero', '.rc-peek', '.hero', 'h1'].map(sel => body.querySelector(sel)).find(Boolean);
+    let h = 136;
+    if (target) {
+      const top = panel.getBoundingClientRect().top;
+      const r = target.getBoundingClientRect();
+      h = r.bottom - top + (search ? 0 : body.scrollTop) + 16;
+    }
+    sheet.peekVh = vh;
+    sheet.peekH = Math.round(clamp(h, 128, vh * 0.5) + safeArea.bottom);
+  }
+  const peek = Math.min(sheet.peekH, full - 96);
+  if (name === 'peek') return peek;
+  if (name === 'half') return Math.round(Math.min(full - 48, Math.max(peek + 112, vh * 0.6)));
+  return full;
 }
 
 function currentSheetHeight() { return isMobile() ? detentHeight(state.detent) : 0; }
 
-function setDetent(name) {
+/* Moves the sheet to a detent. On a classic phone it glides there (velocity-matched after a fling,
+ * instant with reduced motion); everywhere else it only records the state, as before. */
+function setDetent(name, { velocity = 0, instant = false } = {}) {
   state.detent = name;
   const panel = $('#panel');
   panel.classList.remove('detent-peek', 'detent-half', 'detent-full');
   panel.classList.add(`detent-${name}`);
-  $('#sheetGrabber').setAttribute('aria-valuetext', name === 'peek' ? 'Collapsed' : name === 'half' ? 'Half height' : 'Full height');
-  applySheetHeight(isMobile() ? detentHeight(name) : 0);
+  const grabber = $('#sheetGrabber');
+  grabber.removeAttribute('aria-valuetext');
+  grabber.setAttribute('aria-label', `Panel size: ${DETENT_NAMES[name]}. ${name === 'full' ? 'Activate to collapse' : 'Activate to expand'}, or use the up and down arrow keys.`);
   if (name === 'peek') $('#panelBody').scrollTop = 0;
+  const target = isMobile() ? detentHeight(name) : 0;
+  clearTimeout(sheet.timer);
+  panel.classList.remove('sheet-settling');
+  if (!classicSheet()) {
+    sheet.box = 0;
+    panel.style.removeProperty('--sheet-box');
+    panel.style.removeProperty('--sheet-shift');
+    applySheetHeight(target);
+    return;
+  }
+  const from = sheet.h || target;
+  const distance = Math.abs(target - from);
+  let ms = 0;
+  if (!instant && !prefersReducedMotion() && distance > 1) {
+    const v = Math.abs(velocity);
+    ms = v > 0.3 ? clamp((distance / v) * 1.7, 220, 420) : clamp(260 + distance * 0.22, 280, 440);
+  }
+  if (!ms) { applySheetHeight(target); sheetRest(target); return; }
+  sheetLift();
+  panel.style.setProperty('--sheet-dur', `${Math.round(ms)}ms`);
+  panel.classList.add('sheet-settling');
+  applySheetHeight(target);
+  sheet.timer = setTimeout(() => { panel.classList.remove('sheet-settling'); sheetRest(target); }, ms + 34);
 }
 
-
+/* Visible sheet height. Feeds --sheet-h (map controls, toasts, attribution) and, on classic phones,
+ * the panel's transform. cameraPadding() reads currentSheetHeight(), the settled detent. */
 function applySheetHeight(px) {
-  document.documentElement.style.setProperty('--sheet-h', `${px}px`);
-  $('#mapControls').classList.toggle('hidden-by-sheet', isMobile() && px > window.innerHeight * 0.62);
+  sheet.h = px;
+  const panel = $('#panel');
+  if (classicSheet() && sheet.box) panel.style.setProperty('--sheet-shift', `${Math.round(sheet.box - px)}px`);
+  if (panel.classList.contains('dragging')) return; // the rest follows when the finger lifts
+  document.documentElement.style.setProperty('--sheet-h', `${Math.round(px)}px`);
+  const tall = isMobile() && px > window.innerHeight * 0.62;
+  $('#mapControls').classList.toggle('hidden-by-sheet', tall);
+  document.body.classList.toggle('sheet-tall', tall);
 }
 
-/* Sheet heights on phones. Peek shows the search field (or the title of a detail view),
- * half shows the main content next to the map, and full leaves a strip of map visible. */
+/* Before the sheet moves: lay it out at full height once and hold the visible height by transform. */
+function sheetLift() {
+  const panel = $('#panel');
+  const full = detentHeight('full');
+  if (sheet.box === full) return;
+  const visible = sheet.h || sheet.box || full;
+  panel.classList.add('sheet-instant');
+  sheet.box = full;
+  panel.style.setProperty('--sheet-box', `${full}px`);
+  panel.style.setProperty('--sheet-shift', `${Math.round(full - visible)}px`);
+  void panel.offsetHeight;
+  panel.classList.remove('sheet-instant');
+}
 
+/* At rest: the box is exactly the visible height, so content scrolls and sticks to the real bottom. */
+function sheetRest(px) {
+  const panel = $('#panel');
+  panel.classList.add('sheet-instant');
+  sheet.box = Math.round(px);
+  sheet.h = px;
+  panel.style.setProperty('--sheet-box', `${sheet.box}px`);
+  panel.style.setProperty('--sheet-shift', '0px');
+  void panel.offsetHeight;
+  panel.classList.remove('sheet-instant');
+}
+
+/* Where a released sheet goes: a fling moves one detent in its direction (two if hard enough);
+ * a slow release projects a short glide and picks the closest detent. */
 function nearestDetent(height, velocity, from) {
   const current = DETENTS.indexOf(from);
-  if (Math.abs(velocity) > 0.45) return DETENTS[clamp(current + (velocity > 0 ? 1 : -1), 0, 2)];
-  return DETENTS.reduce((best, d) => (Math.abs(detentHeight(d) - height) < Math.abs(detentHeight(best) - height) ? d : best), 'peek');
+  const closest = h => DETENTS.reduce((best, d) => (Math.abs(detentHeight(d) - h) < Math.abs(detentHeight(best) - h) ? d : best), 'peek');
+  if (Math.abs(velocity) > 0.45) {
+    const dir = velocity > 0 ? 1 : -1;
+    const projected = closest(height + velocity * 220);
+    const step = DETENTS[clamp(current + dir, 0, 2)];
+    return (DETENTS.indexOf(projected) - current) * dir > 1 ? projected : step;
+  }
+  return closest(height + velocity * 120);
 }
 
 function setupSheet() {
   measureSafeArea();
   const panel = $('#panel');
   const body = $('#panelBody');
-  const minH = () => detentHeight('peek') - 48;
-  const maxH = () => detentHeight('full');
-
-  // Grabber and header: pointer events (mouse, pen, and touch).
-  let drag = null;
-  const onDown = e => {
-    if (!isMobile() || e.target.closest('input, button:not(#sheetGrabber)')) return;
-    drag = { y: e.clientY, h: detentHeight(state.detent), t: performance.now(), moved: false, id: e.pointerId, fromGrabber: e.currentTarget.id === 'sheetGrabber' };
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+  const grabber = $('#sheetGrabber');
+  const vh = () => window.innerHeight;
+  // Past the ends the sheet follows the finger with growing resistance, then springs back.
+  const rubber = h => {
+    const lo = detentHeight('peek'), hi = detentHeight('full'), range = vh() * 0.22;
+    if (h > hi) return hi + (1 - 1 / (((h - hi) * 0.55) / range + 1)) * range;
+    if (h < lo) return lo - (1 - 1 / (((lo - h) * 0.55) / range + 1)) * range;
+    return h;
   };
-  const onMove = e => {
-    if (!drag || e.pointerId !== drag.id) return;
-    const dy = drag.y - e.clientY;
-    if (Math.abs(dy) > 4) drag.moved = true;
-    if (!drag.moved) return;
-    panel.classList.add('dragging');
-    applySheetHeight(clamp(drag.h + dy, minH(), maxH()));
+  // Where the sheet is right now, including mid-glide, so a new touch can catch it.
+  const visibleNow = () => {
+    if (!panel.classList.contains('sheet-settling')) return sheet.h || detentHeight(state.detent);
+    const m = new DOMMatrixReadOnly(getComputedStyle(panel).transform);
+    return sheet.box - m.m42;
   };
-  const onUp = e => {
-    if (!drag || e.pointerId !== drag.id) return;
+  let gesture = null;
+  const begin = (y, fromGrabber) => {
+    const h = visibleNow();
+    clearTimeout(sheet.timer);
+    panel.classList.remove('sheet-settling');
+    sheet.h = h;
+    sheetLift();
+    applySheetHeight(h);
+    gesture = { y0: y, h0: h, fromGrabber, moved: false, samples: [{ y, t: performance.now() }] };
+  };
+  const move = y => {
+    const g = gesture;
+    if (!g) return;
+    if (!g.moved && Math.abs(g.y0 - y) <= 4) return;
+    if (!g.moved) { g.moved = true; panel.classList.add('dragging'); document.body.classList.add('sheet-dragging'); }
+    const t = performance.now();
+    g.samples.push({ y, t });
+    while (g.samples.length > 2 && t - g.samples[0].t > 100) g.samples.shift();
+    applySheetHeight(rubber(g.h0 + (g.y0 - y)));
+  };
+  const end = cancelled => {
+    const g = gesture;
+    gesture = null;
+    if (!g) return;
+    sheet.gestureEnd = performance.now();
     panel.classList.remove('dragging');
-    const dy = drag.y - e.clientY, velocity = dy / Math.max(1, performance.now() - drag.t);
-    const { moved, fromGrabber, h } = drag;
-    drag = null;
-    if (!moved) { if (fromGrabber) setDetent(DETENTS[(DETENTS.indexOf(state.detent) + 1) % 3]); else setDetent(state.detent); return; }
-    setDetent(nearestDetent(h + dy, velocity, state.detent));
+    document.body.classList.remove('sheet-dragging');
+    if (!g.moved) {
+      if (g.fromGrabber && !cancelled) { const next = DETENTS[(DETENTS.indexOf(state.detent) + 1) % 3]; setDetent(next); announceAccess(`Panel ${DETENT_NAMES[next]}.`); }
+      else setDetent(state.detent);
+      return;
+    }
+    const a = g.samples[0], b = g.samples[g.samples.length - 1];
+    // px per ms over the last ~100ms, positive = upward; a finger that paused before lifting has none.
+    const velocity = b.t - a.t > 0 && performance.now() - b.t < 90 ? (a.y - b.y) / (b.t - a.t) : 0;
+    setDetent(cancelled ? state.detent : nearestDetent(sheet.h, velocity, state.detent), { velocity });
   };
-  for (const h of [$('#sheetGrabber'), $('.panel-top')]) {
-    h.addEventListener('pointerdown', onDown);
-    h.addEventListener('pointermove', onMove);
-    h.addEventListener('pointerup', onUp);
-    h.addEventListener('pointercancel', onUp);
-  }
 
-  // Content area: below full height every vertical swipe moves the sheet. At full height the
-  // content scrolls, and pulling down from the top of the content lowers the sheet.
+  // Grabber and header: pointer events (mouse, pen and touch). Controls inside the header keep their taps.
+  let pointerId = null;
+  for (const handle of [grabber, $('.panel-top')]) {
+    handle.addEventListener('pointerdown', e => {
+      if (!classicSheet() || e.button > 0 || e.target.closest('input, select, textarea, a, button:not(#sheetGrabber)')) return;
+      pointerId = e.pointerId;
+      handle.setPointerCapture?.(e.pointerId);
+      begin(e.clientY, handle === grabber);
+    });
+    handle.addEventListener('pointermove', e => { if (e.pointerId === pointerId) move(e.clientY); });
+    handle.addEventListener('pointerup', e => { if (e.pointerId === pointerId) { pointerId = null; end(false); } });
+    handle.addEventListener('pointercancel', e => { if (e.pointerId === pointerId) { pointerId = null; end(true); } });
+  }
+  // A click that follows a pointer gesture was already handled; one on its own (TalkBack, switch
+  // access, assistive clicks) cycles the detent.
+  grabber.addEventListener('click', () => {
+    if (!classicSheet() || performance.now() - sheet.gestureEnd < 600) return;
+    const next = DETENTS[(DETENTS.indexOf(state.detent) + 1) % 3];
+    setDetent(next);
+    announceAccess(`Panel ${DETENT_NAMES[next]}.`);
+  });
+
+  // Content: below full height a vertical swipe moves the sheet. At full height the content scrolls,
+  // and only a pull down that starts with the content already at its top lowers the sheet.
   let touch = null;
   body.addEventListener('touchstart', e => {
-    if (!isMobile() || e.touches.length !== 1 || e.target.closest('input, select, textarea')) { touch = null; return; }
-    touch = { y: e.touches[0].clientY, x: e.touches[0].clientX, t: performance.now(), h: detentHeight(state.detent), atTop: body.scrollTop <= 0, dragging: false, decided: false };
+    touch = null;
+    if (!classicSheet() || e.touches.length !== 1 || e.target.closest('input, select, textarea, [data-sheet-scroll-x]')) return;
+    touch = { x: e.touches[0].clientX, y: e.touches[0].clientY, atTop: body.scrollTop <= 0, decided: false, dragging: false };
   }, { passive: true });
   body.addEventListener('touchmove', e => {
     if (!touch) return;
-    const y = e.touches[0].clientY, dy = touch.y - y, dx = touch.x - e.touches[0].clientX;
+    const { clientX: x, clientY: y } = e.touches[0];
     if (!touch.decided) {
-      if (Math.abs(dy) < 6 && Math.abs(dx) < 6) return;
+      const dx = x - touch.x, dy = y - touch.y;
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
       touch.decided = true;
-      const vertical = Math.abs(dy) > Math.abs(dx);
-      touch.dragging = vertical && (state.detent !== 'full' || (touch.atTop && body.scrollTop <= 0 && dy < 0));
-      if (touch.dragging) { touch.y = y; touch.t = performance.now(); }
+      const vertical = Math.abs(dy) > Math.abs(dx) * 1.2;
+      touch.dragging = vertical && (state.detent !== 'full' || (touch.atTop && body.scrollTop <= 0 && dy > 0));
+      if (!touch.dragging) { touch = null; return; }
+      begin(y, false);
     }
-    if (!touch.dragging) return;
     e.preventDefault();
-    panel.classList.add('dragging');
-    touch.lastDy = touch.y - y;
-    applySheetHeight(clamp(touch.h + touch.lastDy, minH(), maxH()));
+    move(y);
   }, { passive: false });
-  const endTouch = () => {
-    if (!touch?.dragging) { touch = null; return; }
-    panel.classList.remove('dragging');
-    const dy = touch.lastDy || 0, velocity = dy / Math.max(1, performance.now() - touch.t);
-    const target = nearestDetent(touch.h + dy, velocity, state.detent);
-    touch = null;
-    setDetent(target);
-  };
-  body.addEventListener('touchend', endTouch);
-  body.addEventListener('touchcancel', endTouch);
+  body.addEventListener('touchend', () => { if (touch?.dragging) end(false); touch = null; });
+  body.addEventListener('touchcancel', () => { if (touch?.dragging) end(true); touch = null; });
 
-  $('#sheetGrabber').addEventListener('keydown', e => {
-    if (!['ArrowUp', 'ArrowDown', 'Enter', ' '].includes(e.key)) return;
-    e.preventDefault();
+  grabber.addEventListener('keydown', e => {
+    if (!classicSheet()) return;
     const i = DETENTS.indexOf(state.detent);
-    if (e.key === 'ArrowUp') setDetent(DETENTS[clamp(i + 1, 0, 2)]);
-    else if (e.key === 'ArrowDown') setDetent(DETENTS[clamp(i - 1, 0, 2)]);
-    else setDetent(DETENTS[(i + 1) % 3]);
+    const keys = { ArrowUp: DETENTS[clamp(i + 1, 0, 2)], ArrowDown: DETENTS[clamp(i - 1, 0, 2)], PageUp: 'full', PageDown: 'peek', Home: 'full', End: 'peek', Enter: DETENTS[(i + 1) % 3], ' ': DETENTS[(i + 1) % 3] };
+    if (!(e.key in keys)) return;
+    e.preventDefault();
+    if (keys[e.key] !== state.detent) { setDetent(keys[e.key]); announceAccess(`Panel ${DETENT_NAMES[keys[e.key]]}.`); }
   });
+
+  // Focus never lands out of sight: a text field, or anything below the visible part of the sheet,
+  // opens the sheet to full height first.
+  panel.addEventListener('focusin', e => {
+    if (!classicSheet() || e.target === grabber) return;
+    const field = e.target.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="button"]), textarea, select');
+    if (field) { if (state.detent !== 'full') setDetent('full'); return; }
+    if (state.detent !== 'full' && body.contains(e.target) && e.target.getBoundingClientRect().bottom > vh() - safeArea.bottom - 8) setDetent('full', { instant: true });
+  });
+
+  // On-screen keyboard: keep the focused field and the content above it clear of the keyboard.
+  const vv = window.visualViewport;
+  vv?.addEventListener('resize', () => {
+    const kb = Math.max(0, Math.round(vh() - vv.height - vv.offsetTop));
+    const open = kb > 80 ? kb : 0;
+    if (open === sheet.kb) return;
+    sheet.kb = open;
+    panel.style.setProperty('--sheet-kb', `${open}px`);
+    const active = document.activeElement;
+    if (open && classicSheet() && panel.contains(active) && active.matches('input, textarea, select')) {
+      if (state.detent !== 'full') setDetent('full', { instant: true });
+      requestAnimationFrame(() => active.scrollIntoView?.({ block: 'nearest' }));
+    }
+  });
+
   let resizeTimer, wasMobile = isMobile();
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       measureSafeArea();
-      setDetent(state.detent);
+      sheet.peekH = 0;
+      setDetent(state.detent, { instant: true });
       // Re-render only when crossing the phone breakpoint; an on-screen keyboard also resizes the window.
       if (wasMobile !== isMobile()) { wasMobile = isMobile(); if (!document.activeElement?.matches('input, select')) render(); }
     }, 120);
   });
+}
+
+/* ---------- Display modes ----------
+ * Two ways to use Rove. Both keep body.rove-accessible (shared type, targets, focus and voice).
+ *   classic (body.mode-classic): map first. Phones get a full-screen map under a draggable sheet;
+ *     wider screens get the map beside the floating panel.
+ *   audio   (body.mode-audio):   audio first. On phones the map is hidden and the panel fills the
+ *     screen; every voice feature is unchanged. Built for VoiceOver and TalkBack.
+ * Stored in localStorage 'rove-mode'. With nothing stored Rove displays classic and the home
+ * screen keeps offering the choice until the rider makes one.
+ * API for other screens: window.RoveMode.get() -> 'classic' | 'audio', .chosen() -> boolean,
+ * .set('classic' | 'audio') (persists and announces), .toggle(). Any element with
+ * data-action="mode-toggle" switches modes, and data-action="mode-set" data-mode="..." picks one. */
+function setMode(mode, { announce = true, focus = false } = {}) {
+  const KEY = 'rove-mode';
+  const valid = m => m === 'classic' || m === 'audio';
+  let saved = null;
+  try { saved = localStorage.getItem(KEY); } catch { /* storage unavailable */ }
+  const restoring = mode == null;
+  const next = valid(mode) ? mode : valid(saved) ? saved : 'classic';
+  if (!restoring) { try { localStorage.setItem(KEY, next); } catch { /* storage unavailable */ } }
+  const body = document.body;
+  const was = body.classList.contains('mode-audio') ? 'audio' : body.classList.contains('mode-classic') ? 'classic' : null;
+  body.classList.add('rove-accessible');
+  body.classList.toggle('mode-classic', next === 'classic');
+  body.classList.toggle('mode-audio', next === 'audio');
+  body.classList.toggle('mode-unchosen', !valid(restoring ? saved : next));
+  body.dataset.roveMode = next;
+
+  if (!setMode.ready) {
+    setMode.ready = true;
+    const chosen = () => { try { return valid(localStorage.getItem(KEY)); } catch { return false; } };
+    const current = () => (document.body.classList.contains('mode-audio') ? 'audio' : 'classic');
+    // Puts the choice (or, once chosen, the one-tap switch) on the home screen. If the home view
+    // already renders viewModeChoice() or its own data-action="mode-toggle" control, this does nothing.
+    setMode.mount = () => {
+      const panelBody = document.getElementById('panelBody');
+      if (!panelBody || currentView()?.name !== 'home' || panelBody.querySelector('.rc-mode')) return;
+      if (chosen() && document.querySelector('[data-action="mode-toggle"]')) return;
+      const tpl = document.createElement('template');
+      tpl.innerHTML = viewModeChoice().trim();
+      const node = tpl.content.firstElementChild;
+      if (!node) return;
+      const home = panelBody.querySelector('.rg-home') || panelBody;
+      if (!chosen()) {
+        // After the entry buttons: the peek detent keeps showing them, and screen readers meet the
+        // choice right after the main actions (it is also an h2 for heading navigation).
+        const after = home.querySelector('.rg-hero') || home.querySelector('.rg-home-sub') || home.querySelector('h1');
+        if (after) after.after(node); else home.prepend(node);
+      } else {
+        home.append(node);
+      }
+    };
+    const panelBody = document.getElementById('panelBody');
+    if (panelBody) new MutationObserver(() => setMode.mount()).observe(panelBody, { childList: true });
+    document.addEventListener('click', e => {
+      const el = e.target.closest?.('[data-action="mode-toggle"], [data-action="mode-set"]');
+      if (!el) return;
+      e.preventDefault();
+      setMode(el.dataset.action === 'mode-set' ? el.dataset.mode : current() === 'audio' ? 'classic' : 'audio', { focus: true });
+    });
+    window.RoveMode = { get: current, chosen, set: m => setMode(m), toggle: () => setMode(current() === 'audio' ? 'classic' : 'audio') };
+  }
+
+  if (was !== next && state.network) {
+    setDetent(state.detent, { instant: true });
+    requestAnimationFrame(() => state.map?.resize());
+  }
+  if (restoring) return next;
+  if (announce) announceAccess(next === 'audio' ? 'Audio-first mode on. The map is hidden and every screen is full size.' : `Map view on.${isMobile() ? ' The map fills the screen and this panel slides up over it.' : ''}`);
+  if (state.network && currentView()?.name === 'home') {
+    render();
+    setMode.mount();
+    if (focus) (document.querySelector('.rc-mode [data-action="mode-toggle"], [data-action="mode-toggle"]') || document.getElementById('roveHomeTitle'))?.focus({ preventScroll: false });
+  }
+  return next;
+}
+
+/* The home-screen mode control: the first-launch choice, then a one-tap switch. */
+function viewModeChoice() {
+  let saved = null;
+  try { saved = localStorage.getItem('rove-mode'); } catch { /* storage unavailable */ }
+  const mapGlyph = '<svg class="rg-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4.5 3.5 6.5v13L9 17.5l6 2 5.5-2v-13L15 6.5Z"/><path d="M9 4.5v13M15 6.5v13"/></svg>';
+  const earGlyph = rgIcon('speaker');
+  if (saved !== 'classic' && saved !== 'audio') {
+    return `<section class="rc-mode rc-mode-choice" aria-labelledby="rcModeTitle">
+      <h2 id="rcModeTitle" class="rc-mode-title">How do you want to use Rove?</h2>
+      <p class="rc-mode-sub">Pick one. You can switch at any time from the home screen.</p>
+      <div class="rc-mode-options">
+        <button type="button" class="rc-mode-option" data-action="mode-set" data-mode="classic" aria-describedby="rcModeMapDesc"><span class="rc-mode-icon">${mapGlyph}</span><span class="rc-mode-text"><strong>Map view</strong><small id="rcModeMapDesc">The map, lines and stops, with a panel that slides up.</small></span></button>
+        <button type="button" class="rc-mode-option" data-action="mode-set" data-mode="audio" aria-describedby="rcModeAudioDesc"><span class="rc-mode-icon">${earGlyph}</span><span class="rc-mode-text"><strong>Audio-first (for VoiceOver/TalkBack)</strong><small id="rcModeAudioDesc">No map. Large controls, and every step can be read aloud.</small></span></button>
+      </div>
+    </section>`;
+  }
+  const audio = saved === 'audio';
+  return `<div class="rc-mode rc-mode-row"><span class="rc-mode-now">${audio ? earGlyph : mapGlyph}<span>${audio ? 'Audio-first' : 'Map view'}</span></span><button type="button" class="rc-mode-switch" data-action="mode-toggle">Switch to ${audio ? 'map view' : 'audio-first'}</button></div>`;
 }
 
 /* ======================================================================
@@ -1625,23 +1879,25 @@ function viewSearch() {
   const waiting = forSearch && autocomplete.status === 'loading' && autocomplete.query === q.trim();
   const noPlaces = !forSearch || q.trim().length < 3 || (autocomplete.status === 'done' && !autocomplete.results.length);
   if (!routes.length && !stops.length && !personal.length && noPlaces && !waiting) {
-    return `<p class="empty" style="padding-top:16px">No Bay Area results for “${esc(q)}”. Check the spelling, or try a Bay Area address, a station, or a line such as 38R or 51A.</p>`;
+    return `<div class="rc-search"><div class="rc-empty" role="status"><span class="rc-empty-icon">${rgIcon('search')}</span><p><strong>No Bay Area results for “${esc(q)}”.</strong> Check the spelling, or try a Bay Area address, a station, or a line such as 38R or 51A.</p></div></div>`;
   }
   const parts = [];
-  if (correction) parts.push(`<p class="search-correction" role="status">Showing stop results for <strong>${esc(correction)}</strong></p>`);
-  if (personal.length) parts.push(`<section class="section" style="margin-top:8px"><h2 class="label">Your places</h2><ul class="rows">${personal.map(([p, icon]) => placeOptionRow(p, 'search-place', icon)).join('')}</ul></section>`);
-  const linesHtml = routes.length ? `<section class="section"><h2 class="label">Lines</h2><ul class="rows">${routes.map(info => `<li><button class="row result" data-action="route" data-key="${esc(info.key)}">${badgeHtml(info)}<span class="row-main"><span class="row-title">${highlight(info.title, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[info.a.id])} · ${esc(modeName(info))}</span></span>${ICONS.chevron}</button></li>`).join('')}</ul></section>` : '';
-  const stopsHtml = stops.length ? `<section class="section"><h2 class="label">Stops and stations</h2><ul class="rows">${stops.slice(0, 6).map(({ a, s }) => {
+  if (correction) parts.push(`<p class="search-correction rc-correction" role="status">Showing stop results for <strong>${esc(correction)}</strong></p>`);
+  if (personal.length) parts.push(`<section class="section rc-section" aria-label="Your places"><h2 class="label rc-label">Your places</h2><ul class="rows">${personal.map(([p, icon]) => placeOptionRow(p, 'search-place', icon)).join('')}</ul></section>`);
+  const linesHtml = routes.length ? `<section class="section rc-section"><h2 class="label rc-label">Lines</h2><ul class="rows rc-rows">${routes.map(info => `<li><button class="row result rc-row" data-action="route" data-key="${esc(info.key)}"><span class="rc-row-lead">${badgeHtml(info)}</span><span class="row-main"><span class="row-title rc-row-title">${highlight(info.title, q)}</span><span class="row-meta rc-row-meta">${esc(AGENCY_SHORT[info.a.id])} · ${esc(modeName(info))}</span></span>${ICONS.chevron}</button></li>`).join('')}</ul></section>` : '';
+  const stopsHtml = stops.length ? `<section class="section rc-section"><h2 class="label rc-label">Stops and stations</h2><ul class="rows rc-rows">${stops.slice(0, 6).map(({ a, s }) => {
     const rs = sortRoutes(routesForStop(a.id, s.id));
     const isStation = s.k || idx.children.has(stopKey(a.id, s.id));
     const d = state.userLocation ? distanceLabel(distanceMeters(state.userLocation, s.p)) : '';
-    return `<li><button class="row result" data-action="stop" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">${badgesFor(rs, 3)}<span class="row-main"><span class="row-title">${highlight(s.n, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[a.id])}${isStation ? ' · Station' : ''}</span></span>${d ? `<span class="row-end caption">${esc(d)}</span>` : ICONS.chevron}</button></li>`;
+    const unique = [...new Map(rs.map(r => [r.badge, r])).values()];
+    const shown = unique.slice(0, 4);
+    return `<li><button class="row result rc-row rc-row-stop" data-action="stop" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}"><span class="rc-row-lead rc-stop-glyph">${rgIcon(isStation ? 'train' : 'pin')}</span><span class="row-main"><span class="row-title rc-row-title">${highlight(s.n, q)}</span><span class="row-meta rc-row-meta">${esc(AGENCY_SHORT[a.id])}${isStation ? ' · Station' : ' · Stop'}${d ? ` · ${esc(d)}` : ''}</span>${shown.length ? `<span class="rc-row-badges"><span class="visually-hidden">Lines: </span>${shown.map(r => badgeHtml(r)).join('')}${unique.length > shown.length ? `<span class="rc-more">+${unique.length - shown.length}</span>` : ''}</span>` : ''}</span>${ICONS.chevron}</button></li>`;
   }).join('')}</ul></section>` : '';
   // A query that starts with a house number is almost always an address.
   if (/^\d+\s+\S/.test(q.trim())) parts.push(places, linesHtml, stopsHtml);
   else if (correction || stationsLead(q, stops)) parts.push(linesHtml, stopsHtml, places);
   else parts.push(linesHtml, places, stopsHtml);
-  return `<div class="search-results">${parts.filter(Boolean).join('')}</div>`;
+  return `<div class="search-results rc-search">${parts.filter(Boolean).join('')}</div>`;
 }
 
 /* ---------- Route ---------- */
@@ -1666,17 +1922,17 @@ function openRoute(key) {
 
 function viewRoute({ key }) {
   const info = idx.routes.get(key);
-  if (!info) return `${backHeader()}<p class="empty">This line is no longer in the schedule data.</p>`;
+  if (!info) return `${backHeader()}<div class="rc-page"><p class="rc-empty-line">This line is no longer in the schedule data.</p></div>`;
   const { a, r } = info;
   const stopMap = idx.stopById.get(a.id);
   const stops = r.stops.map(id => stopMap.get(id)).filter(Boolean);
   const vehicles = liveVehicles().filter(x => x.route?.key === key);
   const cov = coverage(a.id);
   const rt = state.realtime;
-  let liveLine;
+  let liveLine, liveKind = 'scheduled';
   if (!rt?.configured) liveLine = 'Scheduled service. Live data is not connected.';
   else if (!cov.vehicles) liveLine = `${AGENCY_SHORT[a.id]} does not share vehicle locations. Scheduled service is shown.`;
-  else if (vehicles.length) liveLine = `${ICONS.live}<span class="status-live">${plural(vehicles.length, 'vehicle')} in service</span> · ${esc(ageLabel(rt.vehicles?.headerTimestamp))}`;
+  else if (vehicles.length) { liveKind = 'live'; liveLine = `${plural(vehicles.length, 'vehicle')} in service · ${esc(ageLabel(rt.vehicles?.headerTimestamp))}`; }
   else liveLine = 'No vehicles are reporting on this line right now.';
 
   const vehicleStops = new Map();
@@ -1686,19 +1942,26 @@ function viewRoute({ key }) {
   }
   const alerts = activeAlerts({ agencyId: a.id, routeKeys: [key] });
   const mode = modeName(info);
+  const connections = s => {
+    const seen = new Set([info.badge]);
+    return sortRoutes(routesForStop(a.id, s.id)).filter(x => !seen.has(x.badge) && seen.add(x.badge)).slice(0, 4);
+  };
   return `${backHeader()}
-    <div class="hero">
-      ${badgeHtml(info, true)}
-      <h1 class="title-1">${esc(info.title)}</h1>
-      <p class="caption">${esc(a.name)} · ${esc(mode)}${r.d ? ` · Toward ${esc(displayName(r.d))}` : ''}</p>
-      <p class="caption" style="margin-top:4px">${liveLine}</p>
-      ${(r.shapes || []).some(sh => sh?.length > 1) ? '' : `<p class="area-note shape-missing">${esc(a.name)} has not published a route shape for this line, so the map shows its stops only.</p>`}
-    </div>
-    ${alertsHtml(alerts)}
-    <section class="section"><h2 class="label"><span>Stops</span><span>${stops.length}</span></h2>
-      <ol class="line-diagram" style="--line-color:${esc(info.color)}">${stops.map(s => {
+    <header class="rc-hero rc-peek rc-route-hero" style="--line-color:${esc(info.color)}">
+      <div class="rc-route-mark">${badgeHtml(info, true)}<span class="rc-eyebrow">${esc(AGENCY_SHORT[a.id] || a.name)} · ${esc(mode)}</span></div>
+      <h1 class="rc-title">${esc(info.title)}</h1>
+      ${r.d ? `<p class="rc-sub">Toward ${esc(displayName(r.d))}</p>` : ''}
+      <p class="rc-live-chip is-${liveKind}">${liveKind === 'live' ? ICONS.live : rgIcon('clock')}<span>${liveLine}</span></p>
+      ${(r.shapes || []).some(sh => sh?.length > 1) ? '' : `<p class="area-note shape-missing rc-note">${esc(a.name)} has not published a route shape for this line, so the map shows its stops only.</p>`}
+    </header>
+    ${alerts.length ? `<div class="rc-alerts">${alertsHtml(alerts)}</div>` : ''}
+    <section class="rc-section" aria-labelledby="rcStopsTitle">
+      <div class="rc-section-head"><h2 id="rcStopsTitle" class="rc-label">Stops</h2><span class="rc-count">${plural(stops.length, 'stop')}</span></div>
+      <ol class="rc-line" style="--line-color:${esc(info.color)}">${stops.map((s, i) => {
         const count = vehicleStops.get(s.id);
-        return `<li><button data-action="stop" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}"><span class="node"></span><span class="stop-name">${esc(s.n)}</span>${count ? `<span class="vehicle-here">${plural(count, 'vehicle')} here</span>` : ''}</button></li>`;
+        const links = connections(s);
+        const end = i === 0 || i === stops.length - 1;
+        return `<li class="rc-line-stop${end ? ' is-end' : ''}${count ? ' has-vehicle' : ''}"><button class="rc-line-btn" data-action="stop" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}"><span class="rc-line-node" aria-hidden="true"></span><span class="rc-line-text"><span class="rc-line-name">${esc(s.n)}</span>${links.length ? `<span class="rc-line-links"><span class="visually-hidden">Connections: </span>${links.map(x => badgeHtml(x)).join('')}</span>` : ''}</span>${count ? `<span class="rc-line-veh">${ICONS.live}<span>${plural(count, 'vehicle')} here</span></span>` : ''}${ICONS.chevron}</button></li>`;
       }).join('')}</ol>
     </section>`;
 }
@@ -1724,45 +1987,58 @@ function liveUnavailableReason(reasons) {
 
 function viewStop({ agency, stop }) {
   const place = placeFor(agency, stop);
-  if (!place) return `${backHeader()}<p class="empty">This stop is no longer in the schedule data.</p>`;
+  if (!place) return `${backHeader()}<div class="rc-page"><p class="rc-empty-line">This stop is no longer in the schedule data.</p></div>`;
   const { a, s } = place;
   const isSaved = state.saved.some(x => x.a === a.id && x.id === s.id);
   const isStation = s.k || idx.children.has(stopKey(a.id, s.id));
   const cov = coverage(a.id);
   const alerts = activeAlerts({ agencyId: a.id, routeKeys: place.routes.map(r => r.key), stopIds: place.ids });
   const arrivals = state.realtime?.version === 2 ? cachedArrivals(place) : rtConfigured() && cov.arrivals ? cachedArrivals(place) : null;
-
-  let departures;
+  // Live predictions and schedule-only information never look alike: live rows carry the live
+  // signal and a status; anything without predictions says plainly that it is schedule only.
+  const scheduleOnly = (title, text) => `<div class="rc-empty is-schedule"><span class="rc-empty-icon">${rgIcon('clock')}</span><p><strong>${title}</strong> ${text}</p></div>`;
+  let departures, live = false;
   if (!rtConfigured()) {
-    departures = '<p class="empty">Live arrivals are not connected on this server. The lines that serve this stop are listed below.</p>';
+    departures = scheduleOnly('Schedule only.', 'Live arrivals are not connected on this server. The lines that serve this stop are listed below.');
   } else if ((state.realtime?.version !== 2 && !cov.arrivals) || arrivals?.status === 'unverified') {
     const why = liveUnavailableReason(arrivals?.reasons?.length ? arrivals.reasons : state.planStatus?.liveReasons?.[a.id]);
-    departures = `<p class="empty">Live arrivals for ${esc(AGENCY_SHORT[a.id])} are unavailable right now. ${esc(why || 'Rove only shows predictions it can match to the schedule.')} The lines that serve this stop are listed below.</p>`;
+    departures = scheduleOnly('Schedule only.', `Live arrivals for ${esc(AGENCY_SHORT[a.id])} are unavailable right now. ${esc(why || 'Rove only shows predictions it can match to the schedule.')} The lines that serve this stop are listed below.`);
   } else if (!arrivals) {
-    departures = '<p class="empty" aria-busy="true">Loading live arrivals.</p>';
+    departures = '<div class="rc-empty" aria-busy="true"><span class="spinner" aria-hidden="true"></span><p>Loading live arrivals.</p></div>';
   } else if (arrivals.status === 'error') {
-    departures = '<p class="empty">Live arrivals could not be loaded. Rove will try again shortly.</p>';
+    departures = scheduleOnly('Live arrivals could not be loaded.', 'Rove will try again shortly.');
   } else if (!arrivals.groups.length) {
-    departures = '<p class="empty">No live predictions for the next three hours. Service may have ended for the day, or vehicles may not be reporting.</p>';
+    departures = scheduleOnly('No live predictions for the next three hours.', 'Service may have ended for the day, or vehicles may not be reporting.');
   } else {
-    departures = `<ul class="departures">${arrivals.groups.slice(0, 8).map((g, i) => departureRow(g, i === 0, a.id)).join('')}</ul>`;
+    live = true;
+    departures = `<ul class="rc-deps">${arrivals.groups.slice(0, 8).map((g, i) => departureRow(g, i === 0, a.id)).join('')}</ul>`;
   }
-  const canceled = arrivals?.canceled?.length ? `<ul class="rows canceled-list">${arrivals.canceled.slice(0, 4).map(c => `<li><div class="row">${c.route ? badgeHtml(c.route) : `<span class="badge" style="background:var(--fill);color:var(--ink)">${esc(c.routeName || 'Trip')}</span>`}<span class="row-main"><span class="row-title status-canceled">${c.reason === 'stop-skipped' ? 'Not stopping here' : 'Canceled'}</span><span class="row-meta">${c.headsign ? `Toward ${esc(c.headsign)}` : 'One trip'}</span></span></div></li>`).join('')}</ul>` : '';
-  const ageText = arrivals?.feedTs ? ` · ${ageLabel(arrivals.feedTs)}` : '';
-  const staleText = arrivals?.stale ? ' <span class="status-stale">Live times may be out of date.</span>' : '';
+  const canceled = arrivals?.canceled?.length ? `<ul class="rows canceled-list rc-canceled">${arrivals.canceled.slice(0, 4).map(c => `<li class="rc-cancel">${c.route ? badgeHtml(c.route) : `<span class="badge" style="background:var(--rg-line);color:var(--rg-ink)">${esc(c.routeName || 'Trip')}</span>`}<span class="rc-cancel-text"><strong class="status-canceled">${c.reason === 'stop-skipped' ? 'Not stopping here' : 'Canceled'}</strong><span>${c.headsign ? `Toward ${esc(c.headsign)}` : 'One trip'}</span></span></li>`).join('')}</ul>` : '';
+  const fresh = arrivals?.feedTs ? ageLabel(arrivals.feedTs) : '';
+  const lines = [...new Map(place.routes.map(r => [r.badge, r])).values()];
+  const saveLabel = isSaved ? 'Remove from saved stops' : 'Save this stop';
 
-  return `${backHeader(`<button class="icon-button" data-action="save" aria-pressed="${isSaved}" aria-label="${isSaved ? 'Remove from saved stops' : 'Save this stop'}">${isSaved ? ICONS.starFilled : ICONS.star}</button>`)}
-    <div class="hero">
-      <h1 class="title-1">${esc(s.n)}</h1>
-      <p class="caption">${esc(a.name)}${isStation ? ' · Station' : ' · Stop'}${esc(ageText)}${staleText}</p>
+  return `${backHeader(`<button class="icon-button rc-save" data-action="save" aria-pressed="${isSaved}" aria-label="${saveLabel}">${isSaved ? ICONS.starFilled : ICONS.star}</button>`)}
+    <header class="rc-hero rc-peek">
+      <p class="rc-eyebrow">${esc(a.name)}${isStation ? ' · Station' : ' · Stop'}</p>
+      <h1 class="rc-title">${esc(s.n)}</h1>
+      ${lines.length ? `<div class="rc-hero-lines" aria-hidden="true">${lines.slice(0, 8).map(r => badgeHtml(r)).join('')}${lines.length > 8 ? `<span class="rc-more">+${lines.length - 8}</span>` : ''}</div>` : ''}
+    </header>
+    <div class="rc-actions">
+      <button class="rc-action is-primary" data-action="plan-to" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">${rgIcon('arrow')}<span>Directions</span></button>
+      <button class="rc-action" data-action="plan-from" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">${rgIcon('route')}<span>Leave from here</span></button>
     </div>
-    <section class="section" style="margin-top:4px"><h2 class="label">Departures</h2>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary" data-action="access-departures" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Read next departures aloud</button>` : ''}${departures}${canceled}</section>
-    ${alerts.length ? `<div style="margin-top:16px">${alertsHtml(alerts, 1)}</div>` : ''}
-    <div class="action-bar" style="margin-top:20px">
-      <button class="button primary" data-action="plan-to" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Directions</button>
-      <button class="button secondary" data-action="plan-from" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">Leave from here</button>
-    </div>
-    <section class="section"><h2 class="label"><span>Lines here</span><span>${place.routes.length}</span></h2><ul class="rows">${place.routes.map(info => `<li><button class="row" data-action="route" data-key="${esc(info.key)}">${badgeHtml(info)}<span class="row-main"><span class="row-title">${esc(info.title)}</span></span>${ICONS.chevron}</button></li>`).join('')}</ul></section>`;
+    <section class="rc-section" aria-labelledby="rcDepTitle">
+      <div class="rc-section-head"><h2 id="rcDepTitle" class="rc-label">Departures</h2>${live ? `<span class="rc-fresh${arrivals.stale ? ' is-stale' : ''}">${ICONS.live}<span>Live${fresh ? ` · ${esc(fresh)}` : ''}</span></span>` : ''}</div>
+      ${arrivals?.stale ? '<p class="rc-stale status-stale" role="note">Live times may be out of date.</p>' : ''}
+      ${document.body.classList.contains('rove-accessible') ? `<button class="rc-read" data-action="access-departures" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">${rgIcon('speaker')}<span>Read next departures aloud</span></button>` : ''}
+      ${departures}${canceled}
+    </section>
+    ${alerts.length ? `<div class="rc-alerts">${alertsHtml(alerts, 1)}</div>` : ''}
+    <section class="rc-section" aria-labelledby="rcLinesTitle">
+      <div class="rc-section-head"><h2 id="rcLinesTitle" class="rc-label">Lines here</h2><span class="rc-count">${place.routes.length}</span></div>
+      <ul class="rows rc-rows">${place.routes.map(info => `<li><button class="row rc-row" data-action="route" data-key="${esc(info.key)}"><span class="rc-row-lead">${badgeHtml(info)}</span><span class="row-main"><span class="row-title rc-row-title">${esc(info.title)}</span><span class="row-meta rc-row-meta">${esc(modeName(info))}</span></span>${ICONS.chevron}</button></li>`).join('')}</ul>
+    </section>`;
 }
 
 
@@ -1777,15 +2053,23 @@ function departureRow(group, first, agencyId) {
     const allMinutes = later.every(x => x.unit === 'min');
     laterText = allMinutes ? `Then ${later.map(x => x.value).join(' and ')} min` : `Then ${later.map(x => (x.unit ? `${x.value} ${x.unit}` : x.value)).join(' and ')}`;
   }
-  const badge = group.route ? badgeHtml(group.route) : `<span class="badge" style="background:var(--ink);color:var(--surface)">${esc(group.label)}</span>`;
+  const badge = group.route ? badgeHtml(group.route) : `<span class="badge" style="background:var(--rg-ink);color:var(--rg-bg)">${esc(group.label)}</span>`;
   const title = group.headsign ? `To ${displayName(group.headsign)}` : group.route ? group.route.title : `${AGENCY_SHORT[agencyId] || ''} ${group.label}`.trim();
-  return `<li class="departure${first ? ' first' : ''}">
-    <span class="when"><strong>${esc(m.value)}</strong>${m.unit ? `<span>${m.unit}</span>` : ''}</span>
-    <span class="what">${badge}<div class="row-title" style="margin-top:6px">${esc(title)}</div>
-      <div class="status ${status.cls}">${ICONS.live}${esc(status.text)}</div>
-      ${group.unscheduled ? `<div class="then">${group.antioch ? 'Antioch line train (Pittsburg Center and Antioch). BART does not publish a schedule match for these trips.' : 'Extra train not in the published schedule, so the line is not shown.'}</div>` : ''}
-      ${laterText ? `<div class="then">${esc(laterText)}</div>` : ''}</span>
-    <span class="row-end"></span></li>`;
+  const line = group.route ? `${group.route.badge} ${group.route.cat === 'bus' ? 'bus' : 'line'}` : group.label;
+  const when = m.unit ? `${m.value} ${m.unit === 'min' ? (m.value === '1' ? 'minute' : 'minutes') : m.unit}` : m.value;
+  const note = group.unscheduled ? (group.antioch ? 'Antioch line train (Pittsburg Center and Antioch). BART does not publish a schedule match for these trips.' : 'Extra train not in the published schedule, so the line is not shown.') : '';
+  // One clear sentence for screen readers; the visual row is hidden from them to avoid a jumble.
+  const spoken = `${line}, ${title}. ${when}. Live prediction, ${status.text.toLowerCase()}.${laterText ? ` ${laterText}.` : ''}${note ? ` ${note}` : ''}`;
+  return `<li class="rc-dep${first ? ' is-next' : ''}">
+    <span class="visually-hidden">${esc(spoken)}</span>
+    <span class="rc-dep-row" aria-hidden="true">
+      <span class="rc-dep-badge">${badge}</span>
+      <span class="rc-dep-main"><span class="rc-dep-dest">${esc(title)}</span>
+        <span class="rc-dep-status ${status.cls}">${ICONS.live}<span>${esc(status.text)}</span></span>
+        ${laterText ? `<span class="rc-dep-then">${esc(laterText)}</span>` : ''}
+        ${note ? `<span class="rc-dep-note">${esc(note)}</span>` : ''}</span>
+      <span class="rc-dep-when"><strong>${esc(m.value)}</strong>${m.unit ? `<span>${m.unit}</span>` : ''}</span>
+    </span></li>`;
 }
 
 /* ---------- Lines directory ---------- */
@@ -1793,9 +2077,9 @@ function departureRow(group, first, agencyId) {
 function viewLines() {
   const groups = state.network.agencies.map(a => {
     const infos = sortRoutes(a.routes.map(r => idx.routes.get(routeKey(a.id, r.id))).filter(Boolean));
-    return `<section class="section"><h2 class="label"><span>${esc(a.name)}</span><span>${infos.length}</span></h2><ul class="rows">${infos.map(info => `<li><button class="row" data-action="route" data-key="${esc(info.key)}">${badgeHtml(info)}<span class="row-main"><span class="row-title">${esc(info.title)}</span></span>${ICONS.chevron}</button></li>`).join('')}</ul></section>`;
+    return `<section class="rc-section rc-agency" aria-labelledby="rcAg-${esc(a.id)}"><div class="rc-section-head rc-sticky"><h2 id="rcAg-${esc(a.id)}" class="rc-label">${esc(a.name)}</h2><span class="rc-count">${plural(infos.length, 'line')}</span></div><ul class="rows rc-rows">${infos.map(info => `<li><button class="row rc-row" data-action="route" data-key="${esc(info.key)}"><span class="rc-row-lead">${badgeHtml(info)}</span><span class="row-main"><span class="row-title rc-row-title">${esc(info.title)}</span><span class="row-meta rc-row-meta">${esc(modeName(info))}</span></span>${ICONS.chevron}</button></li>`).join('')}</ul></section>`;
   });
-  return `${backHeader()}<div class="hero"><h1 class="title-1">All lines</h1><p class="caption">${idx.routes.size} lines from current schedules</p></div>${groups.join('')}`;
+  return `${backHeader()}<header class="rc-hero rc-peek"><p class="rc-eyebrow">Directory</p><h1 class="rc-title">All lines</h1><p class="rc-sub">${idx.routes.size} lines from current schedules</p></header>${groups.join('')}`;
 }
 
 /* ---------- Sources ---------- */
@@ -1821,15 +2105,27 @@ function accessVibrate(pattern = [90]) {
   if (accessPreference('haptics', true) && navigator.vibrate) navigator.vibrate(pattern);
 }
 function viewAccessNearby() {
- const fix=state.accessLocationFix;
- const valid=state.userLocation && fix && Date.now()-fix.time<60000 && Number.isFinite(fix.accuracy);
- const uncertain=!valid || fix.accuracy>65;
- const items=state.userLocation ? nearbyPlaces(state.userLocation,8) : [];
- return `${backHeader()}<div class="hero"><h1 class="title-1">Nearby transit stops</h1><p class="caption">Stop locations from Bay Area transit schedules</p></div>
- <section class="section"><button class="button primary" data-action="access-refresh-location">${state.userLocation?'Refresh my location':'Find my location'}</button>
- <p class="access-location-status" role="status">${!valid?'Your current location accuracy is unknown. Distances may be inaccurate.':`Location accuracy: approximately ${Math.round(fix.accuracy)} metres. ${uncertain?'Accuracy is too low to locate an exact stop.':'Distances are estimates, not walking directions.'}`}</p>
- <p>GPS cannot identify a safe crossing, platform edge, or exact boarding position. Confirm the stop and direction before boarding.</p></section>
- <section class="section"><h2>Closest stops</h2>${items.length?`<ol class="access-nearby-list">${items.map(({place,d})=>`<li><h3>${esc(place.s.n)}</h3><p>${esc(AGENCY_SHORT[place.a.id]||place.a.name)} · Approximately ${Math.round(d/10)*10} metres straight-line distance${uncertain?' (low confidence)':''}</p><p>Routes: ${esc(place.routes.slice(0,7).map(r=>r.title).join(', ')||'Not listed')}</p><button class="button primary" data-action="access-select-stop" data-agency="${esc(place.a.id)}" data-stop="${esc(place.s.id)}">Select this stop and check departures</button></li>`).join('')}</ol>`:'<p class="empty">No nearby stops available yet. Refresh location, or search for a stop by name.</p>'}</section>`;
+  const fix = state.accessLocationFix;
+  const valid = state.userLocation && fix && Date.now() - fix.time < 60000 && Number.isFinite(fix.accuracy);
+  const uncertain = !valid || fix.accuracy > 65;
+  const items = state.userLocation ? nearbyPlaces(state.userLocation, 8) : [];
+  const accuracy = !valid ? 'Your current location accuracy is unknown. Distances may be inaccurate.' : `Location accuracy: approximately ${Math.round(fix.accuracy)} metres. ${uncertain ? 'Accuracy is too low to locate an exact stop.' : 'Distances are estimates, not walking directions.'}`;
+  const card = ({ place, d }, i) => {
+    const lines = [...new Map(place.routes.map(r => [r.badge, r])).values()];
+    const isStation = place.s.k || idx.children.has(stopKey(place.a.id, place.s.id));
+    return `<li class="rc-near"><div class="rc-near-head"><span class="rc-near-rank" aria-hidden="true">${i + 1}</span><div class="rc-near-text"><h3>${esc(place.s.n)}</h3>
+      <p class="rc-near-meta">${esc(AGENCY_SHORT[place.a.id] || place.a.name)}${isStation ? ' · Station' : ''} · Approximately ${Math.round(d / 10) * 10} metres straight-line distance${uncertain ? ' (low confidence)' : ''}</p></div></div>
+      <p class="rc-near-routes"><span class="visually-hidden">Routes: ${esc(place.routes.slice(0, 7).map(r => r.title).join(', ') || 'Not listed')}</span><span aria-hidden="true" class="rc-near-badges">${lines.slice(0, 8).map(r => badgeHtml(r)).join('')}${lines.length > 8 ? `<span class="rc-more">+${lines.length - 8}</span>` : ''}${lines.length ? '' : 'Routes not listed'}</span></p>
+      <button class="rc-near-go" data-action="access-select-stop" data-agency="${esc(place.a.id)}" data-stop="${esc(place.s.id)}"><span>Select this stop and check departures</span>${rgIcon('arrow')}</button></li>`;
+  };
+  return `${backHeader()}<header class="rc-hero rc-peek"><p class="rc-eyebrow">Near you</p><h1 class="rc-title">Nearby transit stops</h1><p class="rc-sub">Stop locations from Bay Area transit schedules</p></header>
+  <section class="rc-section rc-page">
+    <div class="rc-locate${valid && !uncertain ? ' is-good' : ' is-unsure'}"><span class="rc-locate-icon">${rgIcon('locate')}</span><p class="access-location-status" role="status">${accuracy}</p></div>
+    <button class="rc-action rc-wide" data-action="access-refresh-location">${rgIcon('refresh')}<span>${state.userLocation ? 'Refresh my location' : 'Find my location'}</span></button>
+    <p class="rc-caution">${rgIcon('warning')}<span>GPS cannot identify a safe crossing, platform edge, or exact boarding position. Confirm the stop and direction before boarding.</span></p>
+  </section>
+  <section class="rc-section" aria-labelledby="rcNearTitle"><div class="rc-section-head"><h2 id="rcNearTitle" class="rc-label">Closest stops</h2>${items.length ? `<span class="rc-count">${items.length}</span>` : ''}</div>
+  ${items.length ? `<ol class="rc-nearby">${items.map(card).join('')}</ol>` : '<div class="rc-empty"><span class="rc-empty-icon">' + rgIcon('pin') + '</span><p>No nearby stops available yet. Refresh location, or search for a stop by name.</p></div>'}</section>`;
 }
 function viewAccess() {
   const setting = (key, title, detail, on) => `<label class="access-setting rg-switch-row"><span class="rg-switch-text"><strong id="rgSet-${key}">${title}</strong><span class="rg-switch-detail" id="rgSet-${key}-detail">${detail}</span></span><input type="checkbox" role="switch" class="rg-switch" data-access-setting="${key}" aria-labelledby="rgSet-${key}" aria-describedby="rgSet-${key}-detail" ${on ? 'checked' : ''}/></label>`;
@@ -5004,7 +5300,7 @@ window.addEventListener('offline', updateOnlineStatus);
 window.addEventListener('online', () => { updateOnlineStatus(); loadRealtime(); });
 
 async function init() {
-  document.body.classList.add('rove-accessible');
+  document.body.classList.add('rove-accessible'); setMode();
   try {
     const response = await fetch('public/data/network.json');
     if (!response.ok) throw new Error(`The transit network could not be loaded (${response.status}).`);
