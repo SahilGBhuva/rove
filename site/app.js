@@ -4033,12 +4033,17 @@ function showWake() {
   wrap.querySelector('#rgWakeSkip').addEventListener('click', () => { close(); (document.querySelector('#panel h1, #panel [data-action="voice-destination"]'))?.focus?.({ preventScroll: true }); });
   wrap.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); } });
   wrap.querySelector('#rgWakeGo').focus({ preventScroll: true });
-  // Some desktop browsers permit this on load; iOS/Safari often requires the first tap.
-  // The focused, labelled start control is the reliable screen-reader fallback.
-  if (accessPreference('speak', true) && !speakOut('Tap to start Rove.')) {
-    announceAccess('Tap to start Rove.');
-  }
+  // No speech before the first tap: iPhone Safari queues it silently, and clearing that queue on
+  // the tap made the first real prompt get dropped. Screen readers read the focused button.
+  announceAccess('Tap to start Rove.');
 }
+/* The first tap anywhere unlocks speech and sound cues for the visit. It runs
+ * in the capture phase, so it happens inside the tap before any button's own handler. */
+function unlockAudio() {
+  try { speaker?.prime?.(); } catch { /* speech unavailable */ }
+  try { window.RoveVoice?.unlock?.(); } catch { /* no Web Audio */ }
+}
+['pointerup', 'touchend', 'click', 'keydown'].forEach(type => document.addEventListener(type, unlockAudio, { capture: true, passive: true }));
 function voiceCancelAll() {
   voiceTurn++;
   try { recognition?.abort(); } catch { /* none active */ }

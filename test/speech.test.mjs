@@ -157,3 +157,34 @@ test('app.js speaks only through RoveSpeech, and the route-choice button stays c
   assert.match(app, /case 'access-all-routes': \{\s*const order = sortedItineraryIndexes\(\)\.slice\(0, 3\)/);
   assert.match(app, /routeChoiceSpeech\(its\[i\], n \+ 1\)/);
 });
+
+test('prime() speaks one silent utterance inside the tap, once, to unlock iPhone speech', () => {
+  const { env, log } = fakeEnv();
+  const s = createSpeaker(env);
+  assert.equal(s.prime(), true);
+  assert.equal(s.prime(), false, 'only once per visit');
+  assert.deepEqual(log.filter(e => e[0] === 'speak'), [['speak', ' ']]);
+  assert.equal(env.synth.queue[0].volume, 0, 'the unlock utterance is silent');
+});
+
+test('speech queued before the tap is cleared by prime() so it cannot block the first prompt', () => {
+  const { env, log } = fakeEnv();
+  env.synth.pending = true; // iPhone: speak() before any tap sits queued and never starts
+  createSpeaker(env).prime();
+  assert.deepEqual(log.slice(0, 2), [['cancel'], ['speak', ' ']]);
+});
+
+test('a prompt right after stop() waits a moment instead of being dropped by WebKit', () => {
+  let t = 1000;
+  const { env, log, runTimers } = fakeEnv('dropAfterCancel');
+  env.now = () => t;
+  const s = createSpeaker(env);
+  env.synth.speaking = true; // something is playing
+  s.stop();                  // cancels
+  env.synth.justCanceled = true;
+  assert.equal(s.speak('Where are you starting from?'), 'started');
+  assert.ok(!log.some(e => e[0] === 'speak' && e[1] === 'Where are you starting from?'), 'not spoken in the same tick as cancel');
+  env.synth.justCanceled = false; t += 60;
+  runTimers();
+  assert.ok(log.some(e => e[0] === 'speak' && e[1] === 'Where are you starting from?'), 'spoken after the pause');
+});

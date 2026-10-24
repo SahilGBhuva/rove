@@ -130,3 +130,9 @@ test('voice turn token prevents stale prompts from reopening the microphone', ()
   const at = app.indexOf('function patchResultsLive()');
   assert.doesNotMatch(app.slice(at, at + 200), /voiceTurn/, 'live route chips do not depend on voice turns (turn was undefined there)');
 });
+
+test('no speech before the first tap; the first tap anywhere unlocks speech for the visit', () => {
+  assert.doesNotMatch(app, /speakOut\('Tap to start Rove\.'\)/, 'iPhone queues it silently and the tap then drops the real prompt');
+  assert.match(app, /\['pointerup', 'touchend', 'click', 'keydown'\]\.forEach\(type => document\.addEventListener\(type, unlockAudio, \{ capture: true/);
+  assert.match(app, /speaker\?\.prime\?\.\(\)/);
+});

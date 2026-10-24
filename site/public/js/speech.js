@@ -48,6 +48,9 @@
     let retained = [];
     let watchdog = null;
     let status = { state: 'idle', text: '' };
+    let primed = false, primer = null, lastCancel = -Infinity;
+    const now = env.now || (() => Date.now());
+    const cancel = () => { try { synth.cancel(); } catch { /* nothing to cancel */ } lastCancel = now(); };
 
     const supported = () => Boolean(synth && typeof synth.speak === 'function' && typeof Utterance === 'function');
     const disarm = () => { if (watchdog) { clear(watchdog); watchdog = null; } };
@@ -60,7 +63,7 @@
       generation++;
       disarm();
       retained = [];
-      if (supported() && (synth.speaking || synth.pending)) { try { synth.cancel(); } catch { /* already stopped */ } }
+      if (supported() && (synth.speaking || synth.pending)) cancel();
       if (status.state === 'speaking' || status.state === 'starting') set({ state: 'stopped', text: status.text });
     }
 
@@ -71,6 +74,8 @@
       if (!parts.length) return 'empty';
       if (!supported()) { set({ state: 'unsupported', text: message }); return 'unsupported'; }
       if (env.isHidden?.()) { set({ state: 'failed', text: message, reason: 'hidden' }); return 'failed'; }
+      // Just cancelled (this tick) counts as busy: WebKit drops speak() straight after cancel().
+      const justCancelled = now() - lastCancel < 50;
       const busy = Boolean(synth.speaking || synth.pending);
       const my = ++generation;
       disarm();
@@ -110,13 +115,32 @@
         // Engines that accept speak() but never start are reported, not ignored.
         watchdog = later(() => { watchdog = null; if (my === generation && !started && !synth.speaking) fail('no-start'); }, opts.watchdogMs || 2500);
       };
-      if (busy) { try { synth.cancel(); } catch { /* nothing to cancel */ } later(queue, 60); }
+      if (busy) { cancel(); later(queue, 60); }
+      else if (justCancelled) later(queue, 60);
       else queue(); // Synchronous: still inside the rider's tap, which unlocks audio on iOS.
       return 'started';
     }
 
+    /* iPhone Safari only lets speech start inside a tap, and then for the rest of the visit.
+     * Call this synchronously from the first tap: it speaks a silent utterance to unlock speech,
+     * so prompts that start later (after a render, a timer or a network reply) are heard. */
+    function prime() {
+      if (primed || !supported()) return false;
+      primed = true;
+      try {
+        if (synth.pending && !synth.speaking) cancel(); // anything queued before the tap would block
+        try { if (synth.paused) synth.resume(); } catch { /* resume unsupported */ }
+        primer = new Utterance(' ');
+        primer.volume = 0;
+        primer.lang = 'en-US';
+        synth.speak(primer);
+      } catch { /* the next speak still tries */ }
+      return true;
+    }
+
     return {
-      speak, stop, supported,
+      speak, stop, supported, prime,
+      get primed() { return primed; },
       get status() { return status; },
       get retainedCount() { return retained.length; },
       onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
