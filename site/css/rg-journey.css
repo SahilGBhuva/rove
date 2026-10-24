@@ -229,3 +229,5 @@
   .rg-nav .rg-card, .rg-nav .rg-flash, .rg-nav .rg-flash .rg-icon, .rg-jl *, .rg-jl *::after, .rg-nav .rg-confirm, .rg-nav .rg-secondary, .rg-nav .rg-demo-skip { animation: none !important; transition: none !important; }
   .rg-jl-seg.now::after, .rg-jl-here::after, .rg-jl-node.now::after { content: none; }
 }
+/* Arrival: the drawn completion mark is the single success symbol; no second medallion. */
+.rg-nav.is-arrived .rg-kind { display: none; }

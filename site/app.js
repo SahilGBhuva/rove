@@ -2171,7 +2171,7 @@ function viewResults() {
       const open = plan.expanded === i;
       const warnings = routeWarnings(it);
       // Focus order stays: route card, Listen, Start. Listen and Start share one action row.
-      const listen = accessible ? `<button class="button secondary audio-route rg-route-listen" data-action="access-route" data-index="${i}" aria-label="Listen to route ${n + 1} stop by stop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9.5v5h3.2l4.3 3.8V5.7L7.7 9.5Z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/></svg><span>Listen to <span class="nw">route ${n + 1}</span></span></button>` : '';
+      const listen = accessible ? `<button class="button secondary audio-route rg-route-listen" data-action="access-route" data-index="${i}" aria-label="Listen to route ${n + 1} stop by stop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9.5v5h3.2l4.3 3.8V5.7L7.7 9.5Z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/></svg><span>Listen</span></button>` : '';
       const start = open ? `<button class="button primary rg-route-start" data-action="nav-start" data-index="${i}"><span>Start route ${n + 1}</span>${rgIcon('arrow')}</button>` : '';
       return `<li class="rg-route-item${open ? ' is-open' : ''}" style="--i:${n}"><button class="itinerary rg-route" data-action="it-toggle" data-index="${i}" aria-expanded="${open}" aria-label="${esc(routeChoiceSpeech(it, n + 1))}">
         <span class="rg-route-top"><span class="rg-route-dur">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}</span>${its.length > 1 && i === fastestIndex ? '<span class="rg-route-tag">Fastest</span>' : ''}<span class="rg-route-times">${esc(clock(new Date(it.startTime)))}<i aria-hidden="true">–</i>${esc(clock(new Date(it.endTime)))}</span><svg class="rg-route-chev" viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 7.75 4.5 4.5 4.5-4.5"/></svg></span>
@@ -2642,7 +2642,9 @@ function routeStripHtml(it) {
 
 /* Honest arrival summary: only what Rove actually recorded during this trip. */
 function arrivalSummaryHtml(nav) {
-  const minutes = Math.max(1, Math.round((navNow(nav) - nav.gs.startedAt) / 60000));
+  // A demo's clock can be skipped ahead, so it reports the simulated trip's scheduled length instead.
+  const scheduled = (Date.parse(nav.it.endTime) - Date.parse(nav.it.startTime)) / 60000;
+  const minutes = Math.max(1, Math.round(nav.demo && Number.isFinite(scheduled) ? scheduled : (navNow(nav) - nav.gs.startedAt) / 60000));
   const lines = (nav.it.legs || []).filter(l => l.mode === 'TRANSIT' && !l.staySeated).map(l => legInfo(l));
   const confirmed = nav.gs.history.length;
   // Draw the mark only when arrival first renders; a later re-render shows it already complete.
