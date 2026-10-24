@@ -3751,6 +3751,7 @@ async function probeVoiceServer() {
     const res = await fetch('/api/v2/transcribe', { cache: 'no-store' });
     const body = await res.json();
     voiceServer = res.ok && body?.available === true;
+    voiceServerModel = body?.model || null;
   } catch { voiceServer = null; }
 }
 
@@ -3847,9 +3848,16 @@ function voiceCancelAll() {
 /* ---- Voice conversation: everything a rider needs is spoken and signalled by sound, so the
  * whole destination and route choice works without seeing the screen. ---- */
 let voiceIntent = null; // set while Rove waits for a spoken answer (yes/no, start/next/repeat)
+let voiceServerModel = null; // which server model is configured; a failure is remembered per model
 const VOICE_DOWN_KEY = 'rove-voice-server-down';
 function earcon(kind) { try { window.RoveVoice?.earcon?.(kind); } catch { /* no audio */ } }
-function voiceServerKnownDown() { try { return Date.now() - Number(localStorage.getItem(VOICE_DOWN_KEY) || 0) < 6 * 3600e3; } catch { return false; } }
+function voiceServerKnownDown() {
+  try {
+    const mark = JSON.parse(localStorage.getItem(VOICE_DOWN_KEY) || 'null');
+    // A new provider (for example after Groq is configured) is tried again straight away.
+    return Boolean(mark && mark.model === voiceServerModel && Date.now() - mark.at < 6 * 3600e3);
+  } catch { return false; }
+}
 function voiceMode() { return voiceServer !== false && !voiceServerKnownDown() && window.RoveVoice?.supported() && navigator.onLine ? 'server' : 'browser'; }
 /* Speak and resolve once finished (or after a reading-time estimate when the screen reader is the
  * voice), so the microphone never records Rove or VoiceOver. */
@@ -3970,7 +3978,7 @@ function voiceViaServer({ demo, leadIn = 1300 }) {
     if (body?.code === 'VOICE_BUSY') { voiceFail('voice-busy', demo); return; }
     // Rove's speech service is not usable here: fall back to the browser's recognizer right away.
     voiceServer = false;
-    try { localStorage.setItem(VOICE_DOWN_KEY, String(Date.now())); } catch { /* storage unavailable */ }
+    try { localStorage.setItem(VOICE_DOWN_KEY, JSON.stringify({ at: Date.now(), model: voiceServerModel })); } catch { /* storage unavailable */ }
     if (BrowserRecognition()) { capture = null; sayThenWait('Sorry, please say that once more after the tone.').then(() => { earcon('start'); setTimeout(() => voiceViaBrowser({ demo }), 320); }); return; }
     voiceFail(navigator.onLine ? 'voice-service' : 'offline', demo);
   }, error => {

@@ -69,3 +69,22 @@ test('cleans transcripts', () => {
   assert.equal(cleanTranscript('  Take me to  Chase Center. '), 'Take me to Chase Center');
   assert.equal(cleanTranscript(undefined), '');
 });
+
+test('Groq (free Whisper) path sends a multipart upload with model, language and a short prompt', async () => {
+  const { transcribeGroq, SHORT_PROMPT, GROQ_MODEL } = await import('../api/v2/transcribe.mjs');
+  let sent;
+  const r = await transcribeGroq({ audio, mediaType: 'audio/webm;codecs=opus' }, { key: 'gsk_test', fetchImpl: async (url, init) => { sent = { url, init }; return { ok: true, status: 200, json: async () => ({ text: ' Lake Merritt. ' }) }; } });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.text, 'Lake Merritt');
+  assert.equal(sent.url, 'https://api.groq.com/openai/v1/audio/transcriptions');
+  assert.equal(sent.init.headers.Authorization, 'Bearer gsk_test');
+  assert.ok(sent.init.body instanceof FormData);
+  assert.equal(sent.init.body.get('model'), GROQ_MODEL);
+  assert.equal(sent.init.body.get('language'), 'en');
+  assert.equal(sent.init.body.get('file').name, 'speech.webm');
+  assert.ok(SHORT_PROMPT.split(/\s+/).length < 140, 'stays well under the 224-token Whisper prompt cap');
+  const busy = await transcribeGroq({ audio, mediaType: 'audio/mp4' }, { key: 'k', fetchImpl: async () => ({ ok: false, status: 429, json: async () => ({}) }) });
+  assert.equal(busy.body.code, 'VOICE_BUSY');
+  const bad = await transcribeGroq({ audio, mediaType: 'audio/mp4' }, { key: 'k', fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}) }) });
+  assert.equal(bad.body.code, 'VOICE_UNAVAILABLE');
+});
