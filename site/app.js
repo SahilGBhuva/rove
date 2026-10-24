@@ -2640,7 +2640,13 @@ async function submitPlan() {
     const best = sortedItineraryIndexes()[0];
     startResultsLive();
     if (plan.voiceFlow) Promise.race([loadResultsLive(), new Promise(r => setTimeout(r, 2500))]).then(() => voiceOfferRoutes(0));
-    else announceAccess(`${plural(Math.min(itineraries.length, 3), 'route')} found. ${routeChoiceSpeech(itineraries[best], 1)}`);
+    else {
+      // Reading route choices must be automatic after Find routes, not dependent on a second button.
+      // Say the route trade-off, every displayed option, and the exact action to take next.
+      const order = sortedItineraryIndexes().slice(0, 3);
+      const summary = `Routes from ${plan.from.name} to ${plan.to.name}. ${plural(order.length, 'route')} found. ${voiceRouteTradeoff(order, itineraries)} ${order.map((i, n) => routeChoiceSpeech(itineraries[i], n + 1)).join(' ')} To continue, choose a route and select Start navigation. Or tap Read route choices aloud to hear this again.`;
+      guideSay(summary, { force: true });
+    }
   } catch (error) {
     plan.loading = false;
     // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
