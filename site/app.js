@@ -2138,6 +2138,7 @@ function viewAccess() {
         ${setting('haptics', 'Vibration', 'For reminders and confirmations, on phones that support it. iPhone Safari does not.', accessPreference('haptics', true))}
       </div>
       <button type="button" class="rg-quiet" data-action="access-demo">${rgIcon('speaker')}<span>Test Rove voice</span></button>
+      ${window.RoveMode ? (() => { const audio = RoveMode.get() === 'audio'; return `<div class="rg-group rg-mode-setting" role="group" aria-labelledby="rgModeTitle"><p class="rg-switch-text"><strong id="rgModeTitle">Display</strong><span class="rg-switch-detail">${audio ? 'Audio-first: no map, spoken guidance and large controls.' : 'Map view: map with a sliding panel. Spoken guidance still works.'}</span></p><button type="button" class="rg-quiet" data-action="mode-set" data-mode="${audio ? 'classic' : 'audio'}">${audio ? 'Switch to map view' : 'Switch to audio-first'}</button></div>`; })() : ''}
       <p class="rg-body rg-fine">When you speak a destination, the recording is sent to a speech-to-text service (through Vercel AI Gateway) to turn it into text. Rove does not store recordings. If that service is unavailable, Rove uses your browser's own voice input.</p>
     </section>
     <section class="rg-settings" aria-labelledby="rgHowTitle">
