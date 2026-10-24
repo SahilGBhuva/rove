@@ -25,7 +25,7 @@ export const PLANNING = Object.freeze({
   IMPRACTICAL_WAIT_SECONDS: 60 * 60,  // a single wait at a stop this long is never recommended
   LONG_WALK_LEG_METERS: 800,          // LONG_WALK warning (straight-line estimate)
   LONG_WALK_TOTAL_METERS: 1500,
-  DIRECT_WALK_MAX_METERS: 2500,       // closer than this (straight line), report the direct walk estimate
+  DIRECT_WALK_MAX_METERS: 3000,       // closer than this (straight line), report the direct walk estimate
   SEVERE_BACKTRACK_METERS: 3000,      // backtracking beyond max(this, trip distance) is not practical
 });
 const loaded = new Map();

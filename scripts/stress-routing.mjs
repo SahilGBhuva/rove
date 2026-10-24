@@ -18,7 +18,9 @@
 // (one vehicle, stops within 800 m of each end) used to catch missed direct rides.
 import {readFileSync, writeFileSync, existsSync} from 'node:fs';
 import {fileURLToPath, pathToFileURL} from 'node:url';
-import {planExperimental, planWithWalking, loadFor, dateContext, straightLineMeters} from '../api/v2/experimental-plan.mjs';
+import {planExperimental, planWithWalking, serviceWindow, straightLineMeters} from '../api/v2/experimental-plan.mjs';
+import {combineServiceDays} from '../experiments/bay-router/combine-days.mjs';
+import {walkSecondsForMeters} from '../experiments/bay-router/route.mjs';
 
 // Real Bay Area places. Each place: key -> [Photon query, city hint used to pick the right result].
 // Coordinates are NOT written here: they come from Photon (OpenStreetMap) once and are cached in
@@ -290,15 +292,13 @@ async function geocodeAll() {
 // ---- Independent naive baseline: earliest single-vehicle ride (no transfers). ----
 const timetables = new Map();
 function timetableFor(iso) {
-  const instant = new Date(iso);
-  const ctx = dateContext(instant);
-  const key = ctx.previousDay + '|' + ctx.day;
-  if (!timetables.has(key)) {
+  // Same two service days and time base as the planner (serviceWindow).
+  const window = serviceWindow(new Date(iso));
+  if (!timetables.has(window.key)) {
     timetables.clear();
-    const {context, timetable} = loadFor(instant);
-    timetables.set(key, {timetable, context});
+    timetables.set(window.key, {timetable: combineServiceDays(window.days), context: window.context});
   }
-  return timetables.get(key);
+  return timetables.get(window.key);
 }
 function lowerBound(connections, t) {
   let lo = 0, hi = connections.length;
@@ -311,7 +311,7 @@ export function oneSeatBaseline(timetable, from, to, requestSeconds, maxWalk = 8
     timetable.stops.forEach((s, i) => {
       if (!s[2] || !s[3]) return;
       const d = straightLineMeters(point, {lat: s[2], lon: s[3]});
-      if (d <= maxWalk) m.set(i, Math.ceil(d / 1.2));
+      if (d <= maxWalk) m.set(i, {seconds: walkSecondsForMeters(d), meters: d});
     });
     return m;
   };
@@ -323,14 +323,14 @@ export function oneSeatBaseline(timetable, from, to, requestSeconds, maxWalk = 8
   for (let ci = lowerBound(connections, requestSeconds); ci < connections.length; ci++) {
     const [a, b, dep, arr, trip, flags] = connections[ci];
     if (dep > requestSeconds + 4 * 3600 || (best && dep >= best.doorArrival)) break;
-    if (!boarded.has(trip) && (flags & 1) && access.has(a) && dep >= requestSeconds + access.get(a) + 60)
+    if (!boarded.has(trip) && (flags & 1) && access.has(a) && dep >= requestSeconds + access.get(a).seconds + 60)
       boarded.set(trip, {stop: a, dep});
     const on = boarded.get(trip);
     if (on && (flags & 2) && egress.has(b) && b !== on.stop) {
-      const door = arr + egress.get(b);
+      const door = arr + egress.get(b).seconds;
       if (!best || door < best.doorArrival)
         best = {doorArrival: door, agency: trips[trip][0], route: trips[trip][3], boardSeconds: on.dep,
-          walkMeters: Math.round((access.get(on.stop) + egress.get(b)) * 1.2)};
+          walkMeters: Math.round(access.get(on.stop).meters + egress.get(b).meters)};
     }
   }
   return best;
@@ -413,7 +413,7 @@ export function runOne(pair, band, geocodes, {planner = planExperimental, baseli
   row.oneSeat = null;
   if (baseline) {
     const {timetable, context} = timetableFor(iso);
-    const midnight = Date.parse(context.previousDay + 'T00:00:00-07:00');
+    const midnight = Date.parse(context.baseDay + 'T00:00:00-07:00');
     const requestSeconds = (requestMs - midnight) / 1000;
     const base = oneSeatBaseline(timetable, from, to, requestSeconds);
     row.oneSeat = base && {travelSeconds: Math.round(base.doorArrival - requestSeconds), route: `${base.agency}:${base.route}`,
@@ -455,9 +455,9 @@ function classify(row) {
         notes.push(`direct ${row.oneSeat.route} (${Math.round(row.oneSeat.travelSeconds / 60)} min) not offered; best offered ${Math.round(best / 60)} min with transfers`);
       }
     }
-    const walkSeconds = row.straightMeters * 1.3 / 1.2;
+    const walkSeconds = walkSecondsForMeters(row.straightMeters);
     if (row.straightMeters < 1600 && walkSeconds < top.travelSeconds - 60) {
-      issues.push('WALK_FASTER'); notes.push(`walking (~${Math.round(walkSeconds / 60)} min at 1.3x straight line) beats the ${Math.round(top.travelSeconds / 60)} min transit option`);
+      issues.push('WALK_FASTER'); notes.push(`walking (~${Math.round(walkSeconds / 60)} min, planner walking model) beats the ${Math.round(top.travelSeconds / 60)} min transit option`);
     }
     if (row.ratio > 2.5 && row.straightMeters > 1600) { issues.push('HIGH_RATIO'); notes.push(`takes ${row.ratio}x the 20 km/h reference`); }
     if (top.walkMeters > 1500 || top.longestWalkMeters > 800) { issues.push('LONG_WALK'); notes.push(`walks ${top.walkMeters} m (longest ${top.longestWalkMeters} m)`); }
@@ -511,8 +511,8 @@ function report(rows, summary, opts) {
   L.push('Definitions:', '');
   L.push('- **Success**: at least one practical itinerary. The 3 "no-coverage" pairs (Half Moon Bay, Sausalito, Pacifica: SamTrans, Golden Gate Transit and the ferries are not in the data) are excluded from success rates and must return no route.');
   L.push('- **Duration ratio**: door-to-door time from the requested departure to arrival, divided by the straight-line distance at 20 km/h (floor 10 min). Lower is better.');
-  L.push('- **One-seat baseline**: an independent, naive scan for the earliest single-vehicle ride from stops within 800 m of each end. `SLOWER_THAN_ONE_SEAT`: the top option has transfers and arrives more than 2 min later than that ride. `MISSED_ONE_SEAT`: no option is one-seat although the direct ride arrives within 10 min of the best option.');
-  L.push('- `WALK_FASTER`: under 1.6 km apart and walking 1.3× the straight line at 1.2 m/s beats the top option. Walk distances are straight-line estimates, as the planner reports them.', '');
+  L.push('- **One-seat baseline**: an independent, naive scan for the earliest single-vehicle ride from stops within 800 m of each end (same walking model as the planner). `SLOWER_THAN_ONE_SEAT`: the top option has transfers and arrives more than 2 min later than that ride. `MISSED_ONE_SEAT`: no option is one-seat although the direct ride arrives within 10 min of the best option.');
+  L.push('- `WALK_FASTER`: under 1.6 km apart and walking (the planner model: 1.25 × straight line at 1.2 m/s) beats the top option by more than a minute. Walk distances are straight-line estimates, as the planner reports them.', '');
   if (compare) {
     L.push('## Before / after', '');
     L.push('| Metric | Before | After |', '|---|---|---|');
