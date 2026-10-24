@@ -2354,27 +2354,18 @@ function routeLegDistance(nav, point) {
   if (!Array.isArray(coords) || coords.length < 2 || (step.leg.mode === 'TRANSIT' && legShapeMissing(step.leg))) return null;
   return RoveNavigation.distanceToPolyline(point, coords);
 }
-function maybeAdvanceNavigation(nav, fix) {
-  const step = nav.steps[nav.i];
-  if (!step?.leg || step.type === 'arrive') return;
-  const here = fix.point;
-  const target = [step.leg.to?.lon, step.leg.to?.lat];
-  if (!target.every(Number.isFinite)) return;
-  const radius = step.type === 'walk' ? 28 + Math.min(fix.accuracy, 25) :
-    step.type === 'drive' ? 65 + Math.min(fix.accuracy, 30) : 100 + Math.min(fix.accuracy, 30);
-  // A low-accuracy GPS point should never silently advance an itinerary.
-  if (fix.accuracy > 55) return;
-  const rideNearArrival = step.type !== 'ride' || Date.now() >= legEnd(step.leg).getTime() - 3 * 60000;
-  if ((step.type === 'walk' || step.type === 'drive' || step.type === 'ride') && rideNearArrival &&
-      RoveNavigation.meters(here, target) < radius) {
-    nav.i = Math.min(nav.i + 1, nav.steps.length - 1);
-    nav.maneuver = null; nav.spokenKey = null;
-    render();
-  }
-  // Boarding cannot be inferred merely because a train departed on the schedule.
-}
+// GPS never confirms boarding, alighting or a transfer. The guided journey
+// advances only when the rider activates its explicit confirmation control.
 async function navReroute(nav) {
   if (state.nav !== nav || nav.rerouting || !nav.destination || !nav.fix || !navigator.onLine) return;
+  // Never replan from an old or imprecise position: it could start on the
+  // wrong side of a street, platform or station. The rider can retry or search.
+  if (Date.now() - nav.fix.time > 30000 || !Number.isFinite(nav.fix.accuracy) || nav.fix.accuracy > 55) {
+    nav.status = 'GPS is too old or imprecise to reroute safely. Wait for a better signal, or search for a nearby stop.';
+    guideSay(nav.status, { force: true });
+    updateGuideLive();
+    return;
+  }
   const destination = nav.destination;
   nav.rerouting = true;
   nav.rerouteAt = Date.now();
