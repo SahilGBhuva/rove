@@ -1,21 +1,26 @@
-/* Rove design: results. Owned by one workstream; see docs/design/OWNERSHIP.md.
- * Route choices read like a printed transit itinerary: duration first, the lines you ride as
- * agency-coloured badges, then the facts that decide a choice (transfers, walking, live or not).
- * Every target is at least 48px, text is in rem, and all motion is removed under reduced motion. */
+/* Rove design: route results and route details. Owned by agent D; see docs/design/OWNERSHIP-V2.md.
+ * A route card reads like a printed transit itinerary, in decision order:
+ *   1. how long, and when you leave and arrive (the hero row),
+ *   2. the lines you ride as agency-coloured pills (text colour from readableText, always >= 4.5:1),
+ *   3. the stations you have to find: board, change, exit,
+ *   4. the deciding facts: transfers, walking, live or scheduled, then planner warnings.
+ * "Best" marks the planner's own top-ranked itinerary (Pareto + generalized cost), never a guess.
+ * Every target is at least 48px, text is in rem, the card works from 320px phones to the desktop
+ * sidebar (container queries, not viewport), and all motion is removed under reduced motion. */
 
 :root {
   --rg-chip-bg: color-mix(in srgb, var(--rg-ink) 6%, var(--rg-surface));
-  --rg-card-shadow: 0 1px 2px rgba(23, 32, 26, .05), 0 8px 22px -14px rgba(23, 32, 26, .22);
-  --rg-open-shadow: 0 14px 34px -18px rgba(31, 90, 61, .42);
+  --rg-card-shadow: 0 1px 1px rgba(23, 32, 26, .04), 0 2px 6px -2px rgba(23, 32, 26, .06), 0 14px 30px -20px rgba(23, 32, 26, .26);
+  --rg-open-shadow: 0 2px 4px rgba(31, 90, 61, .06), 0 22px 44px -24px rgba(31, 90, 61, .45);
   --rg-badge-ring: inset 0 0 0 1px rgba(0, 0, 0, .1);
   --rg-time-col: 3.75rem;
   --rg-node: 1.5rem;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --rg-chip-bg: color-mix(in srgb, var(--rg-ink) 8%, var(--rg-surface));
-    --rg-card-shadow: none;
-    --rg-open-shadow: none;
+    --rg-chip-bg: color-mix(in srgb, var(--rg-ink) 9%, var(--rg-surface));
+    --rg-card-shadow: 0 0 0 1px rgba(255, 255, 255, .02), 0 18px 36px -24px rgba(0, 0, 0, .9);
+    --rg-open-shadow: 0 22px 44px -24px rgba(0, 0, 0, .95);
     --rg-badge-ring: inset 0 0 0 1px rgba(255, 255, 255, .18);
   }
 }
@@ -23,15 +28,17 @@
 /* ---------- Header: trip card ---------- */
 .trip-card.rg-trip {
   margin: 4px var(--rg-gutter) 0; padding: 0 4px 0 0; gap: 4px;
-  background: var(--rg-surface); border: 1px solid var(--rg-line); border-radius: 18px; box-shadow: var(--rg-card-shadow);
+  background: var(--rg-surface); border: 1px solid var(--rg-line); border-radius: 20px; box-shadow: var(--rg-card-shadow);
 }
-.rg-trip .trip-ends { position: relative; }
+.rg-trip .trip-ends { position: relative; min-width: 0; }
 /* Dotted connector between the start ring and the destination pin, like a route on a map. */
 .rg-trip .trip-ends::before {
   content: ""; position: absolute; left: calc(1.375rem - 1.5px); top: calc(1.5rem + 9px); bottom: calc(1.5rem + 11px); width: 3px;
   background: radial-gradient(circle, var(--rg-ink-2) 1.2px, transparent 1.6px) center top / 3px 6px repeat-y; opacity: .55;
 }
-.rg-trip .trip-ends p { min-height: 3rem; font-size: 1.0625rem; font-weight: 650; color: var(--rg-ink); position: relative; }
+.rg-trip .trip-ends p { min-height: 3rem; font-size: 1.0625rem; font-weight: 650; color: var(--rg-ink); position: relative; min-width: 0; }
+/* Names wrap instead of truncating: at large text "Lake…" would hide the destination. */
+.rg-trip .trip-ends p > span:last-child { min-width: 0; overflow: visible; white-space: normal; text-overflow: clip; overflow-wrap: anywhere; padding-block: 6px; }
 .rg-trip .trip-ends p + p { border-top: 0; }
 .rg-trip .trip-ends p + p::before { content: ""; position: absolute; top: 0; left: 2.75rem; right: 0; height: 1px; background: var(--rg-line); }
 .rg-trip .marker { width: 2.75rem; }
@@ -44,29 +51,25 @@
 }
 @media (hover: hover) { .rg-trip .rg-trip-edit:hover { background: var(--rg-tint); } }
 
-.rg-results-head { padding-top: 16px; }
-/* Routing notes in the warm system, not the old blue info box. */
+.rg-results-head { padding-top: 18px; flex-wrap: wrap; }
 .rove-accessible .route-notes { margin-top: 8px; padding: 12px 14px; border-radius: 14px; background: var(--rg-surface); border: 1px solid var(--rg-line); color: var(--rg-ink-2); font-size: 0.875rem; line-height: 1.45; }
 .results-when { margin-top: 0; font-size: 0.9375rem; line-height: 1.4; color: var(--rg-ink-2); }
 .rove-accessible .results-when { margin-bottom: 4px; }
 
-/* Sort control in the same warm system. */
+/* Sort control. */
 .rove-accessible .sort-switch { margin: 12px var(--rg-gutter) 4px; padding: 3px; gap: 3px; border-radius: 14px; background: var(--rg-chip-bg); }
-.rove-accessible .sort-switch .seg-option { min-height: 48px; border-radius: 11px; font-size: 0.875rem; font-weight: 650; color: var(--rg-ink-2); }
-.rove-accessible .sort-switch .seg-option[aria-pressed="true"] { background: var(--rg-surface); color: var(--rg-ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.rove-accessible .sort-switch .seg-option { min-height: 48px; border-radius: 11px; font-size: 0.875rem; font-weight: 650; color: var(--rg-ink-2); transition: background-color var(--m-small) var(--e-std), color var(--m-small) var(--e-std), box-shadow var(--m-small) var(--e-std); }
+.rove-accessible .sort-switch .seg-option[aria-pressed="true"] { background: var(--rg-surface); color: var(--rg-ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .04); }
 
 /* ---------- Route cards ---------- */
-.itineraries.rg-routes { display: grid; gap: 12px; margin: 0; padding: 8px var(--rg-gutter) 0; list-style: none; }
+.itineraries.rg-routes { display: grid; gap: 14px; margin: 0; padding: 10px var(--rg-gutter) 0; list-style: none; }
 .rg-routes > li { animation: none; }
 .rg-route-item {
-  position: relative; container: rg-route / inline-size; padding: 0; background: var(--rg-surface); border: 1px solid var(--rg-line); border-radius: 20px;
+  position: relative; container: rg-route / inline-size; padding: 0; background: var(--rg-surface); border: 1px solid var(--rg-line); border-radius: 22px;
   box-shadow: var(--rg-card-shadow);
-  transition: border-color var(--m-small) var(--e-std), box-shadow var(--m-small) var(--e-std), transform var(--m-press) var(--e-std);
+  transition: border-color var(--m-small) var(--e-std), box-shadow var(--m-card) var(--e-out), transform var(--m-press) var(--e-std);
 }
-.rg-route-item.is-open {
-  border-color: var(--rg-green);
-  box-shadow: 0 0 0 1px var(--rg-green), var(--rg-open-shadow);
-}
+.rg-route-item.is-open { border-color: var(--rg-green); box-shadow: 0 0 0 1px var(--rg-green), var(--rg-open-shadow); }
 @media (hover: hover) {
   .rg-route-item:not(.is-open):has(> .rg-route:hover) { border-color: color-mix(in srgb, var(--rg-ink) 28%, var(--rg-line)); }
 }
@@ -74,8 +77,8 @@
 
 .itineraries .rg-route.itinerary,
 .itineraries .rg-route.itinerary[aria-expanded="true"] {
-  display: grid; gap: 12px; width: 100%; min-height: 48px; padding: 16px 16px 14px;
-  background: transparent; border: 0; border-radius: 19px; box-shadow: none; transform: none;
+  display: grid; gap: 14px; width: 100%; min-height: 48px; padding: 18px 18px 16px;
+  background: transparent; border: 0; border-radius: 21px; box-shadow: none; transform: none;
   color: var(--rg-ink); text-align: left; font: inherit;
 }
 .itineraries .rg-route.itinerary::before { display: none; }
@@ -83,76 +86,115 @@
   .itineraries .rg-route.itinerary:hover { background: transparent; transform: none; box-shadow: none; }
 }
 
-/* Duration, the one number that decides most choices. */
-.rg-route-top { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 2px; min-width: 0; }
-.rg-route-dur { font-size: 1.625rem; line-height: 1.15; font-weight: 760; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+/* Hero row: duration, tags, chevron; then leave and arrive times. */
+.rg-route-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "dur chev" "tags tags" "times times"; align-items: center; column-gap: 10px; row-gap: 4px; min-width: 0; }
+.rg-route-dur { grid-area: dur; font-size: 1.75rem; line-height: 1.12; font-weight: 780; letter-spacing: -.03em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rg-route-tags { grid-area: tags; display: flex; flex-wrap: wrap; gap: 6px; }
+.rg-route-tags:empty { display: none; }
 .rg-route-tag {
-  display: inline-flex; align-items: center; min-height: 1.5rem; padding: 0 9px; border-radius: 999px;
-  background: var(--rg-tint); color: var(--rg-green); font-size: 0.8125rem; font-weight: 750; letter-spacing: .01em;
+  display: inline-flex; align-items: center; gap: 5px; min-height: 1.625rem; padding: 0 10px; border-radius: 999px;
+  background: var(--rg-tint); color: var(--rg-green); font-size: 0.8125rem; font-weight: 780; letter-spacing: .01em;
+}
+.rg-route-tag.is-best { background: var(--rg-green); color: var(--rg-on-green); }
+.rg-route-tag.is-best::before {
+  content: ""; width: .8125rem; height: .8125rem; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='m10 2.6 2.3 4.7 5.1.7-3.7 3.6.9 5.1L10 14.3l-4.6 2.4.9-5.1L2.6 8l5.1-.7Z'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='m10 2.6 2.3 4.7 5.1.7-3.7 3.6.9 5.1L10 14.3l-4.6 2.4.9-5.1L2.6 8l5.1-.7Z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 .rg-route-chev {
-  order: 2; margin-left: auto; width: 1.5rem; height: 1.5rem; flex: none; padding: 2px; border-radius: 50%;
-  fill: none; stroke: var(--rg-ink-2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  grid-area: chev; width: 2rem; height: 2rem; flex: none; padding: 6px; border-radius: 50%;
+  fill: none; stroke: var(--rg-ink-2); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
   background: var(--rg-chip-bg);
+  transition: transform var(--m-card) var(--e-out), background-color var(--m-small) var(--e-std), stroke var(--m-small) var(--e-std);
 }
 .rg-route[aria-expanded="true"] .rg-route-chev { transform: rotate(180deg); background: var(--rg-tint); stroke: var(--rg-green); }
 .rg-route-times {
-  order: 3; flex-basis: 100%; font-size: 0.9375rem; line-height: 1.35; font-weight: 600; color: var(--rg-ink-2); font-variant-numeric: tabular-nums;
+  grid-area: times; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px;
+  font-size: 1rem; line-height: 1.35; font-weight: 600; color: var(--rg-ink-2); font-variant-numeric: tabular-nums;
 }
-.rg-route-times i { font-style: normal; margin: 0 .3em; }
+.rg-route-times b { font-weight: 760; color: var(--rg-ink); }
+.rg-route-to { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* Wider cards (desktop sidebar, tablets): times move up beside the duration, like a departures board. */
+@container rg-route (min-width: 26rem) {
+  .rg-route-top { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "dur tags times chev"; column-gap: 12px; }
+  .rg-route-times { justify-content: flex-end; text-align: right; }
+}
 
-/* The strip: walk minutes and line badges, read left to right. */
-.rg-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; min-width: 0; }
+/* The strip: walk minutes and agency-coloured line pills, read left to right. */
+.rg-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 4px; min-width: 0; }
 .rg-strip-seg { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
 .rg-strip-line {
-  display: inline-flex; align-items: center; gap: 5px; min-height: 1.875rem; max-width: 100%; padding: 0 10px 0 7px; border-radius: 9px;
-  box-shadow: var(--rg-badge-ring); font-size: 0.9375rem; line-height: 1.1; font-weight: 800; letter-spacing: .005em;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 2rem; max-width: 100%; padding: 0 11px 0 8px; border-radius: 10px;
+  box-shadow: var(--rg-badge-ring), 0 1px 2px rgba(0, 0, 0, .08); font-size: 0.9375rem; line-height: 1.1; font-weight: 800; letter-spacing: .005em;
 }
+.rg-strip-line small { font-size: 0.75rem; font-weight: 700; letter-spacing: .01em; white-space: nowrap; }
 .rg-strip-line b { font-weight: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rg-strip-line .mode-icon { width: 1.125rem; height: 1.125rem; stroke-width: 1.9; }
-.rg-strip-walk { display: inline-flex; align-items: baseline; gap: 1px; min-height: 1.875rem; padding: 0 2px; color: var(--rg-ink); align-self: center; line-height: 1.875rem; }
+.rg-strip-line .mode-icon { width: 1.125rem; height: 1.125rem; stroke-width: 1.9; flex: none; }
+.rg-strip-line.is-canceled b { text-decoration: line-through; text-decoration-thickness: 2px; }
+.rg-strip-walk { display: inline-flex; align-items: baseline; gap: 1px; min-height: 2rem; padding: 0 2px; color: var(--rg-ink); align-self: center; line-height: 2rem; }
 .rg-strip-walk .rg-icon, .rg-strip-walk .mode-icon { width: 1.125rem; height: 1.125rem; align-self: center; margin-right: 2px; color: var(--rg-ink-2); }
 .rg-strip-walk b { font-size: 0.9375rem; font-weight: 750; font-variant-numeric: tabular-nums; }
 .rg-strip-walk small { font-size: 0.75rem; font-weight: 600; color: var(--rg-ink-2); margin-left: 1px; }
+/* Connector: a short dotted rail, the same language as walking on the map. */
 .rg-strip-rail {
-  width: 6px; height: 6px; margin: 0 4px 0 1px; flex: none; transform: rotate(45deg);
-  border-top: 2px solid var(--rg-ink-2); border-right: 2px solid var(--rg-ink-2); opacity: .55;
+  width: 12px; height: 4px; margin: 0 5px 0 3px; flex: none; border-radius: 2px;
+  background: radial-gradient(circle, var(--rg-ink-2) 1.3px, transparent 1.7px) 0 50% / 4px 4px repeat-x; opacity: .75;
 }
 
-/* Where you leave from, then the deciding facts as chips. */
-.rg-route-from { display: flex; align-items: flex-start; gap: 9px; font-size: 0.9375rem; line-height: 1.4; color: var(--rg-ink); min-width: 0; }
-.rg-route-from > span:last-child { min-width: 0; overflow-wrap: anywhere; }
-.rg-route-from b { font-weight: 750; font-variant-numeric: tabular-nums; }
-.rg-route-from .rg-icon { width: 1.125rem; height: 1.125rem; margin-top: 1px; color: var(--rg-ink-2); }
-.rg-route-dep { flex: none; width: .75rem; height: .75rem; margin-top: .3rem; border-radius: 50%; border: 2.5px solid var(--rg-green); background: var(--rg-surface); }
-.rg-route-chips { display: flex; flex-wrap: wrap; gap: 6px 5px; }
+/* Stations: board, change, exit on a small vertical rail. */
+.rg-stns { position: relative; display: grid; gap: 6px; min-width: 0; }
+.rg-stn {
+  position: relative; display: grid; grid-template-columns: .875rem auto minmax(0, 1fr); align-items: baseline; column-gap: 10px;
+  font-size: 0.9375rem; line-height: 1.4; color: var(--rg-ink-2);
+}
+/* The rail leaves each station's dot and runs down to the next dot, in the colour of the line ridden
+ * from that station, so it stays joined however many lines a station name wraps onto. */
+.rg-stn:not(:last-child)::after {
+  content: ""; position: absolute; left: calc(.4375rem - 1.5px); top: calc(.35rem + .875rem - 2px); bottom: calc(-6px - .35rem + 2px); width: 3px;
+  background: var(--c, var(--rg-ink-2));
+}
+.rg-stn-dot { align-self: start; margin-top: .35rem; width: .875rem; height: .875rem; box-sizing: border-box; border-radius: 50%; border: 3px solid var(--c, var(--rg-ink)); background: var(--rg-surface); position: relative; z-index: 1; }
+.rg-stn.is-xfer .rg-stn-dot { border-width: 2.5px; box-shadow: 0 0 0 2px var(--rg-surface), 0 0 0 3.5px var(--rg-ink-2); }
+.rg-stn.is-exit .rg-stn-dot { background: var(--c, var(--rg-ink)); }
+.rg-stn-t { font-weight: 720; color: var(--rg-ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rg-stn-name { min-width: 0; overflow-wrap: anywhere; }
+.rg-stn-name b { font-weight: 680; color: var(--rg-ink); }
+.rg-route-from { display: flex; align-items: center; gap: 9px; font-size: 0.9375rem; line-height: 1.4; color: var(--rg-ink); min-width: 0; }
+.rg-route-from .rg-icon { width: 1.125rem; height: 1.125rem; color: var(--rg-ink-2); }
+
+/* Deciding facts as chips. */
+.rg-route-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .rg-route-chips > span {
-  display: inline-flex; align-items: center; gap: 4px; min-height: 1.75rem; padding: 0 9px 0 7px; border-radius: 999px;
-  background: var(--rg-chip-bg); color: var(--rg-ink-2); font-size: 0.8125rem; line-height: 1.2; font-weight: 650;
+  display: inline-flex; align-items: center; gap: 5px; min-height: 1.875rem; padding: 0 10px 0 8px; border-radius: 999px;
+  background: var(--rg-chip-bg); color: var(--rg-ink-2); font-size: 0.8125rem; line-height: 1.2; font-weight: 680;
 }
 .rg-route-chips .rg-icon { width: .9375rem; height: .9375rem; stroke-width: 2; }
-/* Scheduled vs Live must be unmistakable without colour: outline + clock vs filled + live dot. */
+/* Scheduled vs Live is unmistakable without colour: outline + clock vs filled + live dot. */
 .rg-route-chips > .is-sched { background: transparent; box-shadow: inset 0 0 0 1.5px var(--rg-line); color: var(--rg-ink-2); }
-.rg-route-chips > .is-live { background: var(--rg-tint); color: var(--rg-green); font-weight: 750; }
+.rg-route-chips > .is-live { background: var(--rg-tint); color: var(--rg-green); font-weight: 760; }
 .rg-live-dot { position: relative; width: .5rem; height: .5rem; margin: 0 2px; border-radius: 50%; background: currentColor; flex: none; }
 .rg-live-dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid currentColor; opacity: 0; }
 
-.rg-route .rg-warn-tags { margin-top: 0; }
-.rg-route .rg-warn-tags > span { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 7px; }
+/* Planner warnings: warm, iconned, never red unless something is canceled. */
+.rg-route .rg-warn-tags { margin-top: -4px; gap: 6px; }
+.rg-route .rg-warn-tags > span { display: inline-flex; align-items: center; gap: 6px; min-height: 1.875rem; padding: 0 11px 0 8px; font-size: 0.8125rem; font-weight: 720; }
 .rg-route .rg-warn-tags .rg-icon { width: 1rem; height: 1rem; stroke-width: 2; }
 
 /* ---------- Action row: Listen, then Start ---------- */
-.rg-route-actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 16px 16px; }
+.rg-route-actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 18px 18px; }
 .rg-route-item .rg-route-actions .audio-route,
 .rg-route-item .rg-route-actions .rg-route-start {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 3.25rem; margin: 0; padding: 0 16px;
-  border-radius: 14px; font: inherit; font-size: 1rem; line-height: 1.2; font-weight: 720; text-align: center; box-shadow: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 3.375rem; margin: 0; padding: 0 16px;
+  border-radius: 16px; font: inherit; font-size: 1rem; line-height: 1.2; font-weight: 720; text-align: center; box-shadow: none;
   transition: transform var(--m-press) var(--e-std), background-color var(--m-small) var(--e-std), border-color var(--m-small) var(--e-std);
 }
 .rg-route-item .rg-route-actions .audio-route { background: var(--rg-surface); color: var(--rg-ink); border: 1.5px solid var(--rg-line); }
 .rg-route-listen .nw { white-space: nowrap; }
 .rg-route-item .rg-route-actions .audio-route svg { width: 1.25rem; height: 1.25rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; color: var(--rg-green); }
-.rg-route-item .rg-route-actions .rg-route-start { flex: 1 1 12rem; background: var(--rg-green); color: var(--rg-on-green); border: 0; font-size: 1.0625rem; font-weight: 760; }
+.rg-route-item .rg-route-actions .rg-route-start {
+  flex: 1 1 12rem; background: var(--rg-green); color: var(--rg-on-green); border: 0; font-size: 1.0625rem; font-weight: 760;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 10px 22px -14px color-mix(in srgb, var(--rg-green) 90%, transparent);
+}
 .rg-route-item .rg-route-actions .rg-route-start span { white-space: nowrap; }
 .rg-route-item .rg-route-actions .rg-route-start .rg-icon { width: 1.25rem; height: 1.25rem; stroke-width: 2.2; }
 .rg-route-actions.has-start .audio-route { flex: 1 1 100%; }
@@ -169,11 +211,11 @@
 .rg-route-item .rg-route-actions .rg-route-start:active { background: var(--rg-green-press); }
 
 /* ---------- Itinerary timeline (expanded route) ---------- */
-.rg-route-detail { margin: 0 16px; padding: 16px 0 4px; border-top: 1px solid var(--rg-line); }
+.rg-route-detail { margin: 0 18px; padding: 18px 0 6px; border-top: 1px solid var(--rg-line); }
 .timeline.rg-tl { list-style: none; margin: 0; padding: 0; }
-.rg-tl > li.rg-tl-row { position: relative; display: grid; grid-template-columns: var(--rg-time-col) var(--rg-node) minmax(0, 1fr); column-gap: 10px; }
+.rg-tl > li.rg-tl-row { position: relative; display: grid; grid-template-columns: var(--rg-time-col) var(--rg-node) minmax(0, 1fr); column-gap: 12px; }
 .rg-tl-t {
-  font-size: 0.875rem; line-height: var(--rg-node); font-weight: 700; text-align: right; white-space: nowrap;
+  font-size: 0.875rem; line-height: var(--rg-node); font-weight: 720; text-align: right; white-space: nowrap;
   color: var(--rg-ink); font-variant-numeric: tabular-nums;
 }
 .rg-tl-t small { margin-left: 2px; font-size: 0.6875rem; font-weight: 650; letter-spacing: .02em; color: var(--rg-ink-2); }
@@ -182,10 +224,10 @@
 .rg-tl-rail { position: relative; display: flex; justify-content: center; align-items: flex-start; }
 .rg-tl-rail::after {
   content: ""; position: absolute; left: 50%; top: calc(var(--rg-node) / 2); bottom: calc(var(--rg-node) / -2);
-  width: 4px; margin-left: -2px; border-radius: 2px; transform-origin: top;
+  width: 5px; margin-left: -2.5px; border-radius: 3px; transform-origin: top;
 }
 .seg-ride .rg-tl-rail::after { background: var(--c, var(--rg-ink-2)); box-shadow: var(--rg-badge-ring); }
-.seg-walk .rg-tl-rail::after { background: radial-gradient(circle, var(--rg-ink-2) 1.6px, transparent 2.1px) center 2px / 4px 7px repeat-y; opacity: .7; }
+.seg-walk .rg-tl-rail::after { background: radial-gradient(circle, var(--rg-ink-2) 1.7px, transparent 2.2px) center 2px / 5px 7px repeat-y; opacity: .75; }
 .seg-drive .rg-tl-rail::after { width: 3px; margin-left: -1.5px; background: var(--rg-ink-2); opacity: .5; }
 .seg-none .rg-tl-rail::after { display: none; }
 
@@ -195,24 +237,24 @@
 }
 .rg-tl-node .rg-icon, .rg-tl-node .mode-icon { width: 1rem; height: 1rem; stroke-width: 2; }
 .is-walk .rg-tl-node, .is-drive .rg-tl-node { background: var(--rg-chip-bg); color: var(--rg-ink); box-shadow: 0 0 0 3px var(--rg-surface); }
-/* Departure: the trip starts at a green marker, matching the start ring in the header. */
 .is-first:is(.is-walk, .is-drive) .rg-tl-node { background: var(--rg-green); color: var(--rg-on-green); }
 /* Board and get off: a ring in the line colour, the classic transit stop. */
 .is-board .rg-tl-node, .is-alight .rg-tl-node {
-  width: 1.0625rem; height: 1.0625rem; margin-top: calc((var(--rg-node) - 1.0625rem) / 2);
-  border: 4px solid var(--c, var(--rg-ink)); background: var(--rg-surface);
+  width: 1.125rem; height: 1.125rem; margin-top: calc((var(--rg-node) - 1.125rem) / 2);
+  border: 4px solid var(--c, var(--rg-ink)); background: var(--rg-surface); box-shadow: 0 0 0 2px var(--rg-surface);
 }
+.is-alight .rg-tl-node { background: var(--c, var(--rg-ink)); box-shadow: 0 0 0 2px var(--rg-surface), inset 0 0 0 2.5px var(--rg-surface); }
 .is-seated .rg-tl-node { width: .625rem; height: .625rem; margin-top: calc((var(--rg-node) - .625rem) / 2); background: var(--c, var(--rg-ink)); box-shadow: 0 0 0 2px var(--rg-surface); }
 /* Transfer: a double-ring interchange marker with the transfer arrows. */
 .is-transfer .rg-tl-node { border: 3px solid var(--c, var(--rg-ink)); color: var(--rg-ink); box-shadow: 0 0 0 2px var(--rg-surface), 0 0 0 3.5px var(--rg-line); }
 .is-transfer .rg-tl-node .rg-icon { width: .875rem; height: .875rem; stroke-width: 2.4; }
-/* Arrival: a filled pin, matching the destination pin in the header. */
 .is-arrive .rg-tl-node { background: var(--rg-ink); color: var(--rg-surface); }
 .is-arrive .rg-tl-node .rg-icon { width: .9375rem; height: .9375rem; stroke-width: 2.2; }
 
-.rg-tl-body { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; padding-bottom: 16px; font-size: 0.9375rem; }
+.rg-tl-body { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; padding-bottom: 18px; font-size: 0.9375rem; }
 .rg-tl-row.is-arrive .rg-tl-body { padding-bottom: 4px; }
 .rg-tl-body > strong { display: block; font-size: 1rem; line-height: var(--rg-node); font-weight: 720; color: var(--rg-ink); overflow-wrap: anywhere; }
+.rg-tl-row.is-arrive .rg-tl-body > strong { font-weight: 780; }
 /* 48px tap target without 48px of visual height: the button overlaps the rows around it. */
 .rg-tl .leg-link {
   display: inline-flex; align-items: center; min-height: 3rem; margin: calc((3rem - var(--rg-node)) / -2) 0; padding: 0;
@@ -229,6 +271,14 @@
 }
 .rg-tl .row-meta > .rg-icon { width: 1rem; height: 1rem; stroke-width: 2; }
 .rg-tl .leg-line { margin-top: 6px; color: var(--rg-ink); font-weight: 600; }
+/* Action tags: what you do at this row, with a meaningful icon. */
+.rg-tl-act {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 1.625rem; padding: 0 9px 0 6px; border-radius: 8px;
+  font-size: 0.8125rem; font-weight: 760; letter-spacing: .01em; color: var(--rg-ink); background: var(--rg-chip-bg);
+}
+.rg-tl-act .rg-icon { width: .9375rem; height: .9375rem; stroke-width: 2.2; }
+.rg-tl-act.is-board { background: var(--rg-tint); color: var(--rg-green); }
+.rg-tl-act.is-exit { background: transparent; box-shadow: inset 0 0 0 1.5px var(--rg-line); }
 .rg-tl-badge {
   display: inline-flex; align-items: center; gap: 4px; min-height: 1.625rem; max-width: 100%; padding: 0 9px 0 6px; border-radius: 8px;
   box-shadow: var(--rg-badge-ring); font-size: 0.875rem; line-height: 1.1; font-weight: 800;
@@ -262,9 +312,28 @@
   left: calc(var(--rg-time-col) + var(--rg-node) + 4px); border-radius: 12px; background: var(--rg-tint);
 }
 
+/* Narrow cards (320px phones, 200% text): a tighter time column so station names keep their room. */
+@container rg-route (max-width: 19rem) {
+  .rg-tl > li.rg-tl-row { grid-template-columns: 3.25rem var(--rg-node) minmax(0, 1fr); column-gap: 8px; }
+  .rg-tl-t small { display: block; margin: 0; line-height: 1; }
+}
+/* Very narrow (200% text on a phone): the time moves above the row's details so nothing is squeezed. */
+@container rg-route (max-width: 16rem) {
+  .rg-tl > li.rg-tl-row { grid-template-columns: var(--rg-node) minmax(0, 1fr); column-gap: 10px; }
+  .rg-tl-rail { grid-column: 1; grid-row: 1 / span 2; }
+  .rg-tl-t { grid-column: 2; grid-row: 1; text-align: left; line-height: 1.3; }
+  .rg-tl-t:empty { display: none; }
+  .rg-tl-t small { display: inline; margin-left: 2px; }
+  .rg-tl-body { grid-column: 2; grid-row: 2; }
+  .rg-tl .leg-link { margin: 0; min-height: 3rem; }
+  .rg-tl-row.leg-focused::before { left: calc(var(--rg-node) + 4px); }
+}
+.rove-accessible .sort-switch { display: flex; flex-wrap: wrap; }
+.rove-accessible .sort-switch .seg-option { flex: 1 1 auto; min-width: 0; white-space: normal; }
+
 /* Carbon note and footer. */
 .rg-route-item .carbon-estimate {
-  margin: 0 16px 16px; padding: 10px 12px; border-radius: 12px; font-size: 0.8125rem; line-height: 1.45;
+  margin: 0 18px 18px; padding: 10px 12px; border-radius: 12px; font-size: 0.8125rem; line-height: 1.45;
   background: color-mix(in srgb, var(--rg-green) 8%, var(--rg-surface)); color: var(--rg-ink-2);
 }
 .rg-route-item .carbon-estimate span { opacity: 1; }
@@ -273,21 +342,33 @@
 
 /* ---------- Motion ---------- */
 @media (prefers-reduced-motion: no-preference) {
-  .rg-routes.is-entering > .rg-route-item { animation: rg-route-in var(--m-card) var(--e-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
-  .rg-route-detail.is-revealing .rg-tl-row { animation: rg-tl-in var(--m-card) var(--e-out) both; animation-delay: calc(var(--r, 0) * 40ms + 60ms); }
-  .rg-route-detail.is-revealing .rg-tl-rail::after { animation: rg-rail-draw var(--m-journey) var(--e-out) both; animation-delay: calc(var(--r, 0) * 40ms + 120ms); }
-  .rg-route-actions.is-revealing .rg-route-start { animation: rg-tl-in var(--m-card) var(--e-out) both; }
-  .rg-route-chips .is-live .rg-live-dot::after { animation: rg-live 2.4s var(--e-out) infinite; }
-  @keyframes rg-route-in { from { opacity: 0; transform: translateY(12px) scale(.985); } }
+  /* Cards arrive once per result set, in rank order. */
+  .rg-routes.is-entering > .rg-route-item { animation: rg-route-in var(--m-card) var(--e-out) both; animation-delay: calc(var(--i, 0) * 50ms); }
+  /* Opening a card: the details unfold downward from the card, rows settle in order and the rails draw. */
+  .rg-route-detail.is-revealing { animation: rg-detail-in var(--m-card) var(--e-out) both; transform-origin: top; }
+  .rg-route-detail.is-revealing .rg-tl-row { animation: rg-tl-in var(--m-card) var(--e-out) both; animation-delay: calc(min(var(--r, 0), 8) * 32ms + 40ms); }
+  .rg-route-detail.is-revealing .rg-tl-rail::after { animation: rg-rail-draw var(--m-journey) var(--e-out) both; animation-delay: calc(min(var(--r, 0), 8) * 32ms + 90ms); }
+  .rg-route-actions.is-revealing .rg-route-start { animation: rg-start-in var(--m-card) var(--e-out) both; }
+  .rg-route-chips .is-live .rg-live-dot::after { animation: rg-live 2.4s var(--e-out) 2; }
+  @keyframes rg-route-in { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+  @keyframes rg-detail-in { from { opacity: 0; transform: translateY(-8px) scaleY(.96); } }
   @keyframes rg-tl-in { from { opacity: 0; transform: translateY(-6px); } }
   @keyframes rg-rail-draw { from { transform: scaleY(0); } }
+  @keyframes rg-start-in { from { opacity: 0; transform: translateY(6px) scale(.97); } }
   @keyframes rg-live { 0% { opacity: .7; transform: scale(.6); } 70%, 100% { opacity: 0; transform: scale(1.4); } }
 }
 @media (prefers-reduced-motion: reduce) {
   .rg-routes > li, .rg-route-item, .rg-route-item *, .rg-route-item *::before, .rg-route-item *::after { animation: none !important; transition: none !important; }
   .rg-route-item:has(> .rg-route:active), .rg-route-item .rg-route-actions :is(.audio-route, .rg-route-start):active { transform: none; }
+  .rove-accessible .sort-switch .seg-option, .rg-trip .rg-trip-edit { transition: none; }
 }
 
 /* 200% text: walking-direction steps wrap instead of running off the card. */
 .rove-accessible details.turns summary { flex-wrap: wrap; }
 .rove-accessible details.turns ol li, .rove-accessible details.turns ol li > span { min-width: 0; overflow-wrap: anywhere; }
+
+/* High contrast: keep pills, chips and rails visible as outlines. */
+@media (forced-colors: active) {
+  .rg-strip-line, .rg-tl-badge, .rg-route-tag, .rg-route-chips > span, .rg-tl-act { border: 1px solid CanvasText; }
+  .rg-stn::after, .seg-ride .rg-tl-rail::after { background: CanvasText; }
+}

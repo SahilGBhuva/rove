@@ -1,17 +1,26 @@
-/* Rove design: journey. Owned by one workstream; see docs/design/OWNERSHIP.md.
- * The active trip screen: a transit-line progress strip, one instruction card per step, and a
- * dock that always holds Confirm, Repeat and Help. Rules that keep it safe:
+/* Rove design: active navigation. Owned by agent D; see docs/design/OWNERSHIP-V2.md.
+ * One instruction card per step, read in this order:
+ *   1. what to do now  (stage band + heading),
+ *   2. where           (the place line),
+ *   3. how far / long  (the metric tiles: departs, arrives, distance, stops),
+ *   4. what comes next (the Next row), with Confirm, Repeat and Help always in the dock.
+ * Each stage has its own treatment: walk (green, dotted), board (tinted in the line colour, the
+ * line badge solid), ride (the band filled with the line colour), transfer (interchange rings),
+ * arrival (the drawn completion mark).
+ * Safety rules:
  * - The step only changes after an explicit rider confirmation; the step transition is tied to that
- *   render (.is-entering) and is transform-only, so it never hides content, delays focus or blocks taps.
+ *   render (.is-entering) and is transform/opacity only, so it never hides content, delays focus or blocks taps.
  * - Every decorative loop stops by itself within 5 seconds (WCAG 2.2.2) and all motion is removed
  *   under prefers-reduced-motion.
  * - Reminder styles never look like the Confirm button: left-aligned text, a leading icon, a tinted
- *   or outlined panel, never a solid green fill. */
+ *   or outlined panel, never a solid green fill.
+ * - #rgLive (live countdown/position, styled by the lead in rg-live.css) sits right under the facts. */
 
 :root {
-  --rgj-shadow: 0 1px 2px rgba(23, 32, 26, .05), 0 12px 28px -18px rgba(23, 32, 26, .30);
+  --rgj-shadow: 0 1px 2px rgba(23, 32, 26, .05), 0 4px 10px -4px rgba(23, 32, 26, .06), 0 18px 36px -24px rgba(23, 32, 26, .34);
   --rgj-dock-shadow: 0 -12px 28px -22px rgba(23, 32, 26, .45);
   --rgj-edge: transparent;
+  --rgj-tile: color-mix(in srgb, var(--rg-ink) 4.5%, var(--rg-surface));
   --rgj-i-clock: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='8.5'/><path d='M12 7.5V12l3 2'/></svg>");
   --rgj-i-bell: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15Z'/><path d='M10 20.5a2 2 0 0 0 4 0'/></svg>");
   --rgj-i-exit: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M14 4h5v16h-5M10 8l-4 4 4 4M6 12h9'/></svg>");
@@ -24,19 +33,20 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --rgj-shadow: 0 1px 0 rgba(255, 255, 255, .04) inset, 0 16px 32px -20px rgba(0, 0, 0, .8);
+    --rgj-shadow: 0 1px 0 rgba(255, 255, 255, .04) inset, 0 18px 36px -22px rgba(0, 0, 0, .85);
     --rgj-dock-shadow: 0 -16px 32px -20px rgba(0, 0, 0, .9);
     --rgj-edge: rgba(255, 255, 255, .16);
+    --rgj-tile: color-mix(in srgb, var(--rg-ink) 7%, var(--rg-surface));
   }
 }
 
-/* ---- Stage accent: one colour per kind of step, carried by the card's top rule ---- */
+/* ---- Stage accent: one colour per kind of step ---- */
 .rg-nav { --k: var(--rg-green); }
 .rg-nav[data-kind="board"], .rg-nav[data-kind="ride"] { --k: var(--c, var(--rg-green)); }
 
 /* ---- Top bar: End trip, demo chip, step counter ---- */
 .rg-nav .rg-top { gap: 8px 10px; flex-wrap: wrap; padding-top: 4px; }
-.rg-nav .rg-end { display: inline-flex; align-items: center; min-height: 48px; padding: 0 12px 0 2px; border-radius: 12px; color: var(--rg-ink-2); }
+.rg-nav .rg-end { display: inline-flex; align-items: center; min-height: 48px; padding: 0 12px 0 2px; border-radius: 12px; color: var(--rg-ink-2); font-weight: 700; }
 .rg-demo-chip {
   display: inline-block; padding: 5px 11px; border-radius: 999px;
   background: var(--rg-warn-bg); color: var(--rg-warn);
@@ -48,54 +58,80 @@
 }
 
 /* ---- Journey line: the whole trip drawn like a transit map ---- */
-.rg-jl { display: flex; align-items: center; gap: 4px; min-height: 34px; margin: 10px 6px 0 2px; }
-.rg-jl-seg { position: relative; flex: var(--w, 2) 1 0; min-width: 16px; height: 5px; border-radius: 3px; }
-.rg-jl-seg.now { min-width: 44px; }
+.rg-jl { display: flex; align-items: center; gap: 4px; min-height: 36px; margin: 10px 6px 0 2px; }
+.rg-jl-seg { position: relative; flex: var(--w, 2) 1 0; min-width: 16px; height: 6px; border-radius: 3px; }
+.rg-jl-seg.now { min-width: 48px; }
 .rg-jl-seg.is-ride { background: var(--c, var(--rg-green)); box-shadow: inset 0 0 0 1px var(--rgj-edge); }
 .rg-jl-seg.is-walk {
   height: 6px; border-radius: 0;
   background: radial-gradient(circle at center, var(--rg-ink-2) 0 1.7px, transparent 2.2px) 0 50% / 8px 6px repeat-x;
 }
-.rg-jl-seg.next { opacity: .38; }
-.rg-jl-seg.now { height: 8px; border-radius: 4px; }
-.rg-jl-seg.is-walk.now { height: 8px; border-radius: 0; background-image: radial-gradient(circle at center, var(--rg-ink) 0 2.2px, transparent 2.7px); background-size: 9px 8px; }
+.rg-jl-seg.done { opacity: .55; }
+.rg-jl-seg.next { opacity: .32; }
+.rg-jl-seg.now { height: 9px; border-radius: 5px; }
+.rg-jl-seg.is-walk.now { height: 9px; border-radius: 0; background-image: radial-gradient(circle at center, var(--rg-ink) 0 2.3px, transparent 2.8px); background-size: 9px 9px; }
 .rg-jl-node { flex: none; position: relative; box-sizing: border-box; }
 .rg-jl-node.is-start { width: 12px; height: 12px; border-radius: 50%; background: var(--rg-ink-2); }
 .rg-jl-node.is-end { width: 14px; height: 14px; border-radius: 4px; border: 3px solid var(--rg-ink-2); background: var(--rg-bg); }
 .rg-jl-node.is-end.next { opacity: .55; }
 .rg-jl-node.is-end.now { width: 18px; height: 18px; border-radius: 5px; border-color: var(--rg-green); background: var(--rg-green); box-shadow: 0 0 0 3px var(--rg-bg), 0 0 0 5px color-mix(in srgb, var(--rg-green) 45%, transparent); }
 .rg-jl-node.is-stop {
-  display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 999px;
   background: var(--c, var(--rg-green)); color: var(--ct, #fff); box-shadow: 0 0 0 2px var(--rg-bg), inset 0 0 0 1px var(--rgj-edge);
 }
 .rg-jl-node.is-stop b { max-width: 4.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; font-weight: 800; line-height: 1; letter-spacing: 0; }
 /* Upcoming stops keep full-contrast badge text (opacity fading failed 4.5:1); they read as 'later' by size and no ring. */
 .rg-jl-node.is-stop.next { opacity: 1; box-shadow: none; }
-.rg-jl-node.is-stop.now { height: 26px; min-width: 26px; padding: 0 8px; box-shadow: 0 0 0 3px var(--rg-bg), 0 0 0 5.5px var(--c, var(--rg-green)); }
+.rg-jl-node.is-stop.now { height: 28px; min-width: 28px; padding: 0 8px; box-shadow: 0 0 0 3px var(--rg-bg), 0 0 0 5.5px var(--c, var(--rg-green)); }
 .rg-jl-node.is-stop.now b { font-size: 0.75rem; }
 /* You are here: a puck on the current segment. */
 .rg-jl-here {
-  position: absolute; left: clamp(10px, 22%, 40px); top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
-  background: var(--rg-surface); border: 3.5px solid var(--c, var(--rg-ink)); box-sizing: border-box;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .25); z-index: 1;
+  position: absolute; left: clamp(10px, 22%, 40px); top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+  background: var(--rg-surface); border: 4px solid var(--c, var(--rg-ink)); box-sizing: border-box;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .28); z-index: 1;
 }
 
 /* ---- Instruction card ---- */
 .rg-nav .rg-card {
-  position: relative; margin-top: 14px; padding: 22px 20px 20px; border-radius: 22px; overflow: hidden;
+  position: relative; margin-top: 14px; padding: 0 20px 20px; border-radius: 24px; overflow: hidden;
   background: var(--rg-surface); border: 1px solid var(--rg-line); box-shadow: var(--rgj-shadow);
   animation: none; /* the generic settle replayed on every render (Help, Repeat); steps animate only on confirmation below */
 }
-.rg-nav .rg-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: var(--k); }
-.rg-nav .rg-kind { gap: 12px; font-size: 0.875rem; letter-spacing: .07em; }
-.rg-nav .rg-badge { min-width: 44px; height: 36px; border-radius: 10px; font-size: 1.0625rem; box-shadow: inset 0 0 0 1px var(--rgj-edge); }
-.rg-nav .rg-glyph { width: 36px; height: 36px; border-radius: 10px; }
-.rg-nav .rg-glyph svg { width: 22px; height: 22px; stroke-width: 2; }
-.rg-nav .rg-card h1 { margin-top: 12px; text-wrap: balance; }
+
+/* Stage band: the first thing in the card, full-bleed, one treatment per kind of step. */
+.rg-nav .rg-kind.rg-stage {
+  position: relative; isolation: isolate; display: flex; align-items: center; gap: 12px; min-height: 3.75rem;
+  margin: 0 -20px 18px; padding: 12px 20px; overflow: hidden;
+  font-size: 0.875rem; font-weight: 800; letter-spacing: .08em; line-height: 1.25; text-transform: uppercase;
+  background: var(--rg-tint); color: var(--rg-green);
+}
+.rg-stage-label { min-width: 0; overflow-wrap: anywhere; }
+.rg-nav .rg-stage .rg-badge { min-width: 44px; height: 36px; border-radius: 10px; font-size: 1.0625rem; box-shadow: inset 0 0 0 1px var(--rgj-edge), 0 1px 2px rgba(0, 0, 0, .12); }
+.rg-nav .rg-stage .rg-glyph { width: 36px; height: 36px; border-radius: 11px; background: var(--rg-green); color: var(--rg-on-green); }
+.rg-nav .rg-stage .rg-glyph svg { width: 22px; height: 22px; stroke-width: 2.1; }
+/* Walk: a dotted footpath along the bottom of the band. */
+.rg-nav[data-kind="walk"] .rg-stage::after, .rg-nav[data-kind="drive"] .rg-stage::after {
+  content: ""; position: absolute; left: 20px; right: 20px; bottom: 0; height: 4px;
+  background: radial-gradient(circle, var(--rg-green) 1.6px, transparent 2px) 0 50% / 9px 4px repeat-x; opacity: .6;
+}
+/* Board (waiting for the vehicle): tinted in the line colour, the badge solid, a rule in the line colour. */
+.rg-nav[data-kind="board"] .rg-stage {
+  background: color-mix(in srgb, var(--c, var(--rg-green)) 13%, var(--rg-surface)); color: var(--rg-ink);
+  box-shadow: inset 0 -4px 0 var(--c, var(--rg-green));
+}
+/* Ride: the band is filled with the line colour, so the rider sees at a glance they are on that line.
+ * Text colour is readableText(line colour) from app.js, so the label keeps at least 4.5:1. */
+.rg-nav[data-kind="ride"] .rg-stage { background: var(--c, var(--rg-green)); color: var(--ct, #fff); }
+.rg-nav[data-kind="ride"] .rg-stage .rg-badge { background: var(--ct, #fff) !important; color: var(--c, var(--rg-green)) !important; box-shadow: none; }
+/* Transfer: neutral band with the interchange rings around the glyph. */
+.rg-nav[data-kind="transfer"] .rg-stage { background: var(--rgj-tile); color: var(--rg-ink); }
+.rg-nav[data-kind="transfer"] .rg-stage .rg-glyph { background: var(--rg-surface); color: var(--rg-ink); box-shadow: 0 0 0 2.5px var(--rg-ink), 0 0 0 5px var(--rgj-tile), 0 0 0 6.5px var(--rg-line); border-radius: 50%; margin: 0 4px; }
+
+.rg-nav .rg-card h1 { margin-top: 2px; text-wrap: balance; }
 
 /* Confirmation echo: what the rider just confirmed. It quietens after a few seconds without moving anything. */
 .rg-flash {
-  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; margin: -4px 0 14px; padding: 5px 14px 5px 5px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; margin: 0 0 12px; padding: 5px 14px 5px 5px; border-radius: 999px;
   background: var(--rg-tint); color: var(--rg-ink); font-size: 0.9375rem; font-weight: 700; line-height: 1.3;
   transition: background-color var(--m-card) var(--e-std), color var(--m-card) var(--e-std);
 }
@@ -103,12 +139,37 @@
 .rg-flash.is-leaving { background: transparent; color: var(--rg-ink-2); }
 .rg-flash.is-leaving .rg-icon { background: var(--rg-tint); color: var(--rg-green); }
 
-/* Fact rows: icon tile, text, inset hairlines. */
-.rg-nav .rg-facts { margin: 16px 0 0; border-top: 0; }
-.rg-nav .rg-facts li { display: grid; grid-template-columns: 2.125rem minmax(0, 1fr); column-gap: 14px; align-items: start; padding: 10px 0 0; border-bottom: 0; font-size: 1.125rem; line-height: 1.4; }
+/* Where: the place this step is about. */
+.rg-nav .rg-where {
+  display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); column-gap: 10px; align-items: start; margin: 12px 0 0;
+  font-size: 1.1875rem; line-height: 1.35; font-weight: 680; color: var(--rg-ink);
+}
+.rg-nav .rg-where > span { overflow-wrap: anywhere; }
+.rg-nav .rg-where .rg-icon { width: 1.5rem; height: 1.5rem; margin-top: .05rem; color: var(--k); stroke-width: 2.1; }
+.rg-nav[data-kind="ride"] .rg-where .rg-icon, .rg-nav[data-kind="board"] .rg-where .rg-icon { color: var(--rg-ink); }
+
+/* How far / how long: big, tabular, scannable tiles. */
+.rg-nav .rg-metrics { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; padding: 0; list-style: none; }
+.rg-metric {
+  flex: 1 1 7rem; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px 13px; border-radius: 16px;
+  background: var(--rgj-tile); color: var(--rg-ink);
+}
+.rg-metric-k { font-size: 0.75rem; line-height: 1.3; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--rg-ink-2); }
+.rg-metric-v { font-size: 1.625rem; line-height: 1.15; font-weight: 790; letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rg-metric-s { display: flex; align-items: center; gap: 6px; font-size: 0.875rem; line-height: 1.35; font-weight: 600; color: var(--rg-ink-2); }
+.rg-metric:only-child .rg-metric-v { font-size: 2rem; }
+.rg-metric.is-live .rg-metric-s { color: var(--rg-green); font-weight: 750; }
+.rg-metric .rg-live-dot { position: relative; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; flex: none; }
+
+/* Remaining facts: icon tile, text, inset hairlines. */
+.rg-nav .rg-facts { margin: 14px 0 0; border-top: 0; }
+.rg-nav .rg-facts li { display: grid; grid-template-columns: 2.125rem minmax(0, 1fr); column-gap: 14px; align-items: start; padding: 10px 0 0; border-bottom: 0; font-size: 1.0625rem; line-height: 1.4; }
 .rg-nav .rg-facts li > span { min-height: 2.125rem; display: flex; align-items: center; padding-bottom: 10px; border-bottom: 1px solid var(--rg-line); overflow-wrap: anywhere; }
 .rg-nav .rg-facts li:last-child > span { border-bottom: 0; padding-bottom: 2px; }
 .rg-nav .rg-facts .rg-icon { width: 2.125rem; height: 2.125rem; padding: 0.4375rem; box-sizing: border-box; border-radius: 10px; background: var(--rg-tint); color: var(--rg-green); stroke-width: 2; }
+
+/* Live slot (contents styled by the lead in rg-live.css): only spacing here. */
+.rg-nav .rg-card > .rg-live:not([hidden]) { margin-top: 14px; }
 
 /* Before-boarding check. */
 .rg-nav .rg-check { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; margin-top: 14px; padding: 14px 16px; border-radius: 16px; background: var(--rg-tint); color: var(--rg-ink); }
@@ -144,9 +205,17 @@
 }
 .rg-nav .rg-demo-skip::before { content: ""; flex: none; width: 1.125rem; height: 1.125rem; background: currentColor; -webkit-mask: var(--rgj-i-skip) center / contain no-repeat; mask: var(--rgj-i-skip) center / contain no-repeat; }
 .rg-nav .rg-demo-skip:active { transform: scale(.97); background: var(--rg-warn-bg); }
-.rg-nav .rg-next { align-items: baseline; gap: 12px; margin: 14px 0 0; padding: 14px 16px; border-radius: 16px; border: 1.5px dashed var(--rg-line); line-height: 1.4; }
+/* Next: a quiet preview of the following step, with its line badge or glyph. */
+.rg-nav .rg-next {
+  display: flex; align-items: center; gap: 12px; margin: 14px 0 0; padding: 12px 16px; border-radius: 16px;
+  border: 1.5px dashed var(--rg-line); line-height: 1.35;
+}
 .rg-nav .rg-next .rg-next-label { flex: none; font-size: 0.75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--rg-ink-2); }
-.rg-nav .rg-next .rg-next-text { flex: 1 1 auto; min-width: 0; color: var(--rg-ink); font-size: 1rem; font-weight: 600; letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
+.rg-nav .rg-next .rg-next-ico { flex: none; display: inline-flex; letter-spacing: 0; text-transform: none; }
+.rg-nav .rg-next .rg-badge.sm { min-width: 32px; height: 26px; padding: 0 7px; border-radius: 7px; font-size: 0.8125rem; font-weight: 800; box-shadow: inset 0 0 0 1px var(--rgj-edge); }
+.rg-nav .rg-next .rg-next-glyph { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--rg-tint); color: var(--rg-green); }
+.rg-nav .rg-next .rg-next-glyph .rg-icon { width: 16px; height: 16px; stroke-width: 2.2; }
+.rg-nav .rg-next .rg-next-text { flex: 1 1 auto; min-width: 0; color: var(--rg-ink); font-size: 1rem; font-weight: 650; letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
 
 /* ---- Dock: always at the bottom of the screen, a soft material over the content ---- */
 .rg-nav > .rg-dock { margin-top: auto; }
@@ -178,18 +247,22 @@
 
 /* ---- Arrival: a calm finish, Done pinned to the bottom ---- */
 .rg-nav.is-arrived > .rg-dock { margin-top: auto; }
-.rg-nav.is-arrived .rg-card { margin-top: 18px; }
-.rg-nav.is-arrived .rg-glyph { width: 44px; height: 44px; border-radius: 50%; background: var(--rg-green); color: var(--rg-on-green); }
-.rg-nav.is-arrived .rg-glyph svg { width: 26px; height: 26px; stroke-width: 2.6; }
-.rg-nav.is-arrived .rg-kind { color: var(--rg-green); }
+.rg-nav.is-arrived .rg-card { margin-top: 18px; padding-top: 24px; }
+.rg-nav.is-arrived .rg-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: var(--rg-green); }
 .rg-nav .rg-arrival-place { margin: 8px 0 0; font-size: 1.125rem; line-height: 1.4; color: var(--rg-ink-2); overflow-wrap: anywhere; }
+/* The finished journey line reads as complete: every segment at full strength. */
+.rg-nav.is-arrived .rg-jl-seg.done { opacity: 1; }
 
 /* Narrow phones and large text. */
 @media (max-width: 360px) {
   /* End trip and the step counter share the first row; the demo chip takes its own short row. */
   .rg-nav .rg-demo-chip { order: 3; }
-  .rg-nav .rg-card { padding: 20px 16px 18px; border-radius: 20px; }
+  .rg-nav .rg-card { padding: 0 16px 18px; border-radius: 20px; }
+  .rg-nav .rg-kind.rg-stage { margin: 0 -16px 16px; padding: 12px 16px; }
   .rg-nav .rg-facts li { column-gap: 12px; }
+  .rg-metric { padding: 10px 12px 11px; }
+  .rg-metric-v { font-size: 1.4375rem; }
+  .rg-metric:only-child .rg-metric-v { font-size: 1.75rem; }
 }
 
 /* ---- Motion: only where it explains a change; nothing loops past 5 seconds ---- */
@@ -200,6 +273,20 @@
   .rg-nav.is-entering .rg-jl-node.now { animation: rgj-pop var(--m-journey) var(--e-out) both; }
   .rg-nav.is-entering .rg-flash { animation: rgj-flash-in var(--m-journey) var(--e-out) both; }
   .rg-nav.is-entering .rg-flash .rg-icon path { stroke-dasharray: 24; animation: rgj-draw var(--m-journey) var(--e-out) 120ms both; }
+  .rg-nav.is-entering .rg-metric { animation: rgj-rise var(--m-card) var(--e-out) both; }
+  .rg-nav.is-entering .rg-metric:nth-child(2) { animation-delay: 40ms; }
+  .rg-nav.is-entering .rg-metric:nth-child(3) { animation-delay: 80ms; }
+  /* Boarded: the line colour pours across the band from the left, like doors closing behind you. */
+  .rg-nav.is-entering[data-kind="ride"] .rg-stage::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; background: color-mix(in srgb, var(--rg-surface) 30%, var(--c, var(--rg-green)));
+    transform-origin: right center; animation: rgj-pour var(--m-journey) var(--e-out) both;
+  }
+  .rg-nav.is-entering[data-kind="ride"] .rg-stage .rg-badge,
+  .rg-nav.is-entering[data-kind="board"] .rg-stage .rg-badge { animation: rgj-pop var(--m-journey) var(--e-out) 80ms both; }
+  /* Transfer: the interchange arrows swap once. */
+  .rg-nav.is-entering[data-kind="transfer"] .rg-stage .rg-glyph svg { animation: rgj-swap var(--m-journey) var(--e-out) 80ms both; }
+  /* Walk: the footpath dots draw along the band. */
+  .rg-nav.is-entering[data-kind="walk"] .rg-stage::after { transform-origin: left center; animation: rgj-grow var(--m-journey) var(--e-out) 60ms both; }
 
   /* Current segment: a light passes along the line in the direction of travel, three times, then rests. */
   .rg-jl-seg.is-ride.now::after {
@@ -210,7 +297,7 @@
   .rg-jl-seg.is-walk.now { animation: rgj-march 1.2s linear 4; }
   .rg-nav.is-entering .rg-jl-seg.is-walk.now { animation: rgj-grow var(--m-journey) var(--e-out) both, rgj-march 1.2s linear 4; }
   .rg-jl-here::after {
-    content: ""; position: absolute; inset: -3.5px; border-radius: 50%; border: 2px solid var(--c, var(--rg-ink));
+    content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--c, var(--rg-ink));
     animation: rgj-halo 1.6s var(--e-out) 3 both;
   }
   .rg-jl-node.is-stop.now::after, .rg-jl-node.is-end.now::after {
@@ -218,17 +305,24 @@
     animation: rgj-halo 1.6s var(--e-out) 3 both;
   }
 }
-@keyframes rgj-step-in { from { transform: translate3d(32px, 0, 0); opacity: .35; } to { transform: none; opacity: 1; } }
+@keyframes rgj-step-in { from { transform: translate3d(28px, 0, 0); opacity: .35; } to { transform: none; opacity: 1; } }
 @keyframes rgj-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes rgj-pop { from { transform: scale(.5); } 70% { transform: scale(1.08); } to { transform: scale(1); } }
+@keyframes rgj-rise { from { transform: translate3d(0, 8px, 0); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes rgj-pour { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes rgj-swap { from { transform: rotate(-180deg) scale(.7); } to { transform: none; } }
 @keyframes rgj-flash-in { from { transform: translate3d(0, -6px, 0) scale(.94); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes rgj-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
 @keyframes rgj-flow { from { background-position: -80% 0; } to { background-position: 180% 0; } }
 @keyframes rgj-march { from { background-position: 0 50%; } to { background-position: 9px 50%; } }
 @keyframes rgj-halo { from { transform: scale(.85); opacity: .9; } to { transform: scale(1.7); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .rg-nav .rg-card, .rg-nav .rg-flash, .rg-nav .rg-flash .rg-icon, .rg-jl *, .rg-jl *::after, .rg-nav .rg-confirm, .rg-nav .rg-secondary, .rg-nav .rg-demo-skip { animation: none !important; transition: none !important; }
-  .rg-jl-seg.now::after, .rg-jl-here::after, .rg-jl-node.now::after { content: none; }
+  .rg-nav .rg-card, .rg-nav .rg-flash, .rg-nav .rg-flash .rg-icon, .rg-jl *, .rg-jl *::after, .rg-nav .rg-confirm, .rg-nav .rg-secondary, .rg-nav .rg-demo-skip,
+  .rg-nav .rg-metric, .rg-nav .rg-stage, .rg-nav .rg-stage *, .rg-nav .rg-stage::before, .rg-nav .rg-stage::after { animation: none !important; transition: none !important; }
+  .rg-jl-seg.now::after, .rg-jl-here::after, .rg-jl-node.now::after, .rg-nav .rg-stage::before { content: none; }
 }
-/* Arrival: the drawn completion mark is the single success symbol; no second medallion. */
-.rg-nav.is-arrived .rg-kind { display: none; }
+
+@media (forced-colors: active) {
+  .rg-nav .rg-kind.rg-stage { border-bottom: 2px solid CanvasText; }
+  .rg-metric { border: 1px solid CanvasText; }
+}

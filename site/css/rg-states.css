@@ -49,14 +49,17 @@
 .rg-arrival { margin-top: 20px; display: grid; gap: 18px; justify-items: start; }
 .rg-arrival-mark { display: block; width: 72px; height: 72px; overflow: visible; }
 .rg-arrival-mark .disc { fill: var(--rg-tint); stroke: none; }
+/* The halo is invisible at rest; it ripples out once when the trip completes. */
+.rg-arrival-mark .halo { fill: none; stroke: var(--rg-green); stroke-width: 3; opacity: 0; transform-origin: 48px 48px; }
 .rg-arrival-mark .ring { fill: none; stroke: var(--rg-green); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 0; transform: rotate(-90deg); transform-origin: 48px 48px; }
 .rg-arrival-mark .tick { fill: none; stroke: var(--rg-green); stroke-width: 6.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 100; stroke-dashoffset: 0; }
 
-.rg-arrival-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; margin: 0; }
+.rg-arrival-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: 10px; width: 100%; margin: 0; }
 .rg-arrival-stats > div { display: flex; flex-direction: column; justify-content: space-between; gap: 8px; min-width: 0; padding: 14px 16px 16px; border-radius: 16px; background: var(--rg-surface); border: 1px solid var(--rg-line); }
 .rg-arrival-stats dt { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 0.875rem; line-height: 1.3; font-weight: 700; color: var(--rg-ink-2); }
+.rg-arrival-stats dt > span { min-width: 0; overflow-wrap: anywhere; }
 .rg-arrival-stats dt .rg-icon { width: 18px; height: 18px; margin-top: 1px; color: var(--rg-green); }
-.rg-arrival-stats dd { margin: 0; font-size: 1.625rem; line-height: 1.15; font-weight: 800; letter-spacing: -.01em; color: var(--rg-ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rg-arrival-stats dd { margin: 0; font-size: 1.5rem; line-height: 1.15; font-weight: 800; letter-spacing: -.01em; color: var(--rg-ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .rg-arrival-stats dd small { display: block; margin-top: 2px; font-size: 0.8125rem; font-weight: 650; letter-spacing: 0; color: var(--rg-ink-2); }
 .rg-arrival-stats > .rg-arrival-wide { grid-column: 1 / -1; }
 .rg-arrival-lines { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 2px; }
@@ -67,11 +70,13 @@
   .rg-arrival.is-entering .rg-arrival-mark { animation: rg-arrive-settle var(--m-card) var(--e-out) both; }
   .rg-arrival.is-entering .ring { animation: rg-arrive-draw 440ms var(--e-out) 60ms both; }
   .rg-arrival.is-entering .tick { animation: rg-arrive-draw 300ms var(--e-out) 300ms both; }
+  .rg-arrival.is-entering .halo { animation: rg-arrive-halo 900ms var(--e-out) 520ms 1 both; }
   .rg-arrival.is-entering .rg-arrival-stats > div { animation: rg-arrive-rise var(--m-card) var(--e-out) both; }
   .rg-arrival.is-entering .rg-arrival-stats > div:nth-child(1) { animation-delay: 160ms; }
   .rg-arrival.is-entering .rg-arrival-stats > div:nth-child(2) { animation-delay: 200ms; }
   .rg-arrival.is-entering .rg-arrival-stats > div:nth-child(3) { animation-delay: 240ms; }
 }
+@keyframes rg-arrive-halo { from { opacity: .55; transform: scale(1); } to { opacity: 0; transform: scale(1.45); } }
 @keyframes rg-arrive-draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
 @keyframes rg-arrive-settle { from { opacity: 0; transform: scale(.88); } to { opacity: 1; transform: none; } }
 @keyframes rg-arrive-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
@@ -127,6 +132,8 @@
   background: var(--rg-surface); border: 1px solid var(--rg-line);
 }
 .rove-accessible .plan-error-group:has(.plan-later) .plan-error { position: relative; margin: 0; padding: 14px 0 14px 32px; background: none; color: var(--rg-ink); font-weight: 550; }
+/* The clock replaces the generic info icon here: one icon, and it says "time", not "error". */
+.rove-accessible .plan-error-group:has(.plan-later) .plan-error > .rg-icon { display: none; }
 .rove-accessible .plan-error-group:has(.plan-later) .plan-error::before {
   content: ""; position: absolute; left: 0; top: 16px; width: 22px; height: 22px; background: var(--rg-warn);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 7.5V12l3 2'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -151,21 +158,50 @@
 .rove-accessible .plan-notice p { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--rg-ink-2); }
 .rove-accessible .plan-notice .text-button { min-height: 48px; padding: 0; font-size: 1rem; font-weight: 700; color: var(--rg-green); text-decoration: underline; text-underline-offset: 4px; }
 
-/* ---------- Results loading skeleton ---------- */
+/* ---------- Results loading skeleton ----------
+ * Shaped like the route card it is waiting for: duration, then the line pills, then the stations,
+ * so nothing jumps when results arrive. The sheen stops after a few passes (WCAG 2.2.2). */
+.rove-accessible .skeleton-list { display: grid; gap: 14px; margin: 16px 0 0; padding: 0; list-style: none; }
 .rove-accessible .skeleton-list .itinerary { pointer-events: none; }
-.rove-accessible .skeleton-list > li { border: 0; box-shadow: none; }
+.rove-accessible .skeleton-list > li { border: 0; box-shadow: none; background: none; padding: 0; }
 .rove-accessible .skeleton-list .itinerary::before { display: none; }
-.rove-accessible .skeleton-list .sk {
-  border-radius: 6px; background-color: var(--rg-line);
-  background-image: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--rg-surface) 55%, transparent) 50%, transparent 100%);
-  background-size: 200% 100%; background-repeat: no-repeat; background-position: 150% 0;
-  animation: rg-sk-sheen 1.6s var(--e-std) infinite;
+.rove-accessible .skeleton-list .itinerary {
+  position: relative; display: grid; gap: 14px; width: 100%; min-height: 0; padding: 20px 18px 22px; border-radius: 22px;
+  background: var(--rg-surface); border: 1px solid var(--rg-line); box-shadow: none; transform: none;
 }
-.rove-accessible .skeleton-list .sk-line { height: 14px; }
-.rove-accessible .skeleton-list .sk-bar { height: 8px; border-radius: 4px; }
+.rove-accessible .skeleton-list .sk {
+  display: block; margin: 0; border-radius: 8px; background-color: color-mix(in srgb, var(--rg-ink) 9%, var(--rg-surface));
+  background-image: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--rg-surface) 60%, transparent) 50%, transparent 100%);
+  background-size: 200% 100%; background-repeat: no-repeat; background-position: 150% 0;
+  animation: rg-sk-sheen 1.6s var(--e-std) 3;
+}
+/* Duration. */
+.rove-accessible .skeleton-list .sk-line:first-child { width: 38%; height: 1.75rem; border-radius: 9px; }
+/* Line pills: one bar drawn as three pill shapes with a mask. */
+.rove-accessible .skeleton-list .sk-bar {
+  width: min(78%, 18rem); height: 2rem; border-radius: 10px;
+  -webkit-mask: linear-gradient(#000 0 0) 0 0 / 22% 100% no-repeat, linear-gradient(#000 0 0) 40% 0 / 30% 100% no-repeat, linear-gradient(#000 0 0) 100% 0 / 32% 100% no-repeat;
+          mask: linear-gradient(#000 0 0) 0 0 / 22% 100% no-repeat, linear-gradient(#000 0 0) 40% 0 / 30% 100% no-repeat, linear-gradient(#000 0 0) 100% 0 / 32% 100% no-repeat;
+}
+/* Stations. */
+.rove-accessible .skeleton-list .sk-line.short { width: 64%; height: .9375rem; }
+.rove-accessible .skeleton-list .itinerary::after { display: none; }
 .rove-accessible .skeleton-list li:nth-child(2) .sk { animation-delay: 120ms; }
 .rove-accessible .skeleton-list li:nth-child(3) .sk { animation-delay: 240ms; }
+.rove-accessible .skeleton-list li:nth-child(2) { opacity: .8; }
+.rove-accessible .skeleton-list li:nth-child(3) { opacity: .6; }
 @keyframes rg-sk-sheen { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+/* ---------- Empty results ---------- */
+.rg-empty {
+  display: grid; justify-items: start; gap: 10px; margin: 18px var(--rg-gutter) 0; padding: 22px 20px 20px; border-radius: 22px;
+  background: var(--rg-surface); border: 1px solid var(--rg-line);
+}
+.rg-empty-mark { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: var(--rg-tint); color: var(--rg-green); }
+.rg-empty-mark .rg-icon { width: 26px; height: 26px; stroke-width: 2; }
+.rg-empty-title { margin: 4px 0 0; font-size: 1.375rem; line-height: 1.2; font-weight: 780; color: var(--rg-ink); }
+.rg-empty-body { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--rg-ink-2); }
+.rg-empty .rg-empty-action { width: 100%; margin-top: 8px; }
 
 /* ---------- Reduced motion: everything is drawn and still ---------- */
 @media (prefers-reduced-motion: reduce) {
