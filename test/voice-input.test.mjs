@@ -61,3 +61,7 @@ test('voice status is patched in place so VoiceOver focus does not move while th
   assert.match(body, /slot\.innerHTML = voiceStatusHtml\(\)/);
   assert.match(app, /RoveVoice\.record\(\{ leadInMs: 1300/);
 });
+
+test('voice never asks the rider to download anything; it falls back to typing', () => {
+  assert.match(app, /voiceFail\(step\.action === 'offer-download' \? 'voice-service' : step\.code, demo\);/);
+});

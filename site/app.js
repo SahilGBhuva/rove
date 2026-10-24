@@ -2915,7 +2915,7 @@ const VOICE_ERRORS = {
   'no-speech': "I didn't hear anything. Try again, or type your destination.",
   'audio-capture': 'No microphone was found. Type your destination instead.',
   offline: "You're offline, so voice input can't reach a speech service. Type your destination instead.",
-  'voice-service': "Voice input isn't working in this browser right now. Type your destination below. Your keyboard's dictation key also works.",
+  'voice-service': "Voice input isn't available in this browser yet. Type your destination below.",
   'voice-busy': 'The voice service is busy. Try again in a moment, or type your destination.',
   'voice-download': 'This browser can understand speech on your device after a one-time download.',
   network: "Voice input isn't working in this browser right now. Type your destination below. Your keyboard's dictation key also works.",
@@ -3088,7 +3088,8 @@ async function recognitionError(error, { demo, local }) {
   }
   const step = RoveSpeech.recognitionFallback({ error, onLine: navigator.onLine, local, availability });
   if (step.action === 'retry-local') { voiceUseLocal = true; voiceViaBrowser({ demo, local: true }); return; }
-  voiceFail(step.code, demo);
+  // Never ask the rider to download anything: if on-device voice isn't ready, go straight to typing.
+  voiceFail(step.action === 'offer-download' ? 'voice-service' : step.code, demo);
 }
 function voiceInstallLocal() {
   const Recognition = BrowserRecognition();
