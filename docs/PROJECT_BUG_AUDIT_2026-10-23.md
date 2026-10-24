@@ -29,6 +29,7 @@
 6. **P2 — Misleading reroute recovery message.** A failed reroute previously told blind users to check the map. It now advises finding a safe location and asking transit staff for help.
 7. **P2 — Map QA launcher failed without bundled Chromium.** Added fallback to installed Chrome when Playwright's bundled browser is absent.
 8. **P2 — Backend verification scripts crashed against the preview.** The full-OTP routing and launch-scenario suites now identify the experimental preview and exit with an explicit SKIPPED status rather than reporting false failures or JSON parse crashes.
+9. **P1 — Oversized deployment context.** Local agent workspace files under `.claude/` were not excluded from Vercel uploads (roughly 961 MB on disk). Added `.claude/` and `.playwright-cli/` to both `.gitignore` and `.vercelignore`, without deleting any workspace files.
 
 ## Remaining risks / blockers
 
