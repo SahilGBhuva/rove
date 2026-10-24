@@ -1969,6 +1969,7 @@ function viewPlan() {
         ${access === 'CAR_PARKING' ? `<p class="caption plan-hint">Rove plans a drive to a park-and-ride lot, then transit from there. ${driveLimitText()}Parking availability is not known.</p>` : ''}
         ${access === 'CAR_DROP_OFF' ? `<p class="caption plan-hint">Rove plans a drive to a street near the station, where you are dropped off, then transit from there. ${driveLimitText()}</p>` : ''}`}
         ${submit}
+        ${plan.loading ? '<p class="caption plan-hint" role="status" aria-live="polite">Checking scheduled services and transfer connections. This may take a few seconds.</p>' : ''}
         ${plan.loading ? '<ul class="itineraries skeleton-list" aria-hidden="true">' + '<li><div class="itinerary"><span class="sk sk-line"></span><span class="sk sk-bar"></span><span class="sk sk-line short"></span></div></li>'.repeat(3) + '</ul>' : ''}
         ${plan.error ? `<div class="plan-error-group"><p class="empty plan-error" id="planError" role="alert">${rgIcon('info')}<span>${esc(plan.error)}</span></p>${plan.noServiceWindow && plan.later?.length ? `<button class="button secondary plan-later" type="button" data-action="plan-show-later">Show the ${esc(clock(new Date(plan.later[0].startTime)))} trip</button>` : plan.noServiceWindow && plan.timeMode === 'now' ? '<button class="button secondary plan-later" type="button" data-action="plan-next-morning">Try tomorrow at 8:15 AM</button>' : ''}</div>` : ''}
       </div>
@@ -2062,7 +2063,7 @@ async function submitPlan() {
     plan.loading = false;
     // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
     if (error instanceof PlanError) { plan.error = error.offline ? null : error.message; plan.errorField = error.field || null; plan.noServiceWindow = error.code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW'; }
-    else plan.error = error?.name === 'TimeoutError' ? 'The trip planner took too long to respond. Please try again.' : 'Rove could not reach the trip planner. Check your connection and try again.';
+    else plan.error = ['TimeoutError', 'AbortError'].includes(error?.name) ? 'The trip planner took too long to respond. Please try again.' : 'Rove could not reach the trip planner. Check your connection and try again.';
     if (currentView().name === 'plan') render();
   }
 }
