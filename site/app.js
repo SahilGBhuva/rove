@@ -3814,11 +3814,11 @@ function viewNavigate() {
       ${nav.showHelp && !arrive
         // While Help is open the step cannot be confirmed: a tap meant for Help must never count as I've boarded.
         ? '<button type="button" class="rg-secondary rg-close-help" data-action="rg-help" aria-expanded="true" aria-controls="rgHelp">Close help</button>'
-        : `<button type="button" class="rg-confirm" data-action="rg-confirm" data-phase="${i}"${phase.confirmAria ? ` aria-label="${esc(phase.confirmAria)}"` : ''}>${esc(arrive ? 'Done' : phase.confirmLabel)}</button>
-      ${arrive ? '' : `<div class="rg-dock-row">
-        <button type="button" class="rg-secondary" data-action="rg-repeat">Repeat</button>
-        <button type="button" class="rg-secondary" data-action="rg-help" aria-expanded="false" aria-controls="rgHelp">Help</button>
-      </div>`}`}
+        : `<button type="button" class="rg-confirm" data-action="rg-confirm" data-phase="${i}"${phase.confirmAria ? ` aria-label="${esc(phase.confirmAria)}"` : ''}>${esc(arrive ? 'Done' : phase.confirmLabel)}</button>`}
+      <div class="rg-dock-row">
+        <button type="button" class="rg-secondary" data-action="rg-repeat" aria-label="Repeat current directions aloud">Repeat directions</button>
+        ${arrive ? '' : `<button type="button" class="rg-secondary" data-action="rg-help" aria-expanded="${nav.showHelp ? 'true' : 'false'}" aria-controls="rgHelp">${nav.showHelp ? 'Close help' : 'Help'}</button>`}
+      </div>
     </div>
   </div>`;
 }
