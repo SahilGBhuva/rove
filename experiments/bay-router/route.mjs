@@ -381,20 +381,21 @@ export function buildStopPatterns(data) {
     patternOfTrip[t] = id;
   }
   const boards = new Uint8Array(n), alights = new Uint8Array(n), served = new Uint8Array(n), rail = new Uint8Array(n);
-  const seenBoard = new Set(), seenAlight = new Set(), P = ids.size;
+  const P = ids.size;
   const boardPatterns = Array.from({ length: n }, () => []), alightPatterns = Array.from({ length: n }, () => []);
   // GTFS route_type 0 light rail/streetcar, 1 subway (BART), 2 rail (Caltrain).
   const railTrip = trips.map(t => ['0', '1', '2'].includes(String(t[5])));
-  for (const c of connections) {
-    const p = patternOfTrip[c[4]];
-    if (railTrip[c[4]]) { rail[c[0]] = 1; rail[c[1]] = 1; }
-    if (c[5] & 1) {
-      const k = c[0] * P + p;
-      if (!seenBoard.has(k)) { seenBoard.add(k); boards[c[0]] = 1; boardPatterns[c[0]].push(p); }
-    }
-    if (c[5] & 2) {
-      const k = c[1] * P + p;
-      if (!seenAlight.has(k)) { seenAlight.add(k); alights[c[1]] = 1; alightPatterns[c[1]].push(p); }
+  // Visit trips grouped by pattern, so "already recorded for this pattern" is one array compare.
+  const C = packedConnections(connections), index = buildTripIndex(data);
+  const order = Array.from({ length: trips.length }, (_, t) => t).sort((a, b) => patternOfTrip[a] - patternOfTrip[b]);
+  const markBoard = new Int32Array(n), markAlight = new Int32Array(n);
+  for (const t of order) {
+    const p = patternOfTrip[t], tag = p + 1;
+    for (let q = index.offsets[t]; q < index.offsets[t + 1]; q++) {
+      const ci = index.order[q], from = C.from[ci], to = C.to[ci], flags = C.flags[ci];
+      if (railTrip[t]) { rail[from] = 1; rail[to] = 1; }
+      if ((flags & 1) && markBoard[from] !== tag) { markBoard[from] = tag; boards[from] = 1; boardPatterns[from].push(p); }
+      if ((flags & 2) && markAlight[to] !== tag) { markAlight[to] = tag; alights[to] = 1; alightPatterns[to].push(p); }
     }
   }
   for (let i = 0; i < n; i++) served[i] = (boards[i] || alights[i]) && stops[i][2] && stops[i][3] ? 1 : 0;
