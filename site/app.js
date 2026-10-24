@@ -4094,6 +4094,7 @@ async function voiceAskMatch(heard, i = 0, retried = false) {
   if (!accessPreference('speak', true)) btn.focus({ preventScroll: true }); // screen-reader users can also double-tap it
   const there = state.plan.voiceField === 'from' ? 'start there' : 'go there';
   await sayThenWait(retried ? 'Please say yes or no.' : i === 0 ? `I heard ${heard}. Best match: ${matchLabel(btn)}. Say yes to ${there}, or no for the next match.` : `Next match: ${matchLabel(btn)}. Say yes or no.`);
+  if (turn !== voiceTurn || currentView().name !== 'plan') return;
   voiceIntent = { handle: words => {
     const a = yesNo(words);
     if (a === 'yes') { voiceIntent = null; earcon('ok'); handleAction(btn); }
@@ -4113,7 +4114,7 @@ async function voiceOfferRoutes(k = 0, retried = false) {
   const it = its[order[n]];
   await sayThenWait(retried ? 'Please say start, next, or repeat.'
     : `${n === 0 && !retried ? `${plural(order.length, 'route')} found. ` : ''}${routeChoiceSpeech(it, n + 1)} Say start to begin this route${order.length > 1 ? ', next for another route' : ''}, or repeat.`);
-  if (currentView().name !== 'results') return;
+  if (turn !== voiceTurn || currentView().name !== 'results') return;
   toast('Listening: say start, next, or repeat');
   voiceIntent = { handle: words => {
     hideToast(); // the answer is in: the "Listening" bubble must not linger over the trip screen
@@ -4194,7 +4195,7 @@ function voiceViaServer({ demo, leadIn = 1300 }) {
     if (notConfigured && BrowserRecognition()) { voiceAgain(demo, 'Sorry, please say that once more after the tone.'); return; }
     voiceFail(navigator.onLine ? 'voice-service' : 'offline', demo);
   }, error => {
-    if (capture !== c) return;
+    if (capture !== c || turn !== voiceTurn) return;
     capture = null;
     if (error?.name === 'AbortError') return;
     if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') { voiceFail('not-allowed', demo); return; }
