@@ -1,1 +1,231 @@
-/* Rove design: journey. Owned by one workstream; see docs/design/OWNERSHIP.md. */
+/* Rove design: journey. Owned by one workstream; see docs/design/OWNERSHIP.md.
+ * The active trip screen: a transit-line progress strip, one instruction card per step, and a
+ * dock that always holds Confirm, Repeat and Help. Rules that keep it safe:
+ * - The step only changes after an explicit rider confirmation; the step transition is tied to that
+ *   render (.is-entering) and is transform-only, so it never hides content, delays focus or blocks taps.
+ * - Every decorative loop stops by itself within 5 seconds (WCAG 2.2.2) and all motion is removed
+ *   under prefers-reduced-motion.
+ * - Reminder styles never look like the Confirm button: left-aligned text, a leading icon, a tinted
+ *   or outlined panel, never a solid green fill. */
+
+:root {
+  --rgj-shadow: 0 1px 2px rgba(23, 32, 26, .05), 0 12px 28px -18px rgba(23, 32, 26, .30);
+  --rgj-dock-shadow: 0 -12px 28px -22px rgba(23, 32, 26, .45);
+  --rgj-edge: transparent;
+  --rgj-i-clock: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='8.5'/><path d='M12 7.5V12l3 2'/></svg>");
+  --rgj-i-bell: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15Z'/><path d='M10 20.5a2 2 0 0 0 4 0'/></svg>");
+  --rgj-i-exit: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M14 4h5v16h-5M10 8l-4 4 4 4M6 12h9'/></svg>");
+  --rgj-i-alert: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3.5 2.5 20h19Z'/><path d='M12 10v4.5M12 17.3v.1'/></svg>");
+  --rgj-i-check: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='m5 12.5 4.5 4.5L19 7.5'/></svg>");
+  --rgj-i-repeat: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13l-4.5-4H4Z'/><path d='M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11'/></svg>");
+  --rgj-i-help: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='8.5'/><path d='M9.6 9.4a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.1-2.4 3.6M12 17v.1'/></svg>");
+  --rgj-i-close: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'><path d='M6.5 6.5l11 11M17.5 6.5l-11 11'/></svg>");
+  --rgj-i-skip: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'><path d='M4 6.5 11 12l-7 5.5ZM13 6.5 20 12l-7 5.5Z'/></svg>");
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rgj-shadow: 0 1px 0 rgba(255, 255, 255, .04) inset, 0 16px 32px -20px rgba(0, 0, 0, .8);
+    --rgj-dock-shadow: 0 -16px 32px -20px rgba(0, 0, 0, .9);
+    --rgj-edge: rgba(255, 255, 255, .16);
+  }
+}
+
+/* ---- Stage accent: one colour per kind of step, carried by the card's top rule ---- */
+.rg-nav { --k: var(--rg-green); }
+.rg-nav[data-kind="board"], .rg-nav[data-kind="ride"] { --k: var(--c, var(--rg-green)); }
+
+/* ---- Top bar: End trip, demo chip, step counter ---- */
+.rg-nav .rg-top { gap: 8px 10px; flex-wrap: wrap; padding-top: 4px; }
+.rg-nav .rg-end { display: inline-flex; align-items: center; min-height: 48px; padding: 0 12px 0 2px; border-radius: 12px; color: var(--rg-ink-2); }
+.rg-demo-chip {
+  display: inline-block; padding: 5px 11px; border-radius: 999px;
+  background: var(--rg-warn-bg); color: var(--rg-warn);
+  font-size: 0.75rem; font-weight: 800; letter-spacing: .07em; line-height: 1.2; text-transform: uppercase; white-space: nowrap;
+}
+.rg-nav .rg-step {
+  padding: 5px 12px; border-radius: 999px; background: var(--rg-surface); border: 1px solid var(--rg-line);
+  font-size: 0.875rem; line-height: 1.3; color: var(--rg-ink); font-weight: 750;
+}
+
+/* ---- Journey line: the whole trip drawn like a transit map ---- */
+.rg-jl { display: flex; align-items: center; gap: 4px; min-height: 34px; margin: 10px 6px 0 2px; }
+.rg-jl-seg { position: relative; flex: var(--w, 2) 1 0; min-width: 16px; height: 5px; border-radius: 3px; }
+.rg-jl-seg.now { min-width: 44px; }
+.rg-jl-seg.is-ride { background: var(--c, var(--rg-green)); box-shadow: inset 0 0 0 1px var(--rgj-edge); }
+.rg-jl-seg.is-walk {
+  height: 6px; border-radius: 0;
+  background: radial-gradient(circle at center, var(--rg-ink-2) 0 1.7px, transparent 2.2px) 0 50% / 8px 6px repeat-x;
+}
+.rg-jl-seg.next { opacity: .38; }
+.rg-jl-seg.now { height: 8px; border-radius: 4px; }
+.rg-jl-seg.is-walk.now { height: 8px; border-radius: 0; background-image: radial-gradient(circle at center, var(--rg-ink) 0 2.2px, transparent 2.7px); background-size: 9px 8px; }
+.rg-jl-node { flex: none; position: relative; box-sizing: border-box; }
+.rg-jl-node.is-start { width: 12px; height: 12px; border-radius: 50%; background: var(--rg-ink-2); }
+.rg-jl-node.is-end { width: 14px; height: 14px; border-radius: 4px; border: 3px solid var(--rg-ink-2); background: var(--rg-bg); }
+.rg-jl-node.is-end.next { opacity: .55; }
+.rg-jl-node.is-end.now { width: 18px; height: 18px; border-radius: 5px; border-color: var(--rg-green); background: var(--rg-green); box-shadow: 0 0 0 3px var(--rg-bg), 0 0 0 5px color-mix(in srgb, var(--rg-green) 45%, transparent); }
+.rg-jl-node.is-stop {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px;
+  background: var(--c, var(--rg-green)); color: var(--ct, #fff); box-shadow: 0 0 0 2px var(--rg-bg), inset 0 0 0 1px var(--rgj-edge);
+}
+.rg-jl-node.is-stop b { max-width: 4.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; font-weight: 800; line-height: 1; letter-spacing: 0; }
+.rg-jl-node.is-stop.next { opacity: .55; }
+.rg-jl-node.is-stop.now { height: 26px; min-width: 26px; padding: 0 8px; box-shadow: 0 0 0 3px var(--rg-bg), 0 0 0 5.5px var(--c, var(--rg-green)); }
+.rg-jl-node.is-stop.now b { font-size: 0.75rem; }
+/* You are here: a puck on the current segment. */
+.rg-jl-here {
+  position: absolute; left: clamp(10px, 22%, 40px); top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
+  background: var(--rg-surface); border: 3.5px solid var(--c, var(--rg-ink)); box-sizing: border-box;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .25); z-index: 1;
+}
+
+/* ---- Instruction card ---- */
+.rg-nav .rg-card {
+  position: relative; margin-top: 14px; padding: 22px 20px 20px; border-radius: 22px; overflow: hidden;
+  background: var(--rg-surface); border: 1px solid var(--rg-line); box-shadow: var(--rgj-shadow);
+  animation: none; /* the generic settle replayed on every render (Help, Repeat); steps animate only on confirmation below */
+}
+.rg-nav .rg-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: var(--k); }
+.rg-nav .rg-kind { gap: 12px; font-size: 0.875rem; letter-spacing: .07em; }
+.rg-nav .rg-badge { min-width: 44px; height: 36px; border-radius: 10px; font-size: 1.0625rem; box-shadow: inset 0 0 0 1px var(--rgj-edge); }
+.rg-nav .rg-glyph { width: 36px; height: 36px; border-radius: 10px; }
+.rg-nav .rg-glyph svg { width: 22px; height: 22px; stroke-width: 2; }
+.rg-nav .rg-card h1 { margin-top: 12px; text-wrap: balance; }
+
+/* Confirmation echo: what the rider just confirmed. It quietens after a few seconds without moving anything. */
+.rg-flash {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; margin: -4px 0 14px; padding: 5px 14px 5px 5px; border-radius: 999px;
+  background: var(--rg-tint); color: var(--rg-ink); font-size: 0.9375rem; font-weight: 700; line-height: 1.3;
+  transition: background-color var(--m-card) var(--e-std), color var(--m-card) var(--e-std);
+}
+.rg-flash .rg-icon { width: 1.625rem; height: 1.625rem; padding: 4px; box-sizing: border-box; border-radius: 50%; background: var(--rg-green); color: var(--rg-on-green); stroke-width: 2.6; transition: background-color var(--m-card) var(--e-std), color var(--m-card) var(--e-std); }
+.rg-flash.is-leaving { background: transparent; color: var(--rg-ink-2); }
+.rg-flash.is-leaving .rg-icon { background: var(--rg-tint); color: var(--rg-green); }
+
+/* Fact rows: icon tile, text, inset hairlines. */
+.rg-nav .rg-facts { margin: 16px 0 0; border-top: 0; }
+.rg-nav .rg-facts li { display: grid; grid-template-columns: 2.125rem minmax(0, 1fr); column-gap: 14px; align-items: start; padding: 10px 0 0; border-bottom: 0; font-size: 1.125rem; line-height: 1.4; }
+.rg-nav .rg-facts li > span { min-height: 2.125rem; display: flex; align-items: center; padding-bottom: 10px; border-bottom: 1px solid var(--rg-line); overflow-wrap: anywhere; }
+.rg-nav .rg-facts li:last-child > span { border-bottom: 0; padding-bottom: 2px; }
+.rg-nav .rg-facts .rg-icon { width: 2.125rem; height: 2.125rem; padding: 0.4375rem; box-sizing: border-box; border-radius: 10px; background: var(--rg-tint); color: var(--rg-green); stroke-width: 2; }
+
+/* Before-boarding check. */
+.rg-nav .rg-check { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; margin-top: 14px; padding: 14px 16px; border-radius: 16px; background: var(--rg-tint); color: var(--rg-ink); }
+.rg-nav .rg-check .rg-icon { margin-top: 1px; color: var(--rg-green); stroke-width: 2; }
+
+/* Status and reminders. Never a solid green fill, never centred: Confirm is the only thing that looks like Confirm. */
+.rg-nav .rg-status {
+  display: grid; grid-template-columns: 1.375rem minmax(0, 1fr); column-gap: 12px; align-items: start;
+  margin-top: 14px; padding: 14px 16px; border-radius: 16px; text-align: left;
+  background: var(--rg-bg); color: var(--rg-ink); border: 1.5px solid var(--rg-line);
+  font-size: 1.0625rem; font-weight: 650; line-height: 1.4;
+}
+.rg-nav .rg-status[hidden] { display: none; }
+.rg-nav .rg-status::before {
+  content: ""; width: 1.375rem; height: 1.375rem; margin-top: 0.05rem; background: var(--rg-green);
+  -webkit-mask: var(--rgj-i-clock) center / contain no-repeat; mask: var(--rgj-i-clock) center / contain no-repeat;
+}
+/* Rising urgency: info (neutral) < prepare (warm, bell) < exit (warm, outlined, door) ; uncertain (alert). */
+.rg-nav .rg-status[data-level="prepare"] { background: var(--rg-warn-bg); color: var(--rg-ink); border-color: transparent; }
+.rg-nav .rg-status[data-level="prepare"]::before { background: var(--rg-warn); -webkit-mask-image: var(--rgj-i-bell); mask-image: var(--rgj-i-bell); }
+.rg-nav .rg-status[data-level="exit"] { background: var(--rg-warn-bg); color: var(--rg-warn); border: 2.5px solid var(--rg-warn); font-weight: 760; }
+.rg-nav .rg-status[data-level="exit"]::before { background: var(--rg-warn); -webkit-mask-image: var(--rgj-i-exit); mask-image: var(--rgj-i-exit); }
+.rg-nav .rg-status[data-level="uncertain"] { background: var(--rg-bad-bg); color: var(--rg-bad); border: 1.5px solid color-mix(in srgb, var(--rg-bad) 55%, transparent); }
+.rg-nav .rg-status[data-level="uncertain"]::before { background: var(--rg-bad); -webkit-mask-image: var(--rgj-i-alert); mask-image: var(--rgj-i-alert); }
+
+/* ---- Below the card ---- */
+.rg-nav .rg-certainty { margin: 12px 4px 0; }
+.rg-nav .rg-demo-skip {
+  display: inline-flex; align-items: center; gap: 10px; align-self: flex-start; max-width: 100%; min-height: 48px; margin-top: 12px; padding: 8px 18px 8px 14px;
+  border-radius: 999px; background: transparent; border: 1.5px dashed color-mix(in srgb, var(--rg-warn) 60%, transparent); color: var(--rg-warn);
+  font-size: 0.9375rem; font-weight: 700; line-height: 1.3; text-align: left;
+  transition: transform var(--m-press) var(--e-out), background-color var(--m-small) var(--e-std);
+}
+.rg-nav .rg-demo-skip::before { content: ""; flex: none; width: 1.125rem; height: 1.125rem; background: currentColor; -webkit-mask: var(--rgj-i-skip) center / contain no-repeat; mask: var(--rgj-i-skip) center / contain no-repeat; }
+.rg-nav .rg-demo-skip:active { transform: scale(.97); background: var(--rg-warn-bg); }
+.rg-nav .rg-next { align-items: baseline; gap: 12px; margin: 14px 0 0; padding: 14px 16px; border-radius: 16px; border: 1.5px dashed var(--rg-line); line-height: 1.4; }
+.rg-nav .rg-next .rg-next-label { flex: none; font-size: 0.75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--rg-ink-2); }
+.rg-nav .rg-next .rg-next-text { flex: 1 1 auto; min-width: 0; color: var(--rg-ink); font-size: 1rem; font-weight: 600; letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
+
+/* ---- Dock: always at the bottom of the screen, a soft material over the content ---- */
+.rg-nav > .rg-dock { margin-top: auto; }
+.rg-nav > :has(+ .rg-dock) { margin-bottom: 24px; }
+.rg-nav .rg-dock {
+  gap: 10px; padding-top: 14px;
+  background: color-mix(in srgb, var(--rg-bg) 90%, transparent);
+  -webkit-backdrop-filter: saturate(1.5) blur(16px); backdrop-filter: saturate(1.5) blur(16px);
+  border-top: 1px solid color-mix(in srgb, var(--rg-line) 75%, transparent); box-shadow: var(--rgj-dock-shadow);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .rg-nav .rg-dock { background: var(--rg-bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+.rg-nav .rg-confirm {
+  min-height: 68px; padding: 10px 20px; gap: 10px; border-radius: 20px; line-height: 1.2;
+  font-size: 1.25rem; font-weight: 760; text-wrap: balance; overflow-wrap: anywhere; min-width: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 12px 24px -14px color-mix(in srgb, var(--rg-green) 85%, transparent);
+  transition: transform var(--m-press) var(--e-out), background-color var(--m-small) var(--e-std);
+}
+/* Repeat and Help sit side by side, and stack only when the text is too large to fit (rem-based, so it follows text size, not screen width). */
+.rg-nav .rg-dock-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.rg-nav .rg-dock-row > .rg-secondary { flex: 1 1 8rem; width: auto; }
+.rg-nav .rg-confirm::before { content: ""; flex: none; width: 24px; height: 24px; background: currentColor; -webkit-mask: var(--rgj-i-check) center / contain no-repeat; mask: var(--rgj-i-check) center / contain no-repeat; }
+.rg-nav .rg-dock .rg-secondary { gap: 8px; min-width: 0; padding-block: 8px; border-radius: 18px; line-height: 1.2; overflow-wrap: anywhere; transition: transform var(--m-press) var(--e-out), border-color var(--m-small) var(--e-std); }
+.rg-nav .rg-dock .rg-secondary::before { content: ""; flex: none; width: 22px; height: 22px; background: var(--rg-green); -webkit-mask: var(--rgj-i-help) center / contain no-repeat; mask: var(--rgj-i-help) center / contain no-repeat; }
+.rg-nav .rg-dock .rg-secondary[data-action="rg-repeat"]::before { -webkit-mask-image: var(--rgj-i-repeat); mask-image: var(--rgj-i-repeat); }
+.rg-nav .rg-dock .rg-close-help { min-height: 64px; font-size: 1.1875rem; }
+.rg-nav .rg-dock .rg-close-help::before { -webkit-mask-image: var(--rgj-i-close); mask-image: var(--rgj-i-close); }
+
+/* ---- Arrival: a calm finish, Done pinned to the bottom ---- */
+.rg-nav.is-arrived > .rg-dock { margin-top: auto; }
+.rg-nav.is-arrived .rg-card { margin-top: 18px; }
+.rg-nav.is-arrived .rg-glyph { width: 44px; height: 44px; border-radius: 50%; background: var(--rg-green); color: var(--rg-on-green); }
+.rg-nav.is-arrived .rg-glyph svg { width: 26px; height: 26px; stroke-width: 2.6; }
+.rg-nav.is-arrived .rg-kind { color: var(--rg-green); }
+.rg-nav .rg-arrival-place { margin: 8px 0 0; font-size: 1.125rem; line-height: 1.4; color: var(--rg-ink-2); overflow-wrap: anywhere; }
+
+/* Narrow phones and large text. */
+@media (max-width: 360px) {
+  /* End trip and the step counter share the first row; the demo chip takes its own short row. */
+  .rg-nav .rg-demo-chip { order: 3; }
+  .rg-nav .rg-card { padding: 20px 16px 18px; border-radius: 20px; }
+  .rg-nav .rg-facts li { column-gap: 12px; }
+}
+
+/* ---- Motion: only where it explains a change; nothing loops past 5 seconds ---- */
+@media (prefers-reduced-motion: no-preference) {
+  /* Step change (rider confirmed): the card slides in from the direction of travel, the line advances. */
+  .rg-nav.is-entering .rg-card { animation: rgj-step-in var(--m-journey) var(--e-out) both; }
+  .rg-nav.is-entering .rg-jl-seg.now { transform-origin: left center; animation: rgj-grow var(--m-journey) var(--e-out) both; }
+  .rg-nav.is-entering .rg-jl-node.now { animation: rgj-pop var(--m-journey) var(--e-out) both; }
+  .rg-nav.is-entering .rg-flash { animation: rgj-flash-in var(--m-journey) var(--e-out) both; }
+  .rg-nav.is-entering .rg-flash .rg-icon path { stroke-dasharray: 24; animation: rgj-draw var(--m-journey) var(--e-out) 120ms both; }
+
+  /* Current segment: a light passes along the line in the direction of travel, three times, then rests. */
+  .rg-jl-seg.is-ride.now::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .6), transparent) 0 0 / 45% 100% no-repeat;
+    animation: rgj-flow 1.6s var(--e-std) 3 both;
+  }
+  .rg-jl-seg.is-walk.now { animation: rgj-march 1.2s linear 4; }
+  .rg-nav.is-entering .rg-jl-seg.is-walk.now { animation: rgj-grow var(--m-journey) var(--e-out) both, rgj-march 1.2s linear 4; }
+  .rg-jl-here::after {
+    content: ""; position: absolute; inset: -3.5px; border-radius: 50%; border: 2px solid var(--c, var(--rg-ink));
+    animation: rgj-halo 1.6s var(--e-out) 3 both;
+  }
+  .rg-jl-node.is-stop.now::after, .rg-jl-node.is-end.now::after {
+    content: ""; position: absolute; inset: -6px; border-radius: inherit; border: 2px solid var(--c, var(--rg-green));
+    animation: rgj-halo 1.6s var(--e-out) 3 both;
+  }
+}
+@keyframes rgj-step-in { from { transform: translate3d(32px, 0, 0); opacity: .35; } to { transform: none; opacity: 1; } }
+@keyframes rgj-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes rgj-pop { from { transform: scale(.5); } 70% { transform: scale(1.08); } to { transform: scale(1); } }
+@keyframes rgj-flash-in { from { transform: translate3d(0, -6px, 0) scale(.94); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes rgj-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+@keyframes rgj-flow { from { background-position: -80% 0; } to { background-position: 180% 0; } }
+@keyframes rgj-march { from { background-position: 0 50%; } to { background-position: 9px 50%; } }
+@keyframes rgj-halo { from { transform: scale(.85); opacity: .9; } to { transform: scale(1.7); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .rg-nav .rg-card, .rg-nav .rg-flash, .rg-nav .rg-flash .rg-icon, .rg-jl *, .rg-jl *::after, .rg-nav .rg-confirm, .rg-nav .rg-secondary, .rg-nav .rg-demo-skip { animation: none !important; transition: none !important; }
+  .rg-jl-seg.now::after, .rg-jl-here::after, .rg-jl-node.now::after { content: none; }
+}
