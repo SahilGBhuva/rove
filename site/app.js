@@ -936,6 +936,21 @@ function renderJourney() {
   const points = journeyPointFeatures(state.journey);
   map?.getSource('journey-points')?.setData(points);
   map?.getSource('journey-point-labels')?.setData(points);
+
+  // A small map key is shown only for visual information present in this itinerary.
+  // In particular, never suggest that a direct endpoint-to-endpoint line is a walkable path.
+  const legs = state.journey?.legs || [];
+  const mappedTransit = legs.some(l => isTransit(l) && !legShapeMissing(l));
+  const approximateTransit = legs.some(l => isTransit(l) && legShapeMissing(l));
+  const unmappedWalk = legs.some(l => ['WALK', 'CAR'].includes(l.mode) &&
+    (!Array.isArray(l.geometry?.coordinates) || l.geometry.coordinates.length < 2));
+  const key = $('#rgMapLegend');
+  if (key) {
+    key.hidden = !state.journey || !(mappedTransit || approximateTransit || unmappedWalk);
+    $('#rgMapMappedLegend').hidden = !mappedTransit;
+    $('#rgMapApproxLegend').hidden = !approximateTransit;
+    $('#rgMapWalkWarning').hidden = !unmappedWalk;
+  }
 }
 
 
