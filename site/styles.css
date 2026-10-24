@@ -1599,3 +1599,6 @@ body .panel-body:has(.rg-nav) { scroll-padding-bottom: 180px; scroll-padding-top
 
 /* Integration: on desktop the panel header is sticky; scrolled-to content must clear it. */
 @media (min-width: 801px) { body .panel-body { scroll-padding-top: 96px; } }
+
+/* Desktop panel caption: legible size and >= 4.5:1 on the warm background. */
+.rove-accessible .brand-caption { color: var(--rg-ink-2); font-size: .6875rem; }

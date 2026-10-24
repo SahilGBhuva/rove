@@ -69,7 +69,8 @@
   background: var(--c, var(--rg-green)); color: var(--ct, #fff); box-shadow: 0 0 0 2px var(--rg-bg), inset 0 0 0 1px var(--rgj-edge);
 }
 .rg-jl-node.is-stop b { max-width: 4.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; font-weight: 800; line-height: 1; letter-spacing: 0; }
-.rg-jl-node.is-stop.next { opacity: .55; }
+/* Upcoming stops keep full-contrast badge text (opacity fading failed 4.5:1); they read as 'later' by size and no ring. */
+.rg-jl-node.is-stop.next { opacity: 1; box-shadow: none; }
 .rg-jl-node.is-stop.now { height: 26px; min-width: 26px; padding: 0 8px; box-shadow: 0 0 0 3px var(--rg-bg), 0 0 0 5.5px var(--c, var(--rg-green)); }
 .rg-jl-node.is-stop.now b { font-size: 0.75rem; }
 /* You are here: a puck on the current segment. */

@@ -204,3 +204,6 @@
   .rg-home .rg-speak { background: linear-gradient(180deg, color-mix(in srgb, var(--rg-green) 94%, white) 0%, var(--rg-green) 60%); box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 8px 20px -14px rgba(134, 211, 163, .5); }
   .rg-home { --home-shadow: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 8px 22px -10px rgba(0, 0, 0, .7); }
 }
+
+/* Solid fallback under the gradient (also what contrast tools read): white on --rg-green is >= 6:1. */
+.rg-home .rg-primary.rg-speak { background-color: var(--rg-green); }

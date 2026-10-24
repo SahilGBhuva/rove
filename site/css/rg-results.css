@@ -287,3 +287,7 @@
   .rg-routes > li, .rg-route-item, .rg-route-item *, .rg-route-item *::before, .rg-route-item *::after { animation: none !important; transition: none !important; }
   .rg-route-item:has(> .rg-route:active), .rg-route-item .rg-route-actions :is(.audio-route, .rg-route-start):active { transform: none; }
 }
+
+/* 200% text: walking-direction steps wrap instead of running off the card. */
+.rove-accessible details.turns summary { flex-wrap: wrap; }
+.rove-accessible details.turns ol li, .rove-accessible details.turns ol li > span { min-width: 0; overflow-wrap: anywhere; }
