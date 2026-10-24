@@ -9,6 +9,11 @@
   <meta name="description" content="Door-to-door transit directions and live times for the San Francisco Bay Area: BART, Muni, Caltrain, VTA, and AC Transit." />
   <link rel="icon" type="image/svg+xml" href="public/rove-mark.svg" />
   <link rel="preload" href="public/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <!-- Begin connection setup and transit-data download while HTML is still parsing. -->
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+  <link rel="preload" href="public/data/network.json" as="fetch" crossorigin />
+  <link rel="preload" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.js" as="script" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
   <link rel="stylesheet" href="styles.css?v=35" />
   <link rel="stylesheet" href="css/rg-tokens.css?v=2" />
