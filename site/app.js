@@ -4024,6 +4024,9 @@ function showWake() {
   document.body.classList.add('has-wake');
   const close = () => { wrap.remove(); document.body.classList.remove('has-wake'); };
   wrap.querySelector('#rgWakeGo').addEventListener('click', () => {
+    // The explicit voice-first Start action must enable speech even if a
+    // previous visit saved the separate 'Rove voice off' preference.
+    accessSetting('speak', true);
     close();
     try { window.RoveVoice?.unlock?.(); } catch { /* no audio */ }
     const t = loadTrip();
