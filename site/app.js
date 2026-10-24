@@ -4066,10 +4066,16 @@ function voiceMode() { return voiceServer !== false && window.RoveVoice?.support
 function sayThenWait(text) {
   return new Promise(resolve => {
     let off = null, timer = null;
-    const done = () => { off?.(); clearTimeout(timer); resolve(); };
+    let settled = false;
+    const done = () => { if (settled) return; settled = true; off?.(); clearTimeout(timer); resolve(); };
     const estimate = Math.min(9000, 900 + String(text).length * 55);
     if (accessPreference('speak', true) && speaker && speakOut(text)) {
-      off = speaker.onChange(st => { if (['done', 'failed', 'stopped', 'unsupported'].includes(st.state)) done(); });
+      // A previous utterance can finish/cancel while this prompt starts. Only
+      // advance to microphone capture when THIS prompt finishes, never on an
+      // unrelated speech event (which causes iPhone to hear Rove's own voice).
+      off = speaker.onChange(st => {
+        if (st.text === String(text) && ['done', 'failed', 'stopped', 'unsupported'].includes(st.state)) done();
+      });
       timer = setTimeout(done, estimate + 4000);
     } else {
       announceAccess(text);
