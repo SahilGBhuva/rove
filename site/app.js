@@ -2504,21 +2504,44 @@ const rgClock = ms => clock(new Date(ms));
 const navNow = nav => Date.now() + (nav?.clockOffset || 0);
 const MIC_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>';
 const SEARCH_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></svg>';
-/* ---- Rove visual system: one line-icon set (24px grid, 1.75 stroke, round caps) ---- */
+/* ---- Rove visual system: one line-icon set (24px grid, 1.75 stroke, round caps and joins) ----
+ * Live area is 3..21 (2.5px optical padding); circles and squares are sized so they read at the same
+ * weight; every icon is decorative (aria-hidden) and sized/stroked by .rg-icon in rg-tokens.css.
+ * Vehicles: bus, train (alias rail), tram, cablecar, ferry. Voice: mic, speaker, wave.
+ * Status: info, warning, check, refresh. Wayfinding: arrow, chevron, chevronLeft, chevronDown, pin,
+ * target (alias locate), platform, exit, walk, transfer, stops, route, clock, search, close. */
 const RG_ICON = {
-  arrow: '<path d="M5 12h13M13 6l6 6-6 6"/>',
-  pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z"/><circle cx="12" cy="10" r="2.3"/>',
-  platform: '<path d="M4 18h16M6 18V8h12v10M9 8V5h6v3"/>',
+  arrow: '<path d="M4.5 12h15M13.5 6l6 6-6 6"/>',
+  pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z"/><circle cx="12" cy="10" r="2.25"/>',
+  platform: '<path d="M3.5 19h17M6 19V9.5h12V19M9.5 9.5V6a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v3.5"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
-  exit: '<path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h9"/>',
-  walk: '<circle cx="13" cy="4.5" r="1.8"/><path d="m9 21 2.5-6.5 2.5 2V21M7 11l3-3.5 3.5 1 2 3.5 2.5 1M11.5 14.5l1-6"/>',
-  transfer: '<path d="M7 7h11l-3-3M17 17H6l3 3"/>',
-  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/>',
-  stops: '<circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/>',
+  exit: '<path d="M14 4.5h3.5A1.5 1.5 0 0 1 19 6v12a1.5 1.5 0 0 1-1.5 1.5H14M10 8l-4 4 4 4M6 12h9"/>',
+  walk: '<circle cx="13.5" cy="4.75" r="1.75"/><path d="M9.5 20.5l2.25-5.75M11.75 14.75l2.5 2.25v3.5M11.75 14.75l1.25-5.5M13 9.25l-3 1.5-1.75 3M13 9.25l1.75 3 2.75 1.25"/>',
+  transfer: '<path d="M4.5 8h14l-3.5-3.5M19.5 16h-14l3.5 3.5"/>',
+  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.75v.01"/>',
+  stops: '<circle cx="5.5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18.5" cy="12" r="2"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
-  route: '<circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 17c6-1 2-9 8-10"/>'
+  route: '<circle cx="6" cy="18" r="2.25"/><circle cx="18" cy="6" r="2.25"/><path d="M8.25 17.25c6-1 1.5-9.5 7.5-10.5"/>',
+  bus: '<rect x="5" y="3.5" width="14" height="14" rx="3"/><path d="M5 11h14M9 6.5h6M8.5 14.25v.01M15.5 14.25v.01M8 17.5v3M16 17.5v3"/>',
+  train: '<rect x="6" y="3.5" width="12" height="13" rx="3.5"/><path d="M6 10.5h12M9.5 13.5v.01M14.5 13.5v.01M9.5 16.5l-2 4M14.5 16.5l2 4"/>',
+  rail: '<rect x="6" y="3.5" width="12" height="13" rx="3.5"/><path d="M6 10.5h12M9.5 13.5v.01M14.5 13.5v.01M9.5 16.5l-2 4M14.5 16.5l2 4"/>',
+  tram: '<rect x="6" y="7.5" width="12" height="10" rx="3"/><path d="M6 12.5h12M9.5 15v.01M14.5 15v.01M12 7.5V4.5M9 3.5h6M9.5 17.5l-1.5 3M14.5 17.5l1.5 3"/>',
+  cablecar: '<path d="M3.5 8h17"/><rect x="5.5" y="8" width="13" height="9.5" rx="1.5"/><path d="M5.5 12.5h13M9.75 8v4.5M14.25 8v4.5"/><circle cx="8.5" cy="19.5" r="1.25"/><circle cx="15.5" cy="19.5" r="1.25"/>',
+  ferry: '<path d="M3.5 19.5c1.42 1 2.83 1 4.25 0 1.42-1 2.83-1 4.25 0 1.42 1 2.83 1 4.25 0 1.42-1 2.83-1 4.25 0M5.5 16 4 11.5h16L18.5 16M7 11.5v-3a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v3M12 7.5v-3"/>',
+  mic: '<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5"/>',
+  speaker: '<path d="M4.5 9.5v5H8l4.5 4v-13L8 9.5Z"/><path d="M15.5 9a4 4 0 0 1 0 6M18.25 6.5a7.5 7.5 0 0 1 0 11"/>',
+  wave: '<path d="M4 10.5v3M8 7.5v9M12 4.5v15M16 8v8M20 10.5v3"/>',
+  warning: '<path d="M10.27 4.5 3.3 16.75a2 2 0 0 0 1.73 3h13.94a2 2 0 0 0 1.73-3L13.73 4.5a2 2 0 0 0-3.46 0Z"/><path d="M12 9.5v4M12 16.5v.01"/>',
+  refresh: '<path d="M19.5 12a7.5 7.5 0 0 1-13.25 4.8M4.5 12a7.5 7.5 0 0 1 13.25-4.8"/><path d="M18 3.5v3.75h-3.75M6 20.5v-3.75h3.75"/>',
+  target: '<circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.25"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/>',
+  locate: '<circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.25"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/>',
+  chevron: '<path d="m9.5 6 6 6-6 6"/>',
+  chevronLeft: '<path d="m14.5 6-6 6 6 6"/>',
+  chevronDown: '<path d="m6 9.5 6 6 6-6"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
+  close: '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>'
 };
-const rgIcon = (name, cls = '') => `<svg class="rg-icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${RG_ICON[name] || ''}</svg>`;
+const rgIcon = (name, cls = '') => `<svg class="rg-icon${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${RG_ICON[name] || ''}</svg>`;
 function factIcon(text) {
   if (/^Toward /.test(text)) return 'arrow';
   if (/^At /.test(text)) return 'pin';
