@@ -1515,8 +1515,6 @@ body .panel-body:has(.rg-nav) { padding-bottom: 0; }
 
 /* Motion: a short settle for new screens and steps; nothing moves with reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
-  .rg-card { animation: rg-settle 320ms var(--rg-spring) both; }
-  .rg-help { animation: rg-settle 260ms var(--rg-spring) both; }
 }
 @keyframes rg-settle { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
@@ -1543,7 +1541,7 @@ body .panel-body:has(.rg-nav) { display: flex; flex-direction: column; }
 .rg-nav { flex: 1 0 auto; }
 /* Reserve room for the speech bar on phones instead of covering the top of the screen. */
 @media (max-width: 800px) {
-  body.has-speech-bar .panel-body { padding-top: 72px; transition: padding-top 180ms ease; }
+  body.has-speech-bar .panel-body { padding-top: var(--speech-bar-h, 72px); transition: padding-top 180ms ease; }
 }
 @media (prefers-reduced-motion: reduce) { body.has-speech-bar .panel-body { transition: none; } }
 .rove-accessible .audio-route { min-height: 52px; border-radius: 999px; box-shadow: none; border: 1.5px solid var(--rg-line); background: var(--rg-surface); color: var(--rg-ink); font-size: 1rem; font-weight: 700; margin: 10px 0 4px; padding: 0 18px; }
@@ -1574,7 +1572,7 @@ body .panel-body:has(.rg-nav) { scroll-padding-bottom: 180px; scroll-padding-top
 .rg-help { padding-bottom: 16px; }
 .rg-close-help { min-height: 64px; font-size: 1.1875rem; }
 /* Desktop: the speech bar sits at the top as on phones, never over trip controls. */
-@media (min-width: 801px) { .speech-bar { top: 16px; bottom: auto; } body.has-speech-bar .panel-body { padding-top: 76px; } }
+@media (min-width: 801px) { .speech-bar { top: 16px; bottom: auto; } body.has-speech-bar .panel-body { padding-top: var(--speech-bar-h, 76px); } }
 /* Short or zoomed screens: controls flow with the page instead of taking half the screen. */
 @media (max-height: 560px) { .rg-dock { position: static; margin-top: 24px; } }
 .rg-demo-banner, .speech-bar { flex-wrap: wrap; }
@@ -1598,3 +1596,6 @@ body .panel-body:has(.rg-nav) { scroll-padding-bottom: 180px; scroll-padding-top
 .rove-accessible .wordmark, .rove-accessible .wordmark-mark { color: var(--rg-green); }
 .rg-pulse.is-waiting { background: #b7791f; animation: none; box-shadow: none; }
 .rg-listening .spinner { flex: none; }
+
+/* Integration: on desktop the panel header is sticky; scrolled-to content must clear it. */
+@media (min-width: 801px) { body .panel-body { scroll-padding-top: 96px; } }

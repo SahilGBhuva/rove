@@ -1226,6 +1226,11 @@ function renderSpeechBar(status) {
   bar.innerHTML = '';
 }
 speaker?.onChange(renderSpeechBar);
+/* Reserve exactly the speech bar's height at the top of the panel (long failure messages wrap). */
+speaker?.onChange(() => requestAnimationFrame(() => {
+  const bar = document.getElementById('speechBar');
+  if (bar && !bar.hidden) document.body.style.setProperty('--speech-bar-h', `${Math.ceil(bar.getBoundingClientRect().bottom) + 8}px`);
+}));
 document.addEventListener('click', event => {
   if (event.target.closest('[data-speech-stop]')) { stopSpeaking(); announceAccess('Speech stopped.'); }
   if (event.target.closest('[data-speech-dismiss]')) { const bar = document.getElementById('speechBar'); if (bar) { bar.hidden = true; bar.innerHTML = ''; } document.body.classList.remove('has-speech-bar'); }
@@ -1395,7 +1400,7 @@ function viewHome() {
   const places = savedPlaces().slice(0, 4);
   const resume = state.nav ? `<section class="rg-resume" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle"><span class="rg-resume-dot" aria-hidden="true"></span>Trip in progress</h2><p>${esc(guidePhase()?.heading || '')}</p><button type="button" class="rg-primary small" data-action="access-my-journey"><span>Return to trip</span>${rgIcon('arrow')}</button></section>`
     : saved ? `<section class="rg-resume is-paused" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle"><span class="rg-resume-dot" aria-hidden="true"></span>Unfinished trip${saved.demo ? ' (demo)' : ''}</h2><p>To ${esc(saved.destination?.name || 'your destination')} · step ${saved.gs.index + 1}</p><div class="rg-resume-actions"><button type="button" class="rg-primary small" data-action="trip-resume"><span>Resume trip</span>${rgIcon('arrow')}</button><button type="button" class="rg-text-button" data-action="trip-discard">Discard</button></div></section>` : '';
-  const link = (action, icon, title, sub) => `<button type="button" class="rg-link" data-action="${action}"><span class="rg-link-icon">${rgIcon(icon)}</span><span class="rg-link-text"><span>${title}</span><small>${sub}</small></span><svg class="rg-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>`;
+  const link = (action, icon, title, sub) => `<button type="button" class="rg-link" data-action="${action}"><span class="rg-link-icon">${rgIcon(icon)}</span><span class="rg-link-text"><span>${title}</span><span class="visually-hidden">. </span><small>${sub}</small></span><svg class="rg-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>`;
   return `<div class="rg-home">
     <div class="rg-brand" aria-hidden="true">${ROVE_MARK}<span class="rg-wordmark">rove</span><span class="rg-brand-sub">Bay Area<br>transit</span></div>
     ${resume}

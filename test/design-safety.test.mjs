@@ -242,7 +242,8 @@ test('the decorative journey line (.rg-jl) stays aria-hidden', () => {
 });
 
 const toPx = v => { const m = String(v).match(/^(\d*\.?\d+)(px|rem|em)?\b/); if (!m) return null; return m[2] === 'rem' || m[2] === 'em' ? Number(m[1]) * 16 : Number(m[1]); };
-const targetsConfirm = sel => /\.rg-confirm(?![\w-])/.test(sel.replace(/:not\([^)]*\)/g, ''));
+// Pseudo-elements (e.g. the icon in .rg-confirm::before) are not the button's tap target.
+const targetsConfirm = sel => !/::?(before|after|marker)\b/.test(sel) && /\.rg-confirm(?![\w-])/.test(sel.replace(/:not\([^)]*\)/g, ''));
 
 test('Confirm keeps a minimum height of at least 64px everywhere it is sized', () => {
   const sizes = [];
