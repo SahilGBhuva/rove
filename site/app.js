@@ -3165,7 +3165,6 @@ function voiceFail(error, demo) {
   plan.voice = { state: 'error', error };
   updateVoiceSlot();
   guideSay(VOICE_ERRORS[error] || "Voice input didn't work. Try again, or type your destination.");
-  if (error === 'voice-download') { $('[data-action="voice-install"]')?.focus({ preventScroll: true }); return; }
   if (!demo && error !== 'no-speech') $('#planTo')?.focus({ preventScroll: true });
 }
 function voiceCancelAll() {
@@ -3326,10 +3325,10 @@ function voiceViaBrowser({ demo, local = voiceUseLocal }) {
   let got = false;
   r.onresult = e => { const words = e.results?.[0]?.[0]?.transcript?.trim(); if (!words || recognition !== r) return; got = true; recognition = null; voiceHeard(words, demo); };
   r.onerror = e => { got = true; if (recognition !== r) return; recognition = null; recognitionError(e.error || 'unknown', { demo, local }); };
-  r.onend = () => { if (recognition === r) recognition = null; if (!got && plan.voice?.state === 'listening') voiceFail('no-speech', demo); };
-  plan.voice = { state: 'listening', mode: 'browser' };
+  r.onend = () => { if (recognition === r) recognition = null; if (!got && ['listening', 'starting'].includes(plan.voice?.state)) voiceFail('no-speech', demo); };
+  r.onstart = () => { if (recognition !== r) return; plan.voice = { state: 'listening', mode: 'browser' }; updateVoiceSlot(); accessVibrate([40]); };
+  plan.voice = { state: 'starting', mode: 'browser' };
   updateVoiceSlot();
-  accessVibrate([40]);
   try { r.start(); } catch { voiceFail('voice-service', demo); }
 }
 
