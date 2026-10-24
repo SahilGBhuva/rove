@@ -9,7 +9,15 @@ let chromium;
 try { ({ chromium } = await import('playwright')); } catch { console.log('SKIPPED: Playwright is not installed.'); process.exit(0); }
 
 const BASE = process.env.ROVE_URL || 'http://localhost:4173';
-const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] } : {});
+const glArgs = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+let browser;
+try {
+  browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: glArgs } : {});
+} catch (error) {
+  if (process.env.CHROMIUM_PATH) throw error;
+  console.log('Bundled Chromium unavailable; trying installed Chrome.');
+  browser = await chromium.launch({ channel: 'chrome', args: glArgs });
+}
 const failures = [];
 const expect = (ok, message) => { if (!ok) failures.push(message); console.log(`${ok ? 'PASS' : 'FAIL'} ${message}`); };
 const places = { 'San Francisco': [-122.42, 37.775], Oakland: [-122.27, 37.805], Sunnyvale: [-122.03, 37.37] };

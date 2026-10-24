@@ -28,6 +28,20 @@ test('GPS needs two time-separated accurate fixes; does not skip stops',()=>{
   const c=j.updateStopProgress(stops,b,fix(37.783,now+1000),now+1000);
   assert.equal(c.confirmed,1);
 });
+test('closely spaced stops never advance from a stationary GPS position',()=>{
+ const close=[{name:'Board',lat:37.7800,lon:-122.4},
+   {name:'Stop A',lat:37.7805,lon:-122.4},
+   {name:'Stop B',lat:37.7810,lon:-122.4},
+   {name:'Exit',lat:37.7820,lon:-122.4}];
+ const first=j.updateStopProgress(close,{confirmed:0,pending:null},fix(37.7805,now-6000),now);
+ const second=j.updateStopProgress(close,first,fix(37.7805,now),now);
+ assert.equal(second.confirmed,0);
+ assert.equal(second.reason,'still-near-previous-stop');
+ const manual={confirmed:1,pending:null};
+ const next=j.updateStopProgress(close,manual,fix(37.7805,now),now);
+ assert.equal(next.confirmed,1);
+ assert.equal(next.changed,false);
+});
 test('reject stale inaccurate or repeated fixes',()=>{
  const initial={confirmed:0,pending:null};
  assert.equal(j.updateStopProgress(stops,initial,fix(37.781,now-30000),now).reason,'location-uncertain');

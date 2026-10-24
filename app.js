@@ -1829,10 +1829,11 @@ function openPlan({ from, to } = {}) {
 function viewPlan() {
   const plan = state.plan;
   const status = state.planStatus;
+  const previewOnly = status?.engine === 'EXPERIMENTAL_SCHEDULE_ONLY';
   const field = (id, which, label) => {
     const value = plan[which]?.name || plan.draft[which] || '';
     return `<label class="plan-field${plan.errorField === which ? ' invalid' : ''}"><span class="marker"><i></i></span><span class="visually-hidden">${label}</span>
-    <input id="${id}" data-plan-field="${which}" value="${esc(value)}" placeholder="${label}" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="${which === 'to' ? 'search' : 'next'}" role="combobox" aria-autocomplete="list" aria-controls="planSuggest" aria-expanded="${plan.focus === which}" ${plan.errorField === which ? 'aria-invalid="true" aria-describedby="planError"' : ''} /></label>`;
+    <input id="${id}" data-plan-field="${which}" value="${esc(value)}" placeholder="${label}" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="${which === 'to' ? 'search' : 'next'}" aria-controls="planSuggest" ${plan.errorField === which ? 'aria-invalid="true" aria-describedby="planError"' : ''} /></label>`;
   };
   const hasFrom = Boolean(plan.from || plan.draft.from.trim());
   const hasTo = Boolean(plan.to || plan.draft.to.trim());
@@ -1855,14 +1856,14 @@ function viewPlan() {
         ${field('planTo', 'to', 'Destination')}
         <button type="button" class="swap-button" data-action="plan-swap" aria-label="Swap starting point and destination">${ICONS.swap}</button>
       </div>
-      <div id="planSuggest" class="plan-suggest" role="listbox" aria-label="Suggestions"></div>
+      <div id="planSuggest" class="plan-suggest" role="region" aria-label="Suggestions"></div>
       <div class="plan-body">
         ${coverage ? '' : `<div class="plan-options">
           <div class="segmented mode-switch${dropOk ? ' three' : ''}" role="group" aria-label="Getting to transit">${modeButton('WALK', MODE_ICONS.walk, 'Walk')}${modeButton('CAR_PARKING', MODE_ICONS.car, 'Drive')}${dropOk ? modeButton('CAR_DROP_OFF', MODE_ICONS.car, 'Drop-off') : ''}</div>
           <label class="time-select"><span class="visually-hidden">When</span><select id="planTimeMode">
             <option value="now" ${plan.timeMode === 'now' ? 'selected' : ''}>Leave now</option>
             <option value="depart" ${plan.timeMode === 'depart' ? 'selected' : ''}>Depart at</option>
-            <option value="arrive" ${plan.timeMode === 'arrive' ? 'selected' : ''}>Arrive by</option>
+            ${!previewOnly ? `<option value="arrive" ${plan.timeMode === 'arrive' ? 'selected' : ''}>Arrive by</option>` : ''}
           </select></label>
           ${plan.timeMode !== 'now' ? `<input type="datetime-local" id="planDateTime" aria-label="Date and time" class="${plan.errorField === 'time' ? 'invalid' : ''}" value="${esc(plan.dateTime || localInputValue(new Date()))}" />` : ''}
         </div>
@@ -2325,7 +2326,7 @@ async function navReroute(nav) {
     navFollowCamera();
   } catch (error) {
     if (state.nav !== nav) return;
-    nav.error = 'Unable to recalculate now. Check the map and choose an available route.';
+    nav.error = 'Unable to recalculate now. If unsure, stop in a safe location and ask transit staff for assistance. Try again when your connection is stable.';
     nav.status = 'Off route · ' + nav.error;
     render();
   } finally {
@@ -2591,8 +2592,17 @@ function viewNavigate() {
   if (!nav) return viewHome();
   const step = nav.steps[nav.i];
   const total = nav.steps.length - 1;
+  const departure = new Date(nav.it.startTime);
+  const arrival = new Date(nav.it.endTime);
+  const now = Date.now();
+  const futureTrip = departure.getTime() > now + 5 * 60000;
+  const arrivalLabel = dateFormat.format(arrival) !== dateFormat.format(new Date(now)) ? `${dateFormat.format(arrival)} at ${clock(arrival)}` : clock(arrival);
+  const timingLabel = futureTrip
+    ? `Departs ${dateFormat.format(departure)} at ${clock(departure)} · Trip ${durationLabel(nav.it.durationSeconds || (arrival-departure)/1000)}`
+    : arrival.getTime() < now ? 'Scheduled arrival time has passed. Verify your current location.'
+    : `${durationLabel((arrival.getTime() - now) / 1000)} until scheduled arrival`;
   const head = `<div class="view-head"><button class="back-button" data-action="nav-minimize">${ICONS.back}<span>Home</span></button><button class="button secondary nav-end-button" data-action="nav-end">End trip</button></div>
-    <div class="nav-head"><div class="title-2">Arrive ${esc(clock(new Date(nav.it.endTime)))}</div><div class="caption">${esc(durationLabel((new Date(nav.it.endTime) - Date.now()) / 1000))} remaining${nav.it.usesRealtime ? '' : ' · Scheduled times'}</div>
+    <div class="nav-head"><div class="title-2">Arrive ${esc(arrivalLabel)}</div><div class="caption">${esc(timingLabel)}${nav.it.usesRealtime ? '' : ' · Scheduled times'}</div>
     <p class="nav-gps-status" role="status">${esc(nav.status || 'Waiting for location')}</p>
     ${nav.it.legs.some(l => l.mode === 'WALK' && l.approximate) ? '<p class="caption">Walking segments are estimates, not verified turn-by-turn paths. Follow safe pedestrian routes.</p>' : ''}
     <p class="caption">Keep Rove open in the foreground for GPS updates. Browsers may pause tracking when your phone locks.</p>
@@ -3242,7 +3252,7 @@ async function fetchPlanStatus(force = false) {
     if (response.ok) {
       const body = await response.json().catch(() => ({}));
       const routing = body.routing || {};
-      next = { available: routing.available !== false, reason: routing.available === false ? routing.code || 'ROUTING_UNAVAILABLE' : null, access: Array.isArray(routing.access) ? routing.access : ['WALK'], walkSteps: Boolean(routing.walkSteps), maxDriveMinutes: Number.isFinite(routing.maxDriveMinutes) ? routing.maxDriveMinutes : null,
+      next = { available: routing.available !== false, engine: routing.engine || null, reason: routing.available === false ? routing.code || 'ROUTING_UNAVAILABLE' : null, access: Array.isArray(routing.access) ? routing.access : ['WALK'], walkSteps: Boolean(routing.walkSteps), maxDriveMinutes: Number.isFinite(routing.maxDriveMinutes) ? routing.maxDriveMinutes : null,
         liveReasons: Object.fromEntries((Array.isArray(body.agencies) ? body.agencies : []).map(x => [x.id, Array.isArray(x.arrivalsReasons) ? x.arrivalsReasons : []])) };
       if (body.search && body.search.addresses === false) geocodeBackend = 'missing';
     } else {
@@ -3256,18 +3266,26 @@ async function fetchPlanStatus(force = false) {
   } catch {
     next = { available: false, reason: 'network' };
   }
-  const changed = !st || st.available !== next.available || String(st.access) !== String(next.access);
+  const changed = !st || st.available !== next.available || st.engine !== next.engine || String(st.access) !== String(next.access);
+  if (next.engine === 'EXPERIMENTAL_SCHEDULE_ONLY' && state.plan.timeMode === 'arrive') state.plan.timeMode = 'depart';
   state.planStatus = { ...next, checkedAt: Date.now() };
   if (changed && currentView().name === 'plan') {
-    if (state.plan.focus) { const el = $('#planNotice'); if (el) el.innerHTML = planNoticeHtml(); }
-    else render();
+    if (state.plan.focus) {
+      const el = $('#planNotice'); if (el) el.innerHTML = planNoticeHtml();
+      if (next.engine === 'EXPERIMENTAL_SCHEDULE_ONLY') {
+        $('#planTimeMode option[value="arrive"]')?.remove();
+        if ($('#planTimeMode')?.value === 'arrive') $('#planTimeMode').value = 'depart';
+      }
+    } else render();
   }
   return state.planStatus;
 }
 
 function planNoticeHtml() {
   const status = state.planStatus;
-  if (!status || status.available) return '';
+  if (!status) return '';
+  if (status.available && status.engine === 'EXPERIMENTAL_SCHEDULE_ONLY') return '<p class="caption plan-preview-note" role="note">Preview routing uses published schedules. Arrive-by and driving are unavailable; walking routes and crossings are not independently verified.</p>';
+  if (status.available) return '';
   const text = status.reason === 'missing' ? 'Trip planning is not available right now.' : 'Trip planning is offline right now. You can still choose places, then check again in a few minutes.';
   return `<div class="plan-notice" role="status"><p>${esc(text)}</p>${status.reason === 'missing' ? '' : '<button type="button" class="text-button" data-action="plan-recheck">Check again</button>'}</div>`;
 }
@@ -3335,8 +3353,16 @@ function planErrorMessage(status, body) {
     if (/same place/i.test(message)) return { which: 'to', text: 'The starting point and destination are the same place.' };
     if (which === 'from') return { which, text: /outside/i.test(message) ? 'This starting point is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.' : 'Choose the starting point again.' };
     if (which === 'to') return { which, text: /outside/i.test(message) ? 'This destination is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.' : 'Choose the destination again.' };
-    if (which === 'time') return { which, text: 'Choose a time within the next 60 days.' };
+    if (which === 'time') return { which, text: 'Choose a valid date and time within the available transit schedules.' };
     return { which: null, text: 'Rove could not plan this trip. Check the places and time, then try again.' };
+  }
+  if (status === 422) {
+    const message = String(body?.error || '');
+    if (/arrive.by/i.test(message)) return { which: 'time', text: 'Arrive by is not supported in this preview. Choose Depart at instead.' };
+    if (/published timetable|only dates|14 days/i.test(message)) return { which: 'time', text: 'This preview supports trips within the next 14 days. Choose an earlier date.' };
+    if (/driving|drive|parking/i.test(message)) return { which: null, text: 'Driving to transit is not available in this preview. Choose Walk instead.' };
+    if (/no transit stops/i.test(message)) return { which: null, text: 'No transit stops are close enough to one of these places. Try a nearby station or stop.' };
+    return { which: null, text: 'This route or time is not supported by the current planner. Try another time or nearby stop.' };
   }
   if (status === 503) return { which: null, text: 'Trip planning is offline right now. Please try again in a few minutes.', offline: true };
   if (status === 404) return { which: null, text: 'Trip planning is not available right now.', offline: true };
@@ -3795,7 +3821,7 @@ function updatePlanSuggestions() {
   const form = $('.plan-form');
   if (!box || !form) return;
   form.classList.toggle('suggesting', Boolean(plan.focus));
-  for (const which of ['from', 'to']) $(`[data-plan-field="${which}"]`)?.setAttribute('aria-expanded', String(plan.focus === which));
+  // Suggestions are a region of ordinary buttons, not an ARIA listbox.
   if (!plan.focus) { box.innerHTML = ''; return; }
   const q = plan.query.trim();
   const other = plan[plan.focus === 'from' ? 'to' : 'from'];
