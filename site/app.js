@@ -1391,6 +1391,9 @@ function setMode(mode, { announce = true, focus = false } = {}) {
     render();
     setMode.mount();
     if (focus) (document.querySelector('.rc-mode [data-action="mode-toggle"], [data-action="mode-toggle"]') || document.getElementById('roveHomeTitle'))?.focus({ preventScroll: false });
+  } else if (state.network && currentView()?.name === 'access') {
+    render(); // the settings switch shows the new mode; keep focus on it
+    if (focus) document.querySelector('.rg-mode-setting [data-action="mode-set"]')?.focus({ preventScroll: true });
   }
   return next;
 }
