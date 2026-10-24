@@ -136,3 +136,10 @@ test('no speech before the first tap; the first tap anywhere unlocks speech for 
   assert.match(app, /\['pointerup', 'touchend', 'click', 'keydown'\]\.forEach\(type => document\.addEventListener\(type, unlockAudio, \{ capture: true/);
   assert.match(app, /speaker\?\.prime\?\.\(\)/);
 });
+
+test('before the first recording, Rove explains the phone\'s silent microphone popup out loud', () => {
+  assert.match(app, /async function ensureMicAccess\(\)/);
+  assert.match(app, /First, your phone will ask to use the microphone\. Tap Allow\. On an iPhone, Allow is the button on the right\./);
+  assert.match(app, /const mic = await ensureMicAccess\(\);/, 'asked before the question, so no dialog blocks the answer');
+  assert.match(app, /set Microphone to Allow, then tap Speak\./, 'a denied microphone gets spoken iPhone steps');
+});

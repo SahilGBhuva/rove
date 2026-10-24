@@ -3817,7 +3817,7 @@ function viewNavigate() {
         : `<button type="button" class="rg-confirm" data-action="rg-confirm" data-phase="${i}"${phase.confirmAria ? ` aria-label="${esc(phase.confirmAria)}"` : ''}>${esc(arrive ? 'Done' : phase.confirmLabel)}</button>`}
       <div class="rg-dock-row">
         <button type="button" class="rg-secondary" data-action="rg-repeat" aria-label="Repeat current directions aloud">Repeat directions</button>
-        ${arrive ? '' : `<button type="button" class="rg-secondary" data-action="rg-help" aria-expanded="${nav.showHelp ? 'true' : 'false'}" aria-controls="rgHelp">${nav.showHelp ? 'Close help' : 'Help'}</button>`}
+        ${arrive || nav.showHelp ? '' : '<button type="button" class="rg-secondary" data-action="rg-help" aria-expanded="false" aria-controls="rgHelp">Help</button>'}
       </div>
     </div>
   </div>`;
@@ -3839,7 +3839,7 @@ const BrowserRecognition = () => window.SpeechRecognition || window.webkitSpeech
  * error code alone can't tell: an insecure (http) page, where browsers hide the microphone, and a
  * device that is truly offline. Online-but-unreachable is never called "offline". */
 const VOICE_ERRORS = new Proxy({
-  'not-allowed': 'Microphone is blocked for this site. Allow it in site settings (the icon beside the web address), then try again.',
+  'not-allowed': 'Microphone is off for Rove. In Safari, open Website Settings from the address bar, set Microphone to Allow, then tap Speak.',
   'service-not-allowed': 'Voice input is turned off in this browser. Type your destination, or turn on speech recognition in browser settings.',
   'no-speech': "I still didn't hear anything. Tap Speak to try again, or type your destination.",
   'audio-capture': 'No microphone found. Connect one and try again, or type your destination.',
@@ -4168,6 +4168,12 @@ async function voiceDestination({ demo = false, prompt = null, field = null } = 
   state.plan.voice = { state: 'starting', mode: voiceMode() };
   updateVoiceSlot();
   if (field === 'from') { state.plan.from = null; state.plan.fromConfirmed = false; }
+  // First time only: say what the phone's own (silent) microphone popup is, and get past it before the
+  // question, so the rider is not asked something while a dialog they cannot hear blocks the screen.
+  const mic = await ensureMicAccess();
+  if (my !== voiceGen || turn !== voiceTurn || state.plan.voice?.state !== 'starting') return;
+  if (mic === 'denied') { voiceFail('not-allowed', demo); return; }
+  if (mic === 'missing') { voiceFail('audio-capture', demo); return; }
   await sayThenWait(prompt || (demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.'
     : field === 'from' ? 'Where are you starting from? Say my location to start where you are, or say a place or station, after the tone.'
     : 'Where would you like to go? Say it after the tone.'));
@@ -4175,6 +4181,27 @@ async function voiceDestination({ demo = false, prompt = null, field = null } = 
   voiceListen({ demo });
 }
 
+const MIC_OK_KEY = 'rove-mic-ok';
+/* Returns 'ok' | 'denied' | 'missing'. Only Rove's own recorder needs this; the browser recognizer
+ * asks for itself. The popup is the phone's, so Rove explains it out loud first. */
+async function ensureMicAccess() {
+  if (voiceMode() !== 'server' || !navigator.mediaDevices?.getUserMedia) return 'ok';
+  let known = null;
+  try { known = (await navigator.permissions?.query?.({ name: 'microphone' }))?.state || null; } catch { known = null; }
+  if (known === 'granted') return 'ok';
+  if (known === 'denied') return 'denied';
+  try { if (sessionStorage.getItem(MIC_OK_KEY)) return 'ok'; } catch { /* storage unavailable */ }
+  await sayThenWait('First, your phone will ask to use the microphone. Tap Allow. On an iPhone, Allow is the button on the right.');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(t => t.stop());
+    try { sessionStorage.setItem(MIC_OK_KEY, '1'); } catch { /* storage unavailable */ }
+    earcon('ok');
+    return 'ok';
+  } catch (error) {
+    return error?.name === 'NotFoundError' || error?.name === 'OverconstrainedError' ? 'missing' : 'denied';
+  }
+}
 function voiceViaServer({ demo, leadIn = 1300 }) {
   const turn = voiceTurn;
   const plan = state.plan;
