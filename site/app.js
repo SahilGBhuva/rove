@@ -1262,6 +1262,7 @@ function focusViewHeading() {
   else document.getElementById('panelBody')?.focus({preventScroll:true});
 }
 function pushView(view, { detent } = {}) {
+  document.body.dataset.navDir = 'forward';
   const top = currentView();
   if (top && top.name === view.name && JSON.stringify(top) === JSON.stringify(view)) { render(); return; }
   if (top?.name === 'search') state.stack.pop();
@@ -1274,6 +1275,7 @@ function pushView(view, { detent } = {}) {
 }
 
 function popView() {
+  document.body.dataset.navDir = 'back';
   if (state.stack.length > 1) state.stack.pop();
   const top = currentView();
   if (top.name === 'search' && !state.searchQuery) state.stack.pop();
@@ -1283,6 +1285,7 @@ function popView() {
 }
 
 function goHome() {
+  document.body.dataset.navDir = 'back';
   state.stack = [{ name: 'home' }];
   onLeaveFocus();
   render();
@@ -1387,19 +1390,23 @@ function viewHome() {
   const places = savedPlaces().slice(0, 4);
   const resume = state.nav ? `<section class="rg-resume" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle">Trip in progress</h2><p>${esc(guidePhase()?.heading || '')}</p><button type="button" class="rg-primary small" data-action="access-my-journey">Return to trip</button></section>`
     : saved ? `<section class="rg-resume" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle">Unfinished trip${saved.demo ? ' (demo)' : ''}</h2><p>To ${esc(saved.destination?.name || 'your destination')} · step ${saved.gs.index + 1}</p><div class="rg-resume-actions"><button type="button" class="rg-primary small" data-action="trip-resume">Resume trip</button><button type="button" class="rg-text-button" data-action="trip-discard">Discard</button></div></section>` : '';
+  const link = (action, icon, title, sub) => `<button type="button" class="rg-link" data-action="${action}"><span class="rg-link-icon">${rgIcon(icon)}</span><span class="rg-link-text"><span>${title}</span><small>${sub}</small></span><svg class="rg-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>`;
   return `<div class="rg-home">
+    <div class="rg-brand" aria-hidden="true">${ROVE_MARK}<span class="rg-wordmark">rove</span><span class="rg-brand-sub">Bay Area transit</span></div>
     ${resume}
     <h1 id="roveHomeTitle" class="rg-home-title" tabindex="-1">Where to?</h1>
-    <div class="rg-stack">
-      <button type="button" class="rg-primary" data-action="voice-destination">${MIC_ICON}<span>Speak destination</span></button>
+    <p class="rg-home-sub">Speak or type a place. Rove guides you one confirmed step at a time.</p>
+    <div class="rg-stack rg-hero">
+      <button type="button" class="rg-primary rg-speak" data-action="voice-destination"><span class="rg-speak-icon">${MIC_ICON}</span><span>Speak destination</span></button>
       <button type="button" class="rg-field" data-action="plan">${SEARCH_ICON}<span>Type a destination</span></button>
     </div>
     ${places.length ? `<section class="rg-saved" aria-labelledby="rgSavedTitle"><h2 id="rgSavedTitle" class="rg-label">Saved places</h2><div class="rg-chips">${places.map(p => `<button type="button" class="rg-chip" data-action="go-saved" data-label="${esc(p.label)}">${esc(p.label)}</button>`).join('')}</div></section>` : ''}
+    <div class="rg-motif-wrap">${HOME_MOTIF}</div>
     <nav class="rg-links" aria-label="More">
-      <button type="button" class="rg-link" data-action="demo"><span>Try the demo journey</span><small>Simulated trip with a transfer</small></button>
-      <button type="button" class="rg-link" data-action="access-nearby"><span>Nearby stops</span><small>Uses your location</small></button>
-      <button type="button" class="rg-link" data-action="access"><span>Voice and accessibility</span><small>Rove voice, vibration, how it works</small></button>
-      <button type="button" class="rg-link" data-action="sources"><span>Transit data</span><small>Sources and what is live</small></button>
+      ${link('demo', 'route', 'Try the demo journey', 'A simulated trip with a transfer')}
+      ${link('access-nearby', 'pin', 'Nearby stops', 'Uses your location')}
+      ${link('access', 'info', 'Voice and accessibility', 'Rove voice, vibration, how it works')}
+      ${link('sources', 'clock', 'Transit data', 'Sources and what is live')}
     </nav>
   </div>`;
 }
@@ -2144,10 +2151,10 @@ function viewResults() {
     <ul class="itineraries">${order.slice(0, plan.showAll ? order.length : 3).map((i, n) => {
       const it = its[i];
       const open = plan.expanded === i;
-      return `<li><button class="itinerary" data-action="it-toggle" data-index="${i}" aria-expanded="${open}" aria-label="${esc(routeChoiceSpeech(it, n + 1))}">
-        <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
-        ${journeyBar(it)}
-        <div class="it-meta">${itinerarySummary(it)}</div>${routeWarnings(it).length ? `<div class="rg-warn-tags">${routeWarnings(it).map(w => `<span>${esc(w)}</span>`).join('')}</div>` : ''}</button>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Listen to route ${n + 1} stop by stop">Listen to route ${n + 1}</button>` : ''}
+      return `<li style="--i:${n}"><button class="itinerary rg-route" data-action="it-toggle" data-index="${i}" aria-expanded="${open}" aria-label="${esc(routeChoiceSpeech(it, n + 1))}">
+        <span class="rg-route-top"><span class="rg-route-dur">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}</span>${its.length > 1 && i === fastestIndex ? '<span class="rg-route-tag">Fastest</span>' : ''}<span class="rg-route-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></span>
+        ${routeStripHtml(it)}
+        ${routeMetaHtml(it)}${routeWarnings(it).length ? `<div class="rg-warn-tags">${routeWarnings(it).map(w => `<span>${esc(w)}</span>`).join('')}</div>` : ''}</button>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Listen to route ${n + 1} stop by stop">Listen to route ${n + 1}</button>` : ''}
         ${carbonComparison(it)}
         ${open ? `<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start route ${n + 1}</button></div>${itineraryTimeline(it)}` : ''}</li>`;
     }).join('')}</ul>
@@ -2497,6 +2504,102 @@ const rgClock = ms => clock(new Date(ms));
 const navNow = nav => Date.now() + (nav?.clockOffset || 0);
 const MIC_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>';
 const SEARCH_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></svg>';
+/* ---- Rove visual system: one line-icon set (24px grid, 1.75 stroke, round caps) ---- */
+const RG_ICON = {
+  arrow: '<path d="M5 12h13M13 6l6 6-6 6"/>',
+  pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z"/><circle cx="12" cy="10" r="2.3"/>',
+  platform: '<path d="M4 18h16M6 18V8h12v10M9 8V5h6v3"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  exit: '<path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h9"/>',
+  walk: '<circle cx="13" cy="4.5" r="1.8"/><path d="m9 21 2.5-6.5 2.5 2V21M7 11l3-3.5 3.5 1 2 3.5 2.5 1M11.5 14.5l1-6"/>',
+  transfer: '<path d="M7 7h11l-3-3M17 17H6l3 3"/>',
+  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/>',
+  stops: '<circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  route: '<circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 17c6-1 2-9 8-10"/>'
+};
+const rgIcon = (name, cls = '') => `<svg class="rg-icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${RG_ICON[name] || ''}</svg>`;
+function factIcon(text) {
+  if (/^Toward /.test(text)) return 'arrow';
+  if (/^At /.test(text)) return 'pin';
+  if (/^Platform/.test(text)) return 'platform';
+  if (/^(Departs|Arrives)/.test(text) || /time/.test(text)) return 'clock';
+  if (/^Get off/.test(text)) return 'exit';
+  if (/^(Walk to|About )/.test(text)) return 'walk';
+  if (/transfer/i.test(text)) return 'transfer';
+  if (/^\d+ stops?$/.test(text)) return 'stops';
+  return 'info';
+}
+
+/* The whole trip as one transit line: dotted walks, rides in their line colour, stops as nodes.
+ * Decorative (aria-hidden); "Step n of m" and the spoken instruction carry the meaning. */
+function journeyLineHtml(nav) {
+  const phases = nav.guide.phases;
+  const current = nav.gs.index;
+  const state = i => (i < current ? 'done' : i === current ? 'now' : 'next');
+  const parts = [`<span class="rg-jl-node is-start ${current > 0 ? 'done' : 'now-adjacent'}"></span>`];
+  phases.forEach((p, i) => {
+    const color = p.leg?.mode === 'TRANSIT' ? legInfo(p.leg).color : '';
+    const style = color ? ` style="--c:${esc(color)}"` : '';
+    if (p.kind === 'ride') parts.push(`<span class="rg-jl-seg is-ride ${state(i)}"${style}></span>`);
+    else if (p.kind === 'board') parts.push(`<span class="rg-jl-node is-stop ${state(i)}"${style}></span>`);
+    else if (p.kind === 'arrive') parts.push(`<span class="rg-jl-node is-end ${state(i)}"></span>`);
+    else parts.push(`<span class="rg-jl-seg is-walk ${state(i)}"></span>`);
+  });
+  return `<div class="rg-jl" aria-hidden="true">${parts.join('')}</div>`;
+}
+
+/* Compact, scannable route strip for result cards: walk minutes and line badges joined by a rail. */
+function routeMetaHtml(it) {
+  const first = (it.legs || []).find(l => l.mode === 'TRANSIT');
+  const rides = (it.legs || []).filter(l => l.mode === 'TRANSIT' && !l.staySeated).length;
+  const live = (it.legs || []).some(l => l.mode === 'TRANSIT' && l.realtime);
+  const walk = Number.isFinite(it.walkMeters) && it.walkMeters >= 30 ? RoveJourneyGuide.distanceWords(it.walkMeters).replace(' feet', ' ft').replace(' miles', ' mi').replace(' mile', ' mi') + ' walk' : null;
+  const chips = [rides > 1 ? plural(rides - 1, 'transfer') : 'No transfers', walk, live ? 'Live times' : 'Scheduled'].filter(Boolean);
+  return `<span class="rg-route-from">${first ? `Leave ${esc(clock(legStart(first)))} from ${esc(first.from?.name || 'the stop')}` : 'Walking route'}</span><span class="rg-route-chips">${chips.map(c => `<span class="${c === 'Live times' ? 'is-live' : c === 'Scheduled' ? 'is-sched' : ''}">${esc(c)}</span>`).join('')}</span>`;
+}
+function routeStripHtml(it) {
+  const legs = it.legs || [];
+  const items = [];
+  legs.forEach((leg, at) => {
+    if (leg.mode === 'TRANSIT') {
+      if (leg.staySeated) return;
+      const li = legInfo(leg);
+      items.push(`<span class="rg-strip-line" style="background:${esc(li.color)};color:${esc(li.text)}">${modeIcon(leg)}<b>${esc(li.badge)}</b></span>`);
+    } else {
+      const min = legMinutes(leg);
+      if (min < 2 && at > 0 && at < legs.length - 1) return;
+      items.push(`<span class="rg-strip-walk">${rgIcon('walk')}<b>${min}</b></span>`);
+    }
+  });
+  return `<span class="rg-strip" aria-hidden="true">${items.join('<i class="rg-strip-rail"></i>')}</span>`;
+}
+
+/* Honest arrival summary: only what Rove actually recorded during this trip. */
+function arrivalSummaryHtml(nav) {
+  const minutes = Math.max(1, Math.round((navNow(nav) - nav.gs.startedAt) / 60000));
+  const lines = (nav.it.legs || []).filter(l => l.mode === 'TRANSIT' && !l.staySeated).map(l => legInfo(l));
+  const confirmed = nav.gs.history.length;
+  return `<div class="rg-arrival">
+    <svg class="rg-arrival-mark" viewBox="0 0 96 96" aria-hidden="true"><circle class="ring" cx="48" cy="48" r="42"/><path class="tick" d="m30 49 12 12 25-26"/></svg>
+    <dl class="rg-arrival-stats">
+      <div><dt>Trip time</dt><dd>${esc(durationLabel(minutes * 60))}${nav.demo ? ' <small>(simulated)</small>' : ''}</dd></div>
+      <div><dt>Steps you confirmed</dt><dd>${confirmed}</dd></div>
+      ${lines.length ? `<div><dt>Lines</dt><dd class="rg-arrival-lines">${lines.map(li => `<span class="rg-badge sm" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>`).join('')}</dd></div>` : ''}
+    </dl>
+  </div>`;
+}
+
+/* Home motif: a quiet route line with stations and one vehicle travelling it (static with reduced motion). */
+const HOME_MOTIF = `<svg class="rg-motif" viewBox="0 0 360 150" aria-hidden="true" focusable="false">
+  <path class="rg-motif-ghost" d="M-10 118 C 60 118, 70 54, 140 54 S 230 104, 290 72 S 350 30, 380 30"/>
+  <path class="rg-motif-line" id="rgMotifPath" d="M-10 118 C 60 118, 70 54, 140 54 S 230 104, 290 72 S 350 30, 380 30"/>
+  <path class="rg-motif-walk" d="M18 140 C 30 132, 34 124, 44 118"/>
+  <circle class="rg-motif-stop" cx="44" cy="118" r="6"/><circle class="rg-motif-stop" cx="140" cy="54" r="6"/><circle class="rg-motif-stop is-transfer" cx="240" cy="96" r="7.5"/><circle class="rg-motif-stop is-end" cx="330" cy="36" r="7"/>
+  <circle class="rg-motif-vehicle" r="5.5"/>
+</svg>`;
+const ROVE_MARK = '<svg class="rg-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9"/><circle cx="10" cy="22" r="3"/><circle cx="22" cy="10" r="3"/><path d="M12.5 20.5c6-1.5 3-9 8-10"/></svg>';
+
 
 function guideFor(it, destinationName) { return Guide.buildGuide(it, { destinationName, clock: rgClock }); }
 function guidePhase(nav = state.nav) { return nav?.gs ? nav.guide.phases[nav.gs.index] : null; }
@@ -2573,6 +2676,7 @@ function updateGuideLive() {
 function guideTick() {
   const nav = state.nav;
   if (!nav?.gs || document.hidden) return;
+  if (nav.flash && Date.now() - nav.flash.at > 6000) { nav.flash = null; document.querySelector('.rg-flash')?.classList.add('is-leaving'); }
   const due = Guide.dueReminders(nav.gs, navNow(nav), { clock: rgClock });
   if (due.length) {
     for (const r of due) nav.gs = Guide.reduce(nav.gs, { type: 'REMINDED', key: r.key });
@@ -2672,25 +2776,28 @@ function viewNavigate() {
   const li = leg?.mode === 'TRANSIT' ? legInfo(leg) : null;
   const kind = { walk: 'Walk', transfer: 'Transfer', drive: 'Drive', board: phase.isTransfer ? 'Transfer · Board' : 'Board', ride: 'On board', arrive: 'Arrived' }[phase.kind];
   const mark = li ? `<span class="rg-badge" style="background:${esc(li.color)};color:${esc(li.text)}" aria-hidden="true">${esc(li.badge)}</span>`
-    : `<span class="rg-glyph" aria-hidden="true">${phase.kind === 'arrive' ? ICONS.check : MODE_ICONS.walk}</span>`;
+    : `<span class="rg-glyph" aria-hidden="true">${rgIcon(phase.kind === 'arrive' ? 'check' : phase.kind === 'transfer' ? 'transfer' : 'walk')}</span>`;
   const status = guideStatus(nav);
-  const dots = phases.map((p, n) => `<li class="${n < i ? 'done' : n === i ? 'now' : ''}"></li>`).join('');
   const arrive = phase.kind === 'arrive';
-  return `<div class="rg-nav${nav.demo ? ' is-demo' : ''}${arrive ? ' is-arrived' : ''}">
+  const flash = nav.flash && nav.flash.index === i ? `<p class="rg-flash">${rgIcon('check')}<span>${esc(nav.flash.text)}</span></p>` : '';
+  return `<div class="rg-nav${nav.demo ? ' is-demo' : ''}${arrive ? ' is-arrived' : ''}" data-kind="${esc(phase.kind)}">
     <div class="rg-top">
       ${arrive ? '<span></span>' : '<button type="button" class="rg-end" data-action="rg-end">End trip</button>'}
+      ${nav.demo ? `<span class="rg-demo-chip">Demo · simulated</span>` : ''}
       <p class="rg-step">Step ${i + 1} of ${phases.length}</p>
     </div>
-    ${nav.demo ? `<div class="rg-demo-banner"><p><strong>Demo</strong> Simulated times from a published timetable. Not live.</p>${['ride', 'board'].includes(phase.kind) ? '<button type="button" class="rg-demo-skip" data-action="rg-demo-skip">Skip ahead</button>' : ''}</div>` : ''}
-    <ol class="rg-progress" aria-hidden="true">${dots}</ol>
+    ${journeyLineHtml(nav)}
     <section class="rg-card" aria-labelledby="rgHeading">
+      ${flash}
       <p class="rg-kind">${mark}<span>${esc(kind)}</span></p>
-      <h1 id="rgHeading" tabindex="-1">${esc(phase.heading)}</h1>
-      ${phase.facts.length ? `<ul class="rg-facts">${phase.facts.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
-      ${phase.check ? `<p class="rg-check"><strong>Check before boarding.</strong> ${esc(phase.check)}</p>` : ''}
+      <h1 id="rgHeading" tabindex="-1">${esc(arrive ? 'You\u2019ve arrived' : phase.heading)}</h1>
+      ${arrive ? `<p class="rg-arrival-place">${esc(phase.place)}</p>${arrivalSummaryHtml(nav)}` : ''}
+      ${phase.facts.length ? `<ul class="rg-facts">${phase.facts.map(f => `<li>${rgIcon(factIcon(f))}<span>${esc(f)}</span></li>`).join('')}</ul>` : ''}
+      ${phase.check ? `<p class="rg-check">${rgIcon('info')}<span><strong>Check before boarding.</strong> ${esc(phase.check)}</span></p>` : ''}
       <p id="rgStatus" class="rg-status" data-level="${esc(status?.level || 'info')}" ${status ? '' : 'hidden'}>${esc(status?.message || '')}</p>
     </section>
-    <p id="rgCertainty" class="rg-certainty">${esc(guideCertainty(nav))}</p>
+    ${arrive ? '' : `<p id="rgCertainty" class="rg-certainty">${esc(guideCertainty(nav))}</p>`}
+    ${nav.demo && ['ride', 'board'].includes(phase.kind) ? '<button type="button" class="rg-demo-skip" data-action="rg-demo-skip">Demo: skip ahead to the next reminder</button>' : ''}
     ${next && !arrive ? `<p class="rg-next"><span>Next</span>${esc(next.heading)}</p>` : ''}
     ${nav.showHelp && !arrive ? guideHelpHtml(nav, phase) : ''}
     <div class="rg-dock" role="group" aria-label="Trip controls">
@@ -2745,7 +2852,7 @@ function voiceStatusHtml() {
   if (!v) return '';
   const retry = currentView().name === 'demo' ? 'demo-speak' : 'voice-destination';
   if (v.state === 'starting') return `<div class="rg-listening" role="status"><span class="rg-pulse is-waiting" aria-hidden="true"></span><span>Speak after the tone.</span><button type="button" class="rg-text-button" data-action="voice-stop">Cancel</button></div>`;
-  if (v.state === 'listening') return `<div class="rg-listening" role="status"><span class="rg-pulse" aria-hidden="true"></span><span>${v.mode === 'server' ? "Listening. I'll stop when you pause." : 'Listening. Say a place, address, or station.'}</span>${v.mode === 'server' ? '<button type="button" class="rg-text-button" data-action="voice-done">Done</button>' : ''}<button type="button" class="rg-text-button" data-action="voice-stop">Cancel</button></div>`;
+  if (v.state === 'listening') return `<div class="rg-listening" role="status">${v.mode === 'server' ? '<span class="rg-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>' : '<span class="rg-mic-ring" aria-hidden="true"></span>'}<span>${v.mode === 'server' ? "Listening. I'll stop when you pause." : 'Listening. Say a place, address, or station.'}</span>${v.mode === 'server' ? '<button type="button" class="rg-text-button" data-action="voice-done">Done</button>' : ''}<button type="button" class="rg-text-button" data-action="voice-stop">Cancel</button></div>`;
   if (v.state === 'understanding') return `<div class="rg-listening" role="status"><span class="spinner" aria-hidden="true"></span><span>Understanding…</span></div>`;
   if (v.state === 'installing') return `<div class="rg-listening" role="status"><span class="spinner" aria-hidden="true"></span><span>Downloading on-device voice…</span></div>`;
   if (v.state === 'heard') return `<p class="rg-heard">Heard <q>${esc(v.heard)}</q>${v.matches === 0 ? '. No matches; try again or type.' : '. Choose the right match below.'}</p>`;
@@ -2817,7 +2924,12 @@ function voiceViaServer({ demo }) {
   updateVoiceSlot();
   announceAccess('Speak after the tone.');
   // The lead-in lets a screen reader finish speaking before the microphone starts listening.
-  const c = RoveVoice.record({ leadInMs: 1300, onState: s => {
+  const levels = [0, 0, 0, 0, 0];
+  const c = RoveVoice.record({ leadInMs: 1300, onLevel: rms => {
+    // Drive the waveform from the actual input level (no level, no movement).
+    levels.shift(); levels.push(Math.min(1, rms * 9));
+    document.querySelectorAll('.rg-wave i').forEach((bar, k) => bar.style.setProperty('--l', (0.18 + levels[(k + 2) % 5] * 0.82).toFixed(2)));
+  }, onState: s => {
     if (capture !== c) return;
     plan.voice = { state: s === 'listening' ? 'listening' : 'starting', mode: 'server' };
     updateVoiceSlot();
@@ -3115,6 +3227,8 @@ function handleAction(el) {
       if (next === nav.gs) break; // stale double tap
       nav.gs = next;
       nav.showHelp = false;
+      // Brief visual echo of what the rider just confirmed (the spoken confirmation says the same).
+      nav.flash = { index: next.index, text: { board: `Boarded ${before.vehicle?.name || ''}`.trim(), ride: `Got off at ${before.place}`, walk: `At ${before.place}`, transfer: `At ${before.place}`, drive: `At ${before.place}` }[before.kind] || 'Confirmed', at: Date.now() };
       accessVibrate(before.kind === 'board' ? [120, 70, 120] : [70]);
       guideEnter(nav, before.confirmSpeech);
       break;

@@ -57,8 +57,8 @@
   /* Starts recording. Call directly from a tap (iOS needs the gesture for audio).
    * Returns { stop(), cancel(), done }; done resolves to { blob, mediaType, heard, reason } or
    * rejects with the browser's error (NotAllowedError, NotFoundError, ...) or an AbortError.
-   * onState('waiting' | 'listening') reports progress. */
-  function record({ leadInMs = 700, onState } = {}) {
+   * onState('waiting' | 'listening') reports progress; onLevel(rms) reports the live input level. */
+  function record({ leadInMs = 700, onState, onLevel } = {}) {
     const Ctx = root.AudioContext || root.webkitAudioContext;
     let ctx = null;
     try { ctx = Ctx ? new Ctx() : null; ctx?.resume?.(); } catch { ctx = null; } // inside the tap for iOS
@@ -100,7 +100,9 @@
             timer = setInterval(() => {
               analyser.getFloatTimeDomainData(data);
               let sum = 0; for (const v of data) sum += v * v;
-              const step = feed(Math.sqrt(sum / data.length));
+              const rms = Math.sqrt(sum / data.length);
+              onLevel?.(rms); // the listening waveform shows the real microphone level
+              const step = feed(rms);
               if (step.done && recorder.state === 'recording') { result = step; recorder.stop(); }
             }, 50);
           } else {

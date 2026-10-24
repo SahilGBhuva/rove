@@ -1,0 +1,14 @@
+/* Rove design: tokens, icons and motion system. Owned by the tokens/motion workstream.
+ * Colour tokens (--rg-*) live at the end of styles.css; these are the shared motion and icon tokens. */
+:root {
+  --m-press: 120ms;    /* button feedback */
+  --m-small: 200ms;    /* small UI transitions */
+  --m-card: 280ms;     /* cards and panels */
+  --m-journey: 400ms;  /* journey-state transitions */
+  --e-out: cubic-bezier(.22, 1, .36, 1);
+  --e-std: cubic-bezier(.4, 0, .2, 1);
+}
+.rg-icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root { --m-press: 0ms; --m-small: 0ms; --m-card: 0ms; --m-journey: 0ms; }
+}
