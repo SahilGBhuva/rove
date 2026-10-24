@@ -135,7 +135,7 @@
           `Get off at ${to}`,
           stops ? plural(stops, 'stop') : null,
           arrives != null ? `Arrives ${clock(arrives)}. ${t.text}` : t.text,
-          nextLeg ? `Next: change to ${vehicle(nextLeg).name}${connectMin != null ? `; ${connectMin <= 0 ? 'connection may already be missed' : connectMin < 7 ? `only ${plural(connectMin, 'minute')} scheduled to connect; consider another route if you need more time` : `${plural(connectMin, 'minute')} scheduled to connect`}` : ''}. Verify the next boarding location with station signs or staff.` : null
+          nextLeg ? `Then transfer to ${vehicle(nextLeg).name}${connectMin != null ? `; ${connectMin <= 0 ? 'connection may already be missed' : connectMin < 7 ? `only ${plural(connectMin, 'minute')} scheduled to connect; consider another route if you need more time` : `${plural(connectMin, 'minute')} scheduled to connect`}` : ''}. Verify the next boarding location with station signs or staff.` : null
         ].filter(Boolean),
         confirmLabel: "I've got off",
         confirmAria: `I've got off at ${to}`,
