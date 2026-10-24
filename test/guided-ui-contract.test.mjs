@@ -110,3 +110,16 @@ test('QA P1: designed control heights override the generic 48px floor; text foll
   assert.match(css, /@media \(min-width: 801px\) \{ \.speech-bar \{ top: 16px; bottom: auto; \}/);
   assert.match(css, /@media \(max-height: 560px\) \{ \.rg-dock \{ position: static;/);
 });
+
+
+test('rerouting rejects stale or inaccurate GPS before sending a plan request', () => {
+  const reroute = fn('navReroute');
+  assert.match(reroute, /Date\.now\(\) - nav\.fix\.time > 30000/);
+  assert.match(reroute, /nav\.fix\.accuracy > 55/);
+  assert.ok(reroute.indexOf('accuracy > 55') < reroute.indexOf("fetch('/api/v2/plan?"));
+});
+
+test('no legacy GPS auto-advance function remains', () => {
+  assert.doesNotMatch(app, /function maybeAdvanceNavigation\(/);
+  assert.doesNotMatch(app, /nav\.i = Math\.min\(nav\.i \+ 1/);
+});
