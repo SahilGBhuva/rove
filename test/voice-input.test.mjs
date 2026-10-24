@@ -1,0 +1,63 @@
+// Voice input logic: end-of-speech detection, recovery decisions, and app wiring.
+// Microphone capture and real transcription are verified separately (see OVERNIGHT_PROGRESS.md).
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import '../site/public/js/speech.js';
+import '../site/public/js/voice-capture.js';
+
+const { createEndpointer } = globalThis.RoveVoice;
+const { recognitionFallback } = globalThis.RoveSpeech;
+const app = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
+const html = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
+const run = (feed, levels) => { let last; for (const l of levels) { last = feed(l); if (last.done) return last; } return last; };
+const frames = (ms, level) => Array(ms / 50).fill(level);
+
+test('endpointer stops after speech followed by a pause, not during the speech', () => {
+  const r = run(createEndpointer(), [...frames(300, 0.004), ...frames(1500, 0.08), ...frames(600, 0.005), ...frames(200, 0.07), ...frames(1300, 0.005)]);
+  assert.equal(r.done, true);
+  assert.equal(r.reason, 'silence');
+  assert.equal(r.heard, true);
+  const mid = run(createEndpointer(), [...frames(300, 0.004), ...frames(1500, 0.08), ...frames(600, 0.005)]);
+  assert.equal(mid.done, false, 'a short pause mid-phrase does not end the recording');
+});
+
+test('endpointer reports no speech in a quiet room and caps long recordings', () => {
+  const quiet = run(createEndpointer(), frames(8000, 0.004));
+  assert.deepEqual([quiet.done, quiet.heard, quiet.reason], [true, false, 'no-speech']);
+  const endless = run(createEndpointer(), [...frames(300, 0.004), ...frames(13000, 0.09)]);
+  assert.equal(endless.reason, 'max');
+});
+
+test('endpointer adapts to a noisy station: steady noise is not mistaken for speech', () => {
+  const r = run(createEndpointer(), [...frames(300, 0.03), ...frames(7000, 0.035)]);
+  assert.equal(r.heard, false);
+  const spoken = run(createEndpointer(), [...frames(300, 0.03), ...frames(1200, 0.2), ...frames(1300, 0.03)]);
+  assert.equal(spoken.heard, true);
+});
+
+test('"network" while online is not reported as offline; on-device recognition is tried first', () => {
+  assert.deepEqual(recognitionFallback({ error: 'network', onLine: true, availability: 'available' }), { action: 'retry-local', code: null });
+  assert.deepEqual(recognitionFallback({ error: 'network', onLine: true, availability: 'downloadable' }), { action: 'offer-download', code: 'voice-download' });
+  assert.deepEqual(recognitionFallback({ error: 'network', onLine: true, availability: 'unavailable' }), { action: 'fail', code: 'voice-service' });
+  assert.deepEqual(recognitionFallback({ error: 'network', onLine: false, availability: 'unsupported' }), { action: 'fail', code: 'offline' });
+  assert.deepEqual(recognitionFallback({ error: 'network', onLine: true, local: true, availability: 'available' }), { action: 'fail', code: 'voice-service' }, 'no retry loop');
+  assert.deepEqual(recognitionFallback({ error: 'not-allowed' }), { action: 'fail', code: 'not-allowed' });
+});
+
+test('app prefers server transcription, falls back to the browser recognizer, then typing', () => {
+  assert.ok(html.indexOf('voice-capture.js') < html.indexOf('app.js?'));
+  assert.match(app, /if \(voiceServer !== false && window\.RoveVoice\?\.supported\(\) && navigator\.onLine\) voiceViaServer\(\{ demo \}\);\s*else voiceViaBrowser\(\{ demo \}\);/);
+  assert.match(app, /fetch\('\/api\/v2\/transcribe', \{ method: 'POST'/);
+  assert.match(app, /voiceServer = false;\s*if \(BrowserRecognition\(\)\)/);
+  assert.match(app, /RoveSpeech\.recognitionFallback\(/);
+  assert.doesNotMatch(app, /Voice input needs an internet connection/, 'the misleading message is gone');
+  assert.match(app, /offline: "You're offline/);
+});
+
+test('voice status is patched in place so VoiceOver focus does not move while the mic is open', () => {
+  const start = app.indexOf('function updateVoiceSlot()');
+  const body = app.slice(start, app.indexOf('\nfunction ', start + 10));
+  assert.match(body, /slot\.innerHTML = voiceStatusHtml\(\)/);
+  assert.match(app, /RoveVoice\.record\(\{ leadInMs: 1300/);
+});

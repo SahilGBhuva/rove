@@ -122,7 +122,20 @@
     };
   }
 
-  const api = { chunk, createSpeaker };
+  /* What to do when speech recognition fails. Chromium-based browsers report "network" both when
+   * the device is offline and when their cloud speech service is unreachable while online (common
+   * in Brave, Electron apps and some Chromium builds), so "network" alone must not be shown as
+   * "you are offline". Newer Chromium can recognise speech on the device instead.
+   * availability: result of SpeechRecognition.available({processLocally: true}), or 'unsupported'. */
+  function recognitionFallback({ error, onLine = true, local = false, availability = 'unsupported' }) {
+    const cloudUnreachable = error === 'network' || error === 'language-not-supported';
+    if (!cloudUnreachable) return { action: 'fail', code: error || 'unknown' };
+    if (!local && availability === 'available') return { action: 'retry-local', code: null };
+    if (!local && (availability === 'downloadable' || availability === 'downloading')) return { action: 'offer-download', code: 'voice-download' };
+    return { action: 'fail', code: onLine ? 'voice-service' : 'offline' };
+  }
+
+  const api = { chunk, createSpeaker, recognitionFallback };
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     api.speaker = createSpeaker({
       synth: window.speechSynthesis,

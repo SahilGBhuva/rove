@@ -1596,3 +1596,5 @@ body .panel-body:has(.rg-nav) { scroll-padding-bottom: 180px; scroll-padding-top
 .rove-accessible .rg-results-head, .rove-accessible .results-when, .rove-accessible .rg-voice-row { margin-left: var(--rg-gutter); margin-right: var(--rg-gutter); padding-left: 0; padding-right: 0; }
 .rove-accessible .rg-results-demo, .rove-accessible .route-notes { margin-left: var(--rg-gutter); margin-right: var(--rg-gutter); }
 .rove-accessible .wordmark, .rove-accessible .wordmark-mark { color: var(--rg-green); }
+.rg-pulse.is-waiting { background: #b7791f; animation: none; box-shadow: none; }
+.rg-listening .spinner { flex: none; }
