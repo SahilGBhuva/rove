@@ -2614,6 +2614,7 @@ async function submitPlan() {
     if (access !== 'WALK') params.set('access', access);
     if (plan.timeMode === 'arrive') params.set('arriveBy', 'true');
     render();
+    if (plan.voiceFlow) setTimeout(() => { if (plan.loading) guideSay('Still finding routes. One moment.'); }, 8000); // silence feels broken
     const response = await fetch(`/api/v2/plan?${params}`, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(35000) : undefined });
     const body = await response.json().catch(() => null);
     // The planner answers 404 with an empty itinerary list when there is no route; that is not an outage.
@@ -2646,7 +2647,14 @@ async function submitPlan() {
     // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
     if (error instanceof PlanError) { plan.error = error.offline ? null : error.message; plan.errorField = error.field || null; plan.noServiceWindow = error.code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW'; }
     else plan.error = error?.name === 'TimeoutError' ? 'The trip planner took too long to respond. Please try again.' : 'Rove could not reach the trip planner. Check your connection and try again.';
-    if (currentView().name === 'plan') render();
+    if (currentView().name === 'plan') {
+      render();
+      // Say what went wrong and put focus on it, so a screen-reader rider is never left on nothing.
+      const said = plan.error || (error?.offline ? 'Trip planning is offline right now. Please try again in a few minutes.' : '');
+      const target = $('#planError') || $('#planTo');
+      if (target) { if (target.id === 'planError') target.tabIndex = -1; target.focus({ preventScroll: true }); }
+      if (said) guideSay(said);
+    }
   }
 }
 
@@ -3660,6 +3668,7 @@ function guideEnter(nav, preface = '') {
 
 function beginNav(it, { destination, access = 'WALK', demo = false, restore = null } = {}) {
   releaseWakeLock();
+  hideToast();
   state.journey = it;
   const nav = {
     it, steps: buildSteps(it), i: 0, tracking: false, watchId: null, boarded: false, exitAlerted: false, exitHint: null,
@@ -3902,6 +3911,23 @@ function updateVoiceSlot() {
   else if (['plan', 'demo'].includes(currentView().name)) render();
 }
 function planDestinationResults() { return $$('#planSuggest .result:not([data-action="plan-map"]):not([data-action="plan-locate"]):not([data-action="plan-pick-location"])'); }
+/* "My location" as the spoken starting point. */
+function voiceStartHere() {
+  const plan = state.plan;
+  plan.focus = 'from';
+  if (state.userLocation && inServiceArea({ lat: state.userLocation[1], lon: state.userLocation[0] })) { plan.voice = null; plan.from = currentLocationPlace(); earcon('ok'); afterPick(); return; }
+  plan.voice = { state: 'understanding' }; updateVoiceSlot();
+  guideSay('Finding your location.');
+  locate({ thenPick: 'from' });
+}
+/* Location failed or is outside the Bay Area during a spoken start: ask for a place instead. */
+function voiceStartFallback(reason) {
+  const plan = state.plan;
+  if (!plan.voiceFlow || plan.voiceField !== 'from' || currentView().name !== 'plan') return false;
+  plan.voice = null; updateVoiceSlot();
+  voiceDestination({ field: 'from', prompt: `${reason} Say the place or station where you are starting, after the tone.` });
+  return true;
+}
 function voiceResultsReady() {
   const plan = state.plan;
   if (!plan.voicePending || currentView().name !== 'plan') return;
@@ -3911,7 +3937,8 @@ function voiceResultsReady() {
   plan.voice = { state: 'heard', heard, matches: results.length };
   const slot = document.querySelector('.rg-voice-slot');
   if (slot) slot.innerHTML = voiceStatusHtml();
-  if (!results.length) { announceAccess(`Heard ${heard}. No matching places. Try again, or type your destination.`); return; }
+  const field = plan.voiceField || 'to';
+  if (!results.length) { earcon('error'); guideSay(`I heard ${heard}, but found no matching places. Tap Speak to try again, or type ${field === 'from' ? 'your starting point' : 'your destination'}.`); $(field === 'from' ? '#planFrom' : '#planTo')?.focus({ preventScroll: true }); return; }
   const first = results[0].querySelector('.row-title')?.textContent || results[0].textContent.trim();
   if (plan.voiceFlow) { voiceAskMatch(heard, 0); return; }
   announceAccess(`Heard ${heard}. ${plural(results.length, 'match', 'matches')}. First: ${first}. Choose one to confirm.`);
@@ -3939,10 +3966,12 @@ function voiceHeard(words, demo) {
   const text = spokenDestination(words) || String(words || '').trim();
   if (!text) { voiceFail('no-speech', demo); return; }
   if (demo) { plan.voice = null; startDemo(text); return; }
+  const field = plan.voiceField || 'to';
+  if (field === 'from' && /\b(my|current) location\b|\bhere\b|where i am|\bnear me\b/i.test(String(words))) { voiceStartHere(); return; }
   plan.voice = { state: 'heard', heard: text };
-  plan.to = null; plan.draft.to = text; plan.query = text; plan.focus = 'to'; plan.voicePending = text;
+  plan[field] = null; plan.draft[field] = text; plan.query = text; plan.focus = field; plan.voicePending = text;
   render();
-  requestAutocomplete(text, 'to');
+  requestAutocomplete(text, field);
   updatePlanSuggestions();
   if (autocomplete.status !== 'loading') voiceResultsReady();
   setTimeout(voiceResultsReady, 3000); // geocoder slow or offline: announce local stop matches anyway
@@ -3961,7 +3990,7 @@ function voiceFail(error, demo) {
   const plan = state.plan;
   if (error === 'no-speech' && !voiceIntent && voiceSilences < VOICE_REASKS) {
     voiceSilences++;
-    voiceAgain(demo, demo ? "I didn't hear anything. Say Lake Merritt after the tone." : "I didn't hear anything. Where would you like to go? Say it after the tone.");
+    voiceAgain(demo, demo ? "I didn't hear anything. Say Lake Merritt after the tone." : state.plan.voiceField === 'from' ? "I didn't hear anything. Where are you starting from? Say my location, or a place, after the tone." : "I didn't hear anything. Where would you like to go? Say it after the tone.");
     return;
   }
   voiceSilences = 0;
@@ -4051,7 +4080,8 @@ async function voiceAskMatch(heard, i = 0, retried = false) {
   const btn = planDestinationResults()[i];
   if (!btn) { voiceIntent = null; await sayThenWait(`That was the last match for ${heard}. Tap Speak to try again, or type your destination.`); return; }
   if (!accessPreference('speak', true)) btn.focus({ preventScroll: true }); // screen-reader users can also double-tap it
-  await sayThenWait(retried ? 'Please say yes or no.' : i === 0 ? `I heard ${heard}. Best match: ${matchLabel(btn)}. Say yes to go there, or no for the next match.` : `Next match: ${matchLabel(btn)}. Say yes or no.`);
+  const there = state.plan.voiceField === 'from' ? 'start there' : 'go there';
+  await sayThenWait(retried ? 'Please say yes or no.' : i === 0 ? `I heard ${heard}. Best match: ${matchLabel(btn)}. Say yes to ${there}, or no for the next match.` : `Next match: ${matchLabel(btn)}. Say yes or no.`);
   voiceIntent = { handle: words => {
     const a = yesNo(words);
     if (a === 'yes') { voiceIntent = null; earcon('ok'); handleAction(btn); }
@@ -4073,6 +4103,7 @@ async function voiceOfferRoutes(k = 0, retried = false) {
   if (currentView().name !== 'results') return;
   toast('Listening: say start, next, or repeat');
   voiceIntent = { handle: words => {
+    hideToast(); // the answer is in: the "Listening" bubble must not linger over the trip screen
     const w = ` ${String(words).toLowerCase()} `;
     if (/\b(start|begin|go|yes|this one|let'?s go)\b/.test(w)) { voiceIntent = null; state.plan.voiceFlow = false; earcon('ok'); startNavigation(order[n]); }
     else if (/\b(next|another|other|no)\b/.test(w)) voiceOfferRoutes(n + 1);
@@ -4083,17 +4114,23 @@ async function voiceOfferRoutes(k = 0, retried = false) {
   voiceListen({});
 }
 
-async function voiceDestination({ demo = false, prompt = null } = {}) {
+let voiceGen = 0, voiceStartedAt = 0;
+async function voiceDestination({ demo = false, prompt = null, field = 'to' } = {}) {
+  // A second tap right after the first (or a double tap) must not start a second conversation.
+  if (Date.now() - voiceStartedAt < 1200 && ['starting', 'listening'].includes(state.plan.voice?.state)) return;
+  voiceStartedAt = Date.now();
+  const my = ++voiceGen;
   stopSpeaking();
   voiceCancelAll();
   voiceIntent = null;
   if (!demo && currentView().name !== 'plan') openPlan({});
   state.plan.voiceFlow = !demo;
+  state.plan.voiceField = demo ? 'to' : field;
   voiceSilences = 0; voiceRetried = false;
   state.plan.voice = { state: 'starting', mode: voiceMode() };
   updateVoiceSlot();
   await sayThenWait(prompt || (demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.' : 'Where would you like to go? Say it after the tone.'));
-  if (state.plan.voice?.state !== 'starting') return; // cancelled while Rove was speaking
+  if (my !== voiceGen || state.plan.voice?.state !== 'starting') return; // cancelled or restarted while Rove was speaking
   voiceListen({ demo });
 }
 
@@ -4407,6 +4444,8 @@ function handleAction(el) {
       if (!nav?.gs) break;
       const before = guidePhase(nav);
       if (nav.showHelp && before.kind !== 'arrive') break;
+      // A second tap that lands on the next step's button (a double tap) must not confirm it too.
+      if (nav.flash?.at && Date.now() - nav.flash.at < 900) break;
       if (before.kind === 'arrive') { endTrip(); break; }
       const next = Guide.reduce(nav.gs, { type: 'CONFIRM', phaseIndex: Number(el.dataset.phase), now: navNow(nav) });
       if (next === nav.gs) break; // stale double tap
@@ -4491,8 +4530,16 @@ function afterPick() {
   // Spoken destination confirmed by choosing a match: go straight to routes when the start is known.
   if (picked === 'to' && (plan.voice?.state === 'heard' || plan.voiceFlow)) {
     plan.voice = null;
-    if (plan.from) { announceAccess(`Destination: ${plan.to?.name}. Finding routes.`); submitPlan(); return; }
-    announceAccess(`Destination: ${plan.to?.name}. Now choose a starting point. Use my location is first.`);
+    // A start the rider chose themselves is kept; an automatic "Your location" is asked about, so
+    // the rider always knows where the trip starts.
+    if (plan.from && plan.from.kind !== 'location') { guideSay(`Destination: ${plan.to?.name}. Starting from ${plan.from.name}. Finding routes.`); submitPlan(); return; }
+    plan.from = null;
+    voiceDestination({ field: 'from', prompt: `Destination: ${plan.to?.name}. Where are you starting from? Say my location to start where you are, or say a place or station, after the tone.` });
+    return;
+  }
+  if (picked === 'from' && plan.voiceFlow && plan.voiceField === 'from' && plan.to) {
+    plan.voice = null; plan.voiceField = 'to';
+    guideSay(`Starting from ${plan.from?.kind === "location" ? "your current location" : plan.from?.name || "your location"}. Finding routes.`); submitPlan(); return;
   }
   if (next) requestAnimationFrame(() => $(next)?.focus());
   else requestAnimationFrame(() => { document.activeElement?.blur?.(); $('.plan-submit')?.focus({ preventScroll: true }); });
@@ -4527,7 +4574,7 @@ function bindPanel() {
     setTimeout(() => {
       const active = document.activeElement;
       if (currentView().name !== 'plan' || active?.dataset?.planField || active?.closest?.('#planSuggest')) return;
-      if (state.plan.focus) { setPlanFocus(null); render(); }
+      if (state.plan.focus) setPlanFocus(null); // patch the list only: a re-render would eat the click and drop focus
     }, 0);
   });
   body.addEventListener('input', e => {
@@ -4583,6 +4630,8 @@ function toast(message) {
   // Long enough to read at large text sizes: about 60ms a character, 3.2 to 7 seconds.
   toast.timer = setTimeout(() => el.classList.remove('show'), Math.max(3200, Math.min(7000, String(message).length * 60)));
 }
+
+function hideToast() { clearTimeout(toast.timer); $('#toast')?.classList.remove('show'); }
 
 function closePopovers() {
   $('#layersPopover').hidden = true;
@@ -4703,6 +4752,7 @@ function onPosition(pos) {
   locate.pendingPick = null;
   const here = { lat: pos.coords.latitude, lon: pos.coords.longitude };
   if (!inServiceArea(here)) {
+    if (pick && voiceStartFallback('You seem to be outside the Bay Area.')) return;
     if (first || pick) toast('You are outside the Bay Area. Search for a Bay Area place to plan a trip.');
     if (pick) return;
   }
@@ -4723,7 +4773,9 @@ function centerOnGrantedLocation() {
   }, () => {}, { timeout: 10000, maximumAge: 60000 });
 }
 function onPositionError(err) {
+  const pick = locate.pendingPick;
   locate.pendingPick = null;
+  if (pick && voiceStartFallback(err?.code === 1 ? 'Location is turned off for Rove.' : "I couldn't find your location.")) return;
   toast(err?.code === 1 ? 'Location is off. Search for a stop or line to get started.' : 'Your location could not be found. Please try again.');
 }
 
@@ -4994,6 +5046,9 @@ function planErrorMessage(status, body) {
   }
   if (status === 503) return { which: null, text: 'Trip planning is offline right now. Please try again in a few minutes.', offline: true };
   if (status === 404) return { which: null, text: 'Trip planning is not available right now.', offline: true };
+  // 422 = the planner understood the request but cannot serve it; its reason is written for riders.
+  const reason = String(body?.error || body?.message || '').trim();
+  if (status === 422 && reason && reason.length < 240) return { which, text: reason };
   return { which: null, text: 'Trip planning ran into a problem. Please try again.' };
 }
 
@@ -5493,13 +5548,27 @@ function promoteAddressMatch(results, text) {
 
 /* For text that starts with a house number, prefer a real address with that number over the
  * nearby intersections and businesses geocoders often rank first. */
+/* Picks the geocoder result that really is what the rider typed, or null. The geocoder always
+ * returns something, so a result is only accepted when it is in the city the rider named and
+ * every meaningful word they typed appears in it (a 4-letter prefix is enough, for typos). */
+const GEO_STOPWORDS = new Set(['and', 'the', 'of', 'at', 'to', 'in', 'near', 'by', 'ca', 'california', 'usa', 'apt', 'unit', 'suite', 'ste', 'st', 'ave', 'rd', 'blvd', 'dr', 'way', 'street', 'avenue', 'road', 'boulevard', 'drive', 'lane', 'ln', 'ct', 'court', 'pl', 'place']);
+function geoWords(text) { return normalizeSearch(text).split(/\s+/).filter(w => w.length >= 3 && !/^\d/.test(w) && !GEO_STOPWORDS.has(w)); }
 function bestGeocodeMatch(results, text) {
-  const number = /^(\d+[a-z]?)\s+\S/i.exec(text.trim())?.[1];
+  const parts = String(text).split(',').map(x => x.trim()).filter(Boolean)
+    .filter(x => !/^(apt|unit|suite|ste|#)\s*\S+$/i.test(x) && !/^(ca|california)(\s+\d{5})?$/i.test(x));
+  const city = parts.length > 1 ? geoWords(parts[parts.length - 1]).join(' ') : '';
+  const hay = p => normalizeSearch(`${p.name} ${p.detail || ''}`);
+  let pool = results.filter(Boolean);
+  if (city) pool = pool.filter(p => hay(p).includes(city));
+  const words = geoWords(parts.join(' '));
+  pool = pool.filter(p => { const h = hay(p); return words.every(w => h.includes(w.slice(0, Math.min(4, w.length)))); });
+  const number = /^(\d+[a-z]?)\s+\S/i.exec(parts.find(x => /^\d/.test(x)) || '')?.[1];
   if (number) {
-    const address = results.find(p => p.layer === 'address' && p.name.toLowerCase().startsWith(`${number.toLowerCase()} `));
+    const address = pool.find(p => p.layer === 'address' && p.name.toLowerCase().startsWith(`${number.toLowerCase()} `));
     if (address) return address;
+    return null; // a house number the geocoder did not find: don't swap in a different address
   }
-  return results[0] || null;
+  return pool[0] || null;
 }
 
 /* Resolves text the rider typed but did not pick from the list. Exact stop names win, then

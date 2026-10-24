@@ -19,7 +19,8 @@
   function chunk(text, max = MAX_CHUNK) {
     const clean = String(text || '').replace(/\s+/g, ' ').trim();
     if (!clean) return [];
-    const sentences = clean.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [clean];
+    // Split only where a sentence mark is followed by a space, so "0.3 miles" stays whole.
+    const sentences = clean.split(/(?<=[.!?])\s+/);
     const out = [];
     let cur = '';
     const add = piece => {

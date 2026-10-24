@@ -78,7 +78,7 @@ test('voice never asks the rider to download anything; it falls back to typing',
 
 test('voice works without sight: spoken prompts, sound cues, yes/no and start/next by voice', () => {
   assert.match(app, /Where would you like to go\? Say it after the tone\./);
-  assert.match(app, /Say yes to go there, or no for the next match\./);
+  assert.match(app, /Say yes to \$\{there\}, or no for the next match\./);
   assert.match(app, /Say start to begin this route/);
   for (const cue of ["earcon('start')", "earcon('stop')", "earcon('ok')", "earcon('error')"]) assert.ok(app.includes(cue), cue);
   // Silence: Rove asks again (twice) before suggesting typing.
@@ -107,4 +107,12 @@ test('Rove opens on one large Start button, then asks the destination out loud',
   const cap = readFileSync(new URL('../site/public/js/voice-capture.js', import.meta.url), 'utf8');
   assert.match(cap, /function unlock\(\)/);
   assert.doesNotMatch(cap, /ctx\?\.close/, 'the shared audio context stays open between recordings');
+});
+
+test('after the destination, Rove asks where the trip starts, and "my location" uses GPS', () => {
+  assert.match(app, /Where are you starting from\? Say my location to start where you are, or say a place or station, after the tone\./);
+  assert.match(app, /plan\.from && plan\.from\.kind !== 'location'/, 'an automatic GPS start is asked about, not assumed');
+  assert.match(app, /function voiceStartHere\(\)/);
+  assert.match(app, /voiceStartFallback\(err\?\.code === 1/, 'location denied falls back to asking for a place');
+  assert.match(app, /Still finding routes\. One moment\./);
 });
