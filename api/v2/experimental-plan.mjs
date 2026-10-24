@@ -85,6 +85,11 @@ export function diverseCandidateStops(stops,point,maxMeters=1800) {
   }
   return chosen;
 }
+// A straight-line distance is shorter than a real street walk. Allow a
+// conservative pace plus orientation/crossing time when choosing transit.
+export function estimatedAccessSeconds(meters) {
+  return Number.isFinite(meters) && meters>1 ? Math.ceil(meters/1.1+90) : 0;
+}
 function legEndpoint(stop) {
   return {name:stop[1],lat:stop[2],lon:stop[3],stop:{id:stop[0]}};
 }
@@ -178,7 +183,7 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
   ]);
   for (const penalty of [0, 8*60]) for(const a of origins) {
     if (penalty && !simplerOrigins.has(a.index)) continue;
-    const startSeconds=ctx.seconds+Math.ceil(a.distance/1.2);
+    const startSeconds=ctx.seconds+estimatedAccessSeconds(a.distance);
     // One scan per boarding candidate, not one scan for every boarding/exit pair.
     const matches=findJourneys(data,a.index,destinations.map(b=>b.index),startSeconds,
       {footpaths,maxSeconds:8*3600,transferPenaltySeconds:penalty});
@@ -187,10 +192,10 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
       const trip=matches.get(b.index);
       if(trip&&trip.legs.some(l=>l.type==='transit')){
         const it=adaptJourney(trip,data,from,to,pacificMidnight(ctx.previousDay));
-        const egress=Math.ceil(b.distance/1.2);
+        const egress=estimatedAccessSeconds(b.distance);
         // Make the start/end walking estimates explicit; their geometry is NOT street-verified.
         const first=it.legs[0];
-        const ingress=Math.max(0,Math.ceil(a.distance/1.2));
+        const ingress=estimatedAccessSeconds(a.distance);
         const firstStart=Date.parse(first.start.scheduled);
         const originStart=Math.max(time.getTime(), firstStart-ingress*1000);
         if(a.distance>1 && firstStart>originStart){

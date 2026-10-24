@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {findJourney,findJourneys,directFootpaths} from '../experiments/bay-router/route.mjs';
 import {pacificMidnight,serviceDayOffset} from '../experiments/bay-router/timezone.mjs';
 import {combineServiceDays} from '../experiments/bay-router/combine-days.mjs';
-import {adaptJourney,dateContext} from '../api/v2/experimental-plan.mjs';
+import {adaptJourney,dateContext,estimatedAccessSeconds} from '../api/v2/experimental-plan.mjs';
 import {rankItineraries} from '../experiments/bay-router/rank.mjs';
 
 const stops = [
@@ -68,4 +68,10 @@ test('rail platform transfers have a realistic minimum buffer',()=>{
  assert.ok(paths[0].find(([j])=>j===1)[1]>=180);
  assert.ok(paths[2].find(([j])=>j===3)[1]>=75);
  assert.ok(paths[0].find(([j])=>j===1)[1]>paths[2].find(([j])=>j===3)[1]);
+});
+
+test('door-to-door search reserves walking pace and orientation time',()=>{
+ assert.equal(estimatedAccessSeconds(0),0);
+ assert.ok(estimatedAccessSeconds(720)>=720);
+ assert.ok(estimatedAccessSeconds(1000)>=950);
 });
