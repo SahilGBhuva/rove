@@ -2608,12 +2608,14 @@ function arrivalSummaryHtml(nav) {
   const minutes = Math.max(1, Math.round((navNow(nav) - nav.gs.startedAt) / 60000));
   const lines = (nav.it.legs || []).filter(l => l.mode === 'TRANSIT' && !l.staySeated).map(l => legInfo(l));
   const confirmed = nav.gs.history.length;
-  return `<div class="rg-arrival">
-    <svg class="rg-arrival-mark" viewBox="0 0 96 96" aria-hidden="true"><circle class="ring" cx="48" cy="48" r="42"/><path class="tick" d="m30 49 12 12 25-26"/></svg>
+  // Draw the mark only when arrival first renders; a later re-render shows it already complete.
+  const entering = !document.querySelector('.rg-arrival');
+  return `<div class="rg-arrival${entering ? ' is-entering' : ''}">
+    <svg class="rg-arrival-mark" viewBox="0 0 96 96" aria-hidden="true"><circle class="disc" cx="48" cy="48" r="42"/><circle class="ring" cx="48" cy="48" r="42" pathLength="100"/><path class="tick" d="m30 49 12 12 25-26" pathLength="100"/></svg>
     <dl class="rg-arrival-stats">
-      <div><dt>Trip time</dt><dd>${esc(durationLabel(minutes * 60))}${nav.demo ? ' <small>(simulated)</small>' : ''}</dd></div>
-      <div><dt>Steps you confirmed</dt><dd>${confirmed}</dd></div>
-      ${lines.length ? `<div><dt>Lines</dt><dd class="rg-arrival-lines">${lines.map(li => `<span class="rg-badge sm" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>`).join('')}</dd></div>` : ''}
+      <div><dt>${rgIcon('clock')}<span>Trip time</span></dt><dd>${esc(durationLabel(minutes * 60))}${nav.demo ? ' <small>(simulated)</small>' : ''}</dd></div>
+      <div><dt>${rgIcon('check')}<span>Steps you confirmed</span></dt><dd>${confirmed}</dd></div>
+      ${lines.length ? `<div class="rg-arrival-wide"><dt>${rgIcon('route')}<span>Lines</span></dt><dd class="rg-arrival-lines">${lines.map(li => `<span class="rg-badge sm" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>`).join('')}</dd></div>` : ''}
     </dl>
   </div>`;
 }
@@ -2774,21 +2776,28 @@ function endTrip() {
 function guideHelpHtml(nav, phase) {
   const st = phase.kind === 'board' ? Guide.departureStatus(nav.gs, navNow(nav), { clock: rgClock }) : null;
   const speakOn = accessPreference('speak', true);
-  return `<section id="rgHelp" class="rg-help" aria-labelledby="rgHelpHeading">
+  // Play the open animation only when Help first appears, not when a Help action re-renders it.
+  const opening = !document.getElementById('rgHelp');
+  const svg = d => `<svg class="rg-icon" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+  const ico = icon => `<span class="rg-help-ico" aria-hidden="true">${icon}</span>`;
+  const undo = svg('<path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3"/>');
+  const voice = svg(speakOn ? '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/>' : '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/>');
+  return `<section id="rgHelp" class="rg-help${opening ? ' is-opening' : ''}" aria-labelledby="rgHelpHeading">
     <h2 id="rgHelpHeading" tabindex="-1">Help</h2>
     <div class="rg-help-actions">
-      ${st?.state === 'maybe-missed' ? '<button type="button" class="rg-row-button" data-action="rg-wait">I\'m still waiting</button>' : ''}
-      <button type="button" class="rg-row-button" data-action="rg-replan">Find another route</button>
-      <button type="button" class="rg-row-button" data-action="rg-where">Where am I?</button>
-      ${nav.gs.history.length ? '<button type="button" class="rg-row-button" data-action="rg-back">Undo last confirmation</button>' : ''}
-      <button type="button" class="rg-row-button" data-action="rg-voice" aria-pressed="${speakOn}">Rove voice: ${speakOn ? 'On' : 'Off'}</button>
+      ${st?.state === 'maybe-missed' ? `<button type="button" class="rg-row-button" data-action="rg-wait">${ico(rgIcon('clock'))}<span class="rg-help-label">I'm still waiting</span></button>` : ''}
+      <button type="button" class="rg-row-button" data-action="rg-replan">${ico(rgIcon('route'))}<span class="rg-help-label">Find another route</span></button>
+      <button type="button" class="rg-row-button" data-action="rg-where">${ico(rgIcon('pin'))}<span class="rg-help-label">Where am I?</span></button>
+      ${nav.gs.history.length ? `<button type="button" class="rg-row-button" data-action="rg-back">${ico(undo)}<span class="rg-help-label">Undo last confirmation</span></button>` : ''}
+      <button type="button" class="rg-row-button" data-action="rg-voice" aria-pressed="${speakOn}">${ico(voice)}<span class="rg-help-label">Rove voice<span class="visually-hidden">:</span></span> <span class="rg-help-value">${speakOn ? 'On' : 'Off'}</span></button>
     </div>
+    <h3 class="rg-help-sub">If something goes wrong</h3>
     <dl class="rg-tips">
-      <dt>Lost or unsure</dt><dd>Stop somewhere safe. Ask transit staff or the operator, then use Where am I.</dd>
-      <dt>Wrong vehicle or missed stop</dt><dd>Get off at the next stop when it is safe, then choose Find another route.</dd>
-      <dt>Missed or canceled service</dt><dd>Choose Find another route. If you are still waiting, Rove checks again in a few minutes.</dd>
-      <dt>No internet</dt><dd>Your current steps stay on this phone. Finding a new route needs a connection.</dd>
-      <dt>What Rove cannot do</dt><dd>Rove cannot detect obstacles, safe crossings, platform edges, or which vehicle you are on.</dd>
+      <div><dt>Lost or unsure</dt><dd>Stop somewhere safe. Ask transit staff or the operator, then use Where am I.</dd></div>
+      <div><dt>Wrong vehicle or missed stop</dt><dd>Get off at the next stop when it is safe, then choose Find another route.</dd></div>
+      <div><dt>Missed or canceled service</dt><dd>Choose Find another route. If you are still waiting, Rove checks again in a few minutes.</dd></div>
+      <div><dt>No internet</dt><dd>Your current steps stay on this phone. Finding a new route needs a connection.</dd></div>
+      <div class="rg-tips-limit"><dt>${rgIcon('info')}<span>What Rove cannot do</span></dt><dd>Rove cannot detect obstacles, safe crossings, platform edges, or which vehicle you are on.</dd></div>
     </dl>
   </section>`;
 }
@@ -3084,12 +3093,14 @@ function startDemo(heard = '') {
   announceAccess(`${heard ? `Heard ${heard}. ${matched ? '' : 'This demo always goes to Lake Merritt. '}` : ''}Demo route to Lake Merritt BART. ${routeChoiceSpeech(it, 1)}`);
 }
 function viewDemo() {
+  const stop = (icon, label, cls = '') => `<li class="${cls}"><span class="rg-demo-node">${rgIcon(icon)}</span><span>${label}</span></li>`;
   return `${backHeader()}
-  <div class="rg-page">
+  <div class="rg-page rg-demo">
     <p class="rg-kicker">Demo journey</p>
     <h1 class="rg-title">Ocean Beach to Lake Merritt</h1>
     <p class="rg-lede">Try a whole trip from home: walk to a stop, board a Muni N train, transfer to BART, and arrive.</p>
-    <p class="rg-note"><strong>Simulated.</strong> Times come from Muni and BART published timetables and are shifted to start now. Nothing is live, and Rove does not use your location.</p>
+    <ol class="rg-demo-route" aria-hidden="true">${stop('walk', 'Walk')}${stop('platform', 'Muni N')}${stop('transfer', 'BART')}${stop('pin', 'Arrive', 'is-end')}</ol>
+    <p class="rg-note rg-demo-note"><strong>Simulated.</strong> Times come from Muni and BART published timetables and are shifted to start now. Nothing is live, and Rove does not use your location.</p>
     <div class="rg-voice-slot">${voiceStatusHtml()}</div>
     <div class="rg-stack">
       <button type="button" class="rg-primary" data-action="demo-speak">${MIC_ICON}<span>Speak the destination</span></button>
@@ -3427,10 +3438,12 @@ function bindPanel() {
 
 function toast(message) {
   const el = $('#toast');
-  el.textContent = message;
-  el.classList.add('show');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.classList.remove('show'), 2600);
+  // Clear first so a repeated message is announced again by the role=status region.
+  el.textContent = '';
+  requestAnimationFrame(() => { el.textContent = message; el.classList.add('show'); });
+  // Long enough to read at large text sizes: about 60ms a character, 3.2 to 7 seconds.
+  toast.timer = setTimeout(() => el.classList.remove('show'), Math.max(3200, Math.min(7000, String(message).length * 60)));
 }
 
 function closePopovers() {

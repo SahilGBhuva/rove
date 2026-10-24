@@ -1,1 +1,176 @@
-/* Rove design: states. Owned by one workstream; see docs/design/OWNERSHIP.md. */
+/* Rove design: states. Owned by one workstream; see docs/design/OWNERSHIP.md.
+ * Help, arrival, demo intro, toast, and the planner's error, notice and loading states.
+ * Motion is transform/opacity only, uses the --m-* and --e-* tokens, and is removed with reduced motion. */
+
+/* ---------- Help ---------- */
+.rg-help { margin-top: 24px; padding: 18px 0 24px; border-top: 1px solid var(--rg-line); animation: none; }
+.rg-help h2 { margin: 0 0 14px; font-size: 1.5rem; line-height: 1.2; font-weight: 800; letter-spacing: -.015em; color: var(--rg-ink); }
+
+/* Actions: one grouped list, like an iOS inset table. Each row keeps its own 60px target. */
+.rg-help-actions { display: grid; gap: 0; border-radius: 18px; background: var(--rg-surface); border: 1px solid var(--rg-line); }
+.rg-help-actions .rg-row-button {
+  position: relative; width: 100%; gap: 14px; min-height: 60px; padding: 8px 16px 8px 12px;
+  border: 0; border-radius: 0; background: transparent; line-height: 1.3;
+  transition: background-color var(--m-press) var(--e-std);
+}
+.rg-help-actions .rg-row-button:first-child { border-radius: 17px 17px 0 0; }
+.rg-help-actions .rg-row-button:last-child { border-radius: 0 0 17px 17px; }
+.rg-help-actions .rg-row-button:only-child { border-radius: 17px; }
+/* Hairline separators inset past the icon, drawn without adding height. */
+.rg-help-actions .rg-row-button + .rg-row-button::before { content: ""; position: absolute; top: 0; left: 62px; right: 0; height: 1px; background: var(--rg-line); }
+.rg-help-actions .rg-row-button:active { transform: none; background: var(--rg-tint); }
+.rg-help-ico { flex: none; display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--rg-tint); color: var(--rg-green); }
+.rg-help-ico .rg-icon { width: 20px; height: 20px; }
+.rg-help-label { flex: 1 1 auto; min-width: 0; }
+.rg-help-actions [data-action="rg-voice"] .rg-help-label { flex: 0 1 auto; }
+.rg-help-value { margin-left: auto; flex: none; padding: 4px 12px; border-radius: 999px; background: var(--rg-bg); border: 1px solid var(--rg-line); font-size: 0.9375rem; font-weight: 750; color: var(--rg-ink-2); }
+.rg-row-button[aria-pressed="true"] .rg-help-value { background: var(--rg-green); border-color: transparent; color: var(--rg-on-green); }
+.rg-help-actions .rg-row-button[aria-pressed="true"] { border-color: transparent; }
+.rg-help-actions [data-action="rg-wait"] .rg-help-ico { background: var(--rg-warn-bg); color: var(--rg-warn); }
+
+/* Guidance: a quieter second group. */
+.rg-help-sub { margin: 26px 0 2px; font-size: 0.8125rem; line-height: 1.4; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--rg-ink-2); }
+.rg-tips { margin: 0; }
+.rg-tips > div { padding: 11px 0; border-bottom: 1px solid var(--rg-line); }
+.rg-tips dt { margin: 0; font-size: 1.0625rem; line-height: 1.35; font-weight: 750; color: var(--rg-ink); }
+.rg-tips dd { margin: 3px 0 0; font-size: 1rem; line-height: 1.45; color: var(--rg-ink-2); }
+.rg-tips > div.rg-tips-limit { margin-top: 16px; padding: 14px 16px; border: 0; border-radius: 14px; background: var(--rg-tint); }
+.rg-tips-limit dt { display: flex; align-items: center; gap: 8px; }
+.rg-tips-limit dt .rg-icon { width: 20px; height: 20px; color: var(--rg-green); }
+.rg-tips-limit dd { color: var(--rg-ink); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .rg-help.is-opening { animation: rg-help-in var(--m-card) var(--e-out) both; }
+  .rg-help.is-opening > .rg-help-sub, .rg-help.is-opening > .rg-tips { animation: rg-help-in var(--m-card) var(--e-out) 60ms both; }
+}
+@keyframes rg-help-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Arrival ---------- */
+.rg-arrival { margin-top: 20px; display: grid; gap: 18px; justify-items: start; }
+.rg-arrival-mark { display: block; width: 72px; height: 72px; overflow: visible; }
+.rg-arrival-mark .disc { fill: var(--rg-tint); stroke: none; }
+.rg-arrival-mark .ring { fill: none; stroke: var(--rg-green); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 0; transform: rotate(-90deg); transform-origin: 48px 48px; }
+.rg-arrival-mark .tick { fill: none; stroke: var(--rg-green); stroke-width: 6.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 100; stroke-dashoffset: 0; }
+
+.rg-arrival-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; margin: 0; }
+.rg-arrival-stats > div { display: flex; flex-direction: column; justify-content: space-between; gap: 8px; min-width: 0; padding: 14px 16px 16px; border-radius: 16px; background: var(--rg-surface); border: 1px solid var(--rg-line); }
+.rg-arrival-stats dt { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 0.875rem; line-height: 1.3; font-weight: 700; color: var(--rg-ink-2); }
+.rg-arrival-stats dt .rg-icon { width: 18px; height: 18px; margin-top: 1px; color: var(--rg-green); }
+.rg-arrival-stats dd { margin: 0; font-size: 1.625rem; line-height: 1.15; font-weight: 800; letter-spacing: -.01em; color: var(--rg-ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rg-arrival-stats dd small { display: block; margin-top: 2px; font-size: 0.8125rem; font-weight: 650; letter-spacing: 0; color: var(--rg-ink-2); }
+.rg-arrival-stats > .rg-arrival-wide { grid-column: 1 / -1; }
+.rg-arrival-lines { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 2px; }
+.rg-arrival-lines .rg-badge { min-width: 40px; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 1rem; font-weight: 800; }
+.rg-arrival-place { margin: 6px 0 0; font-size: 1.25rem; line-height: 1.35; font-weight: 650; color: var(--rg-ink); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .rg-arrival.is-entering .rg-arrival-mark { animation: rg-arrive-settle var(--m-card) var(--e-out) both; }
+  .rg-arrival.is-entering .ring { animation: rg-arrive-draw 440ms var(--e-out) 60ms both; }
+  .rg-arrival.is-entering .tick { animation: rg-arrive-draw 300ms var(--e-out) 300ms both; }
+  .rg-arrival.is-entering .rg-arrival-stats > div { animation: rg-arrive-rise var(--m-card) var(--e-out) both; }
+  .rg-arrival.is-entering .rg-arrival-stats > div:nth-child(1) { animation-delay: 160ms; }
+  .rg-arrival.is-entering .rg-arrival-stats > div:nth-child(2) { animation-delay: 200ms; }
+  .rg-arrival.is-entering .rg-arrival-stats > div:nth-child(3) { animation-delay: 240ms; }
+}
+@keyframes rg-arrive-draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes rg-arrive-settle { from { opacity: 0; transform: scale(.88); } to { opacity: 1; transform: none; } }
+@keyframes rg-arrive-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Demo intro ---------- */
+.rg-demo-route { display: flex; align-items: flex-start; list-style: none; margin: 24px 0 0; padding: 16px 12px 14px; border-radius: 18px; background: var(--rg-surface); border: 1px solid var(--rg-line); }
+.rg-demo-route li { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 0.875rem; line-height: 1.25; font-weight: 700; color: var(--rg-ink-2); text-align: center; }
+/* The rail between stops, behind the nodes. */
+.rg-demo-route li + li::before { content: ""; position: absolute; z-index: 0; top: 19px; right: 50%; width: 100%; height: 2px; background: var(--rg-green); opacity: .35; }
+.rg-demo-node { position: relative; z-index: 1; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--rg-tint); color: var(--rg-green); }
+.rg-demo-node .rg-icon { width: 20px; height: 20px; }
+.rg-demo-route li.is-end .rg-demo-node { background: var(--rg-green); color: var(--rg-on-green); }
+.rg-demo-route li.is-end { color: var(--rg-ink); }
+
+/* ---------- Notes (demo, results) ---------- */
+.rg-note { position: relative; margin: 16px 0 0; padding: 14px 16px 14px 46px; border-radius: 14px; background: var(--rg-warn-bg); color: var(--rg-warn); font-size: 0.9375rem; line-height: 1.5; }
+.rg-note::before {
+  content: ""; position: absolute; left: 16px; top: 15px; width: 20px; height: 20px; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 11v5.5M12 7.8v.2'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 11v5.5M12 7.8v.2'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.rg-note strong { font-weight: 800; }
+@media (forced-colors: active) { .rg-note::before { background: CanvasText; } }
+
+/* ---------- Toast ---------- */
+.toast {
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  width: max-content; max-width: min(440px, calc(100vw - 32px)); padding: 14px 20px; border-radius: 16px;
+  background: var(--rg-ink); color: var(--rg-bg); font-size: 1rem; line-height: 1.4; font-weight: 650; text-align: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 0 12px 32px rgba(0, 0, 0, .22);
+  transform: translate(-50%, 12px);
+  transition: opacity var(--m-small) var(--e-out), transform var(--m-small) var(--e-out);
+}
+.toast.show { transform: translate(-50%, 0); }
+/* On phones the guided panel fills the screen: sit at the bottom, above the safe area. */
+@media (max-width: 767px) { .rove-accessible .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); } }
+.toast:empty { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast.show { transform: translate(-50%, 0); transition: opacity 150ms linear; }
+}
+@media (forced-colors: active) { .toast { border: 2px solid CanvasText; } }
+
+/* ---------- Planner errors and the service-gap message ---------- */
+.rove-accessible .plan-error-group { padding: 0 0 16px; }
+.rove-accessible .plan-error {
+  margin: 12px 0 0; padding: 14px 16px; border-radius: 14px; background: var(--rg-bad-bg); color: var(--rg-bad);
+  font-size: 1rem; line-height: 1.5; font-weight: 600;
+}
+.rove-accessible .plan-error-group .plan-error { margin: 12px 0 0; padding: 14px 16px; }
+/* A service gap is not a failure: a calm card with the timetable answer and one clear next step. */
+.rove-accessible .plan-error-group:has(.plan-later) {
+  margin: 12px 0 16px; padding: 4px 16px 16px; border-radius: 18px;
+  background: var(--rg-surface); border: 1px solid var(--rg-line);
+}
+.rove-accessible .plan-error-group:has(.plan-later) .plan-error { position: relative; margin: 0; padding: 14px 0 14px 32px; background: none; color: var(--rg-ink); font-weight: 550; }
+.rove-accessible .plan-error-group:has(.plan-later) .plan-error::before {
+  content: ""; position: absolute; left: 0; top: 16px; width: 22px; height: 22px; background: var(--rg-warn);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 7.5V12l3 2'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 7.5V12l3 2'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.rove-accessible .plan-later {
+  display: flex; align-items: center; justify-content: center; width: 100%; min-height: 56px; padding: 0 18px;
+  border-radius: var(--rg-radius, 16px); border: 0; background: var(--rg-green); color: var(--rg-on-green);
+  font: inherit; font-size: 1.0625rem; font-weight: 720; box-shadow: none;
+  transition: transform var(--m-press) var(--e-std), background-color var(--m-press) var(--e-std);
+}
+.rove-accessible .plan-later:hover { background: var(--rg-green-press); }
+.rove-accessible .plan-later:active { transform: scale(.98); background: var(--rg-green-press); }
+
+/* ---------- Coverage and data notices ---------- */
+.rove-accessible .plan-coverage, .rove-accessible .plan-notice {
+  border-radius: 14px; background: var(--rg-surface); border: 1px solid var(--rg-line); color: var(--rg-ink-2);
+  font-size: 1rem; line-height: 1.5;
+}
+.rove-accessible .plan-coverage { margin: 12px 0 0; padding: 14px 16px; }
+.rove-accessible .plan-notice { margin: 0 var(--rg-gutter, 20px) 12px; padding: 14px 16px 6px; }
+.rove-accessible .plan-notice p { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--rg-ink-2); }
+.rove-accessible .plan-notice .text-button { min-height: 48px; padding: 0; font-size: 1rem; font-weight: 700; color: var(--rg-green); text-decoration: underline; text-underline-offset: 4px; }
+
+/* ---------- Results loading skeleton ---------- */
+.rove-accessible .skeleton-list .itinerary { pointer-events: none; }
+.rove-accessible .skeleton-list > li { border: 0; box-shadow: none; }
+.rove-accessible .skeleton-list .itinerary::before { display: none; }
+.rove-accessible .skeleton-list .sk {
+  border-radius: 6px; background-color: var(--rg-line);
+  background-image: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--rg-surface) 55%, transparent) 50%, transparent 100%);
+  background-size: 200% 100%; background-repeat: no-repeat; background-position: 150% 0;
+  animation: rg-sk-sheen 1.6s var(--e-std) infinite;
+}
+.rove-accessible .skeleton-list .sk-line { height: 14px; }
+.rove-accessible .skeleton-list .sk-bar { height: 8px; border-radius: 4px; }
+.rove-accessible .skeleton-list li:nth-child(2) .sk { animation-delay: 120ms; }
+.rove-accessible .skeleton-list li:nth-child(3) .sk { animation-delay: 240ms; }
+@keyframes rg-sk-sheen { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+/* ---------- Reduced motion: everything is drawn and still ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .rg-help, .rg-help.is-opening, .rg-help > *, .rg-arrival *, .rove-accessible .skeleton-list .sk { animation: none !important; }
+  .rg-arrival-mark .ring, .rg-arrival-mark .tick { stroke-dashoffset: 0; }
+  .rg-help-actions .rg-row-button, .rove-accessible .plan-later { transition: none; }
+  .rove-accessible .skeleton-list .sk { background-image: none; }
+}
