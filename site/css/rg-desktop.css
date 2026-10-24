@@ -1,1 +1,90 @@
-/* Rove redesign: desktop. Owned by one workstream; see docs/design/OWNERSHIP-V2.md. */
+/* Rove redesign v2: panel header, desktop floating sidebar and tablet column. Owned by agent A
+ * (see docs/design/OWNERSHIP-V2.md); tokens in css/rg-tokens.css, documented in docs/design/v2/DESIGN_SYSTEM.md.
+ * styles.css is layered and uses !important in places, so overrides here use `html body` or
+ * `.rove-accessible` prefixes to win by specificity rather than editing styles.css. */
+
+/* ---------- Panel header: compact Rove lock-up + menu (every width) ---------- */
+.rove-accessible .panel-top { padding: 0 var(--rg-gutter) var(--s-3); background: var(--rg-bg); }
+.rove-accessible .panel.search-hidden .panel-top { padding-bottom: 0; }
+.rove-accessible .brand-row { height: 64px; gap: var(--s-3); }
+.rove-accessible .rg-lockup { display: inline-flex; align-items: center; gap: 10px; min-width: 0; color: var(--rg-ink); font-size: inherit; letter-spacing: 0; user-select: none; }
+.rg-lockup-mark { flex: none; width: 30px; height: 30px; border-radius: 9px; box-shadow: var(--elev-1); }
+.rove-accessible .rg-lockup-name { font-size: 1.4375rem; line-height: 1; font-weight: var(--w-heavy); letter-spacing: -.045em; color: var(--rg-ink); transform: translateY(-1px); }
+.rove-accessible .panel-top .rg-lockup-caption {
+  align-self: center; max-width: none; margin: 0 0 0 2px; padding: 2px 0 2px 10px; border-left: 1px solid var(--rg-line);
+  font-size: 0.75rem; line-height: 1.2; font-weight: var(--w-semibold); letter-spacing: .08em; text-transform: uppercase;
+  white-space: nowrap; color: var(--rg-ink-2);
+}
+.rove-accessible .panel-top #menuButton {
+  flex: none; width: var(--rg-control); height: var(--rg-control); border-radius: var(--r-pill); color: var(--rg-ink-2); background: transparent;
+  transition: background-color var(--m-small) var(--e-std), transform var(--m-press) var(--e-out);
+}
+.rove-accessible .panel-top #menuButton[aria-expanded="true"] { background: var(--rg-mint); color: var(--rg-green); }
+@media (hover: hover) { .rove-accessible .panel-top #menuButton:hover { background: var(--rg-mint); color: var(--rg-green); transform: none; } }
+.rove-accessible .panel-top #menuButton:active { transform: scale(var(--press-scale)); }
+
+/* Search field (stop, line and place screens): one surface, one focus ring on the field itself. */
+.rove-accessible .panel-top .search-field {
+  height: 52px; border: 1px solid var(--rg-line); border-radius: var(--r-md); background: var(--rg-surface);
+  box-shadow: var(--elev-1); transform: none; transition: border-color var(--m-small) var(--e-std);
+}
+@media (hover: hover) { .rove-accessible .panel-top .search-field:hover:not(:focus-within) { background: var(--rg-surface); border-color: color-mix(in srgb, var(--rg-green) 35%, var(--rg-line)); } }
+.rove-accessible .panel-top .search-field:focus-within {
+  transform: none; background: var(--rg-surface); border-color: var(--rg-line); box-shadow: var(--elev-1);
+  outline: 3px solid var(--rg-focus); outline-offset: 2px;
+}
+.rove-accessible .panel-top .search-field input:focus-visible,
+.rove-accessible .panel-top .search-field input:focus { outline: none !important; box-shadow: none !important; }
+.rove-accessible .panel-top .search-field input { padding: 0 52px 0 46px; color: var(--rg-ink); font-size: var(--t-body); font-weight: var(--w-medium); }
+.rove-accessible .panel-top .search-field input::placeholder { color: var(--rg-ink-2); opacity: 1; font-weight: var(--w-regular); }
+.rove-accessible .panel-top .search-glyph { left: 15px; width: 20px; height: 20px; color: var(--rg-green); }
+.rove-accessible .panel-top .search-clear { right: 2px; width: var(--rg-control); height: var(--rg-control); border-radius: var(--r-md); color: var(--rg-ink-2); }
+
+/* ---------- Tablet and large phones in landscape (600–800px): a centred, intentional column ---------- */
+@media (min-width: 600px) and (max-width: 800px) {
+  .rove-accessible .panel-top,
+  html body .panel-body { padding-left: max(0px, calc((100% - 600px) / 2)); padding-right: max(0px, calc((100% - 600px) / 2)); }
+  .rove-accessible .panel-top { padding-left: max(var(--rg-gutter), calc((100% - 600px) / 2 + var(--rg-gutter))); padding-right: max(var(--rg-gutter), calc((100% - 600px) / 2 + var(--rg-gutter))); }
+  .rove-accessible .panel-top .brand-row { height: 72px; }
+  .rove-accessible .panel-top::after { left: max(var(--rg-gutter), calc((100% - 600px) / 2 + var(--rg-gutter))); right: max(var(--rg-gutter), calc((100% - 600px) / 2 + var(--rg-gutter))); background: var(--rg-hairline); }
+  .rove-accessible .panel:not(.search-hidden) .panel-top .search-field { margin-top: var(--s-3); }
+  .rg-home { max-width: none; }
+}
+
+/* ---------- Desktop (>= 801px): map first, panel floats as a sidebar ---------- */
+@media (min-width: 801px) {
+  /* The map runs edge to edge behind the sidebar (cameraPadding() already reads the panel's right edge). */
+  html body .map-area { inset: 0 !important; left: 0 !important; }
+  html body .panel {
+    position: fixed; inset: var(--rg-panel-inset) auto auto var(--rg-panel-inset) !important;
+    width: var(--rg-panel-w) !important; max-width: calc(100vw - 2 * var(--rg-panel-inset)) !important;
+    height: auto !important; max-height: calc(100dvh - 2 * var(--rg-panel-inset)) !important;
+    display: flex; flex-direction: column; overflow: hidden; transform: none !important;
+    background: var(--rg-bg); border: 1px solid var(--rg-hairline); border-radius: var(--r-lg);
+    box-shadow: var(--elev-3); backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  /* Content decides the height (a short Directions form is a compact card, long lists scroll inside). */
+  html body .panel-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--rg-line) transparent; padding-bottom: var(--s-5); }
+  .rove-accessible .panel-top { position: relative; z-index: 2; padding-bottom: var(--s-3); }
+  .rove-accessible .panel-top .brand-row { height: 68px; }
+  /* A hairline separates the header from scrolling content. */
+  .rove-accessible .panel-top::after { left: var(--rg-gutter); right: var(--rg-gutter); background: var(--rg-hairline); }
+  .rove-accessible .panel.search-hidden .panel-top { padding-bottom: 0; }
+  /* Map credits and the menu follow the sidebar. */
+  html body .maplibregl-ctrl-bottom-left { left: calc(var(--rg-panel-w) + 2 * var(--rg-panel-inset)); }
+  html body .menu { left: calc(var(--rg-panel-w) - 200px); top: calc(var(--rg-panel-inset) + 60px); }
+  html body .intro { left: calc(var(--rg-panel-w) + 3 * var(--rg-panel-inset)); transform: none; }
+}
+@media (min-width: 1600px) {
+  :root { --rg-panel-inset: 20px; }
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .rove-accessible .panel-top #menuButton, .rove-accessible .panel-top .search-field { transition: none; }
+  .rove-accessible .panel-top #menuButton:active { transform: none; }
+}
+@media (forced-colors: active) {
+  html body .panel { border: 1px solid CanvasText; }
+  .rove-accessible .panel-top .search-field:focus-within { outline-color: Highlight; }
+}

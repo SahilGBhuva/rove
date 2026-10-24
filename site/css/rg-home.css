@@ -1,11 +1,11 @@
-/* Rove design: home. Owned by one workstream; see docs/design/OWNERSHIP.md. */
+/* Rove design v2: home (agent A; see docs/design/OWNERSHIP-V2.md). Spacing, radius, type and elevation come from
+ * the tokens in css/rg-tokens.css; on desktop this is the floating sidebar's start state. */
 
 /* ---------- Page rhythm ---------- */
 .rg-home {
-  --home-hairline: color-mix(in srgb, var(--rg-line) 70%, transparent);
-  --home-shadow: 0 1px 2px rgba(23, 32, 26, .05), 0 6px 18px -8px rgba(23, 32, 26, .12);
+  --home-shadow: var(--elev-2);
   display: flex; flex-direction: column;
-  padding: 4px var(--rg-gutter) calc(32px + env(safe-area-inset-bottom, 0px));
+  padding: var(--s-1) var(--rg-gutter) calc(var(--s-7) + env(safe-area-inset-bottom, 0px));
   max-width: 560px; margin: 0 auto;
 }
 
@@ -36,17 +36,16 @@
 .rg-home .rg-hero { gap: 12px; margin-top: 24px; }
 .rg-home .rg-speak {
   position: relative; isolation: isolate; overflow: hidden;
-  justify-content: flex-start; gap: 16px; min-height: 80px; padding: 0 20px 0 14px;
-  border-radius: 22px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--rg-green) 90%, white) 0%, var(--rg-green) 58%);
+  justify-content: flex-start; gap: var(--s-4); min-height: 80px; padding: 0 var(--s-5) 0 var(--s-3);
+  border-radius: var(--r-lg);
+  background: var(--rg-green);
   color: var(--rg-on-green);
-  font-size: 1.3125rem; font-weight: 760; letter-spacing: -.012em; text-align: left;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, .16) inset, 0 -1px 0 rgba(0, 0, 0, .12) inset,
-    0 1px 2px color-mix(in srgb, var(--rg-green) 30%, transparent), 0 10px 22px -12px color-mix(in srgb, var(--rg-green) 80%, transparent);
-  transition: transform var(--m-press) var(--e-out), box-shadow var(--m-small) var(--e-std), filter var(--m-small) var(--e-std);
+  font-size: 1.3125rem; font-weight: var(--w-bold); letter-spacing: -.012em; text-align: left;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), var(--elev-2);
+  transition: transform var(--m-press) var(--e-out), background-color var(--m-small) var(--e-std);
 }
-.rg-home .rg-speak:active { transform: scale(.98); background: var(--rg-green-press); box-shadow: 0 1px 0 rgba(255, 255, 255, .1) inset, 0 4px 10px -8px color-mix(in srgb, var(--rg-green) 85%, transparent); }
-@media (hover: hover) { .rg-home .rg-speak:hover { filter: brightness(1.05); } }
+.rg-home .rg-speak:active { transform: scale(.98); background: var(--rg-green-press); }
+@media (hover: hover) { .rg-home .rg-speak:hover { background: var(--rg-green-press); } }
 .rg-speak-icon {
   position: relative; display: grid; place-items: center; flex: none; width: 56px; height: 56px; border-radius: 50%;
   background: color-mix(in srgb, var(--rg-on-green) 16%, transparent);
@@ -58,9 +57,9 @@
 .rg-speak-label { min-width: 0; line-height: 1.2; overflow-wrap: anywhere; }
 
 .rg-home .rg-hero .rg-field {
-  position: relative; min-height: 60px; padding: 0 20px; gap: 14px; border-radius: 18px;
-  background: var(--rg-surface); border: 1.5px solid var(--rg-line); color: var(--rg-ink-2);
-  font-size: 1.125rem; font-weight: 600;
+  position: relative; min-height: 60px; padding: 0 var(--s-5); gap: 14px; border-radius: var(--r-md);
+  background: var(--rg-surface); border: 1px solid var(--rg-line); color: var(--rg-ink-2); box-shadow: var(--elev-1);
+  font-size: var(--t-lead); font-weight: var(--w-medium);
   transition: transform var(--m-press) var(--e-out), border-color var(--m-small) var(--e-std), background-color var(--m-small) var(--e-std);
 }
 .rg-home .rg-hero .rg-field svg { width: 22px; height: 22px; stroke-width: 2.1; color: var(--rg-green); }
@@ -71,11 +70,13 @@
 .rg-home .rg-saved { margin-top: 28px; }
 .rg-home .rg-chips { gap: 8px; margin-top: 10px; }
 .rg-home .rg-chip {
-  display: inline-flex; align-items: center; min-height: 48px; padding: 0 18px; border-radius: 999px;
-  background: var(--rg-surface); border: 1.5px solid var(--rg-line); color: var(--rg-ink); font-size: 1rem; font-weight: 680;
+  display: inline-flex; align-items: center; gap: var(--s-2); min-height: 48px; padding: 0 var(--s-4) 0 14px; border-radius: var(--r-pill);
+  background: var(--rg-surface); border: 1px solid var(--rg-line); box-shadow: var(--elev-1); color: var(--rg-ink); font-size: 1rem; font-weight: var(--w-semibold);
   transition: transform var(--m-press) var(--e-out);
 }
+.rg-home .rg-chip .rg-icon { width: 20px; height: 20px; color: var(--rg-green); }
 .rg-home .rg-chip:active { transform: scale(.97); }
+@media (hover: hover) { .rg-home .rg-chip:hover { border-color: color-mix(in srgb, var(--rg-green) 35%, var(--rg-line)); } }
 
 /* ---------- Route motif (decorative; aria-hidden) ---------- */
 .rg-motif-wrap {
@@ -127,7 +128,7 @@
 /* ---------- Secondary links: an inset grouped list ---------- */
 .rg-home .rg-links {
   margin-top: 20px; border-top: 0; overflow: hidden;
-  background: var(--rg-surface); border: 1px solid var(--rg-line); border-radius: 20px; box-shadow: var(--home-shadow);
+  background: var(--rg-surface); border: 1px solid var(--rg-line); border-radius: var(--r-lg); box-shadow: var(--home-shadow);
 }
 .rg-home .rg-links > .rg-link {
   position: relative; flex-direction: row; align-items: center; justify-content: flex-start; gap: 14px;
@@ -142,7 +143,7 @@
 .rg-home .rg-links > .rg-link:focus-visible { outline-offset: -3px !important; border-radius: 18px; }
 .rg-link-icon {
   display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 11px;
-  background: var(--rg-tint); color: var(--rg-green);
+  background: var(--rg-mint); color: var(--rg-green);
 }
 .rg-link-icon .rg-icon { width: 21px; height: 21px; stroke-width: 1.9; }
 .rg-link-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
@@ -153,12 +154,11 @@
 /* ---------- Resume trip card ---------- */
 .rg-home .rg-resume {
   position: relative; margin: 16px 0 0; padding: 18px 18px 18px;
-  border-radius: 22px; background: var(--rg-surface); border: 1px solid color-mix(in srgb, var(--rg-green) 28%, var(--rg-line));
+  border-radius: var(--r-lg); background: var(--rg-surface); border: 1px solid color-mix(in srgb, var(--rg-green) 28%, var(--rg-line));
   box-shadow: var(--home-shadow);
 }
 .rg-home .rg-resume::before {
-  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--rg-green) 9%, transparent), transparent 60%);
+  content: ""; position: absolute; left: 0; top: 18px; bottom: 18px; width: 4px; border-radius: 0 4px 4px 0; background: var(--rg-green); pointer-events: none;
 }
 .rg-home .rg-resume h2 {
   position: relative; display: flex; align-items: center; gap: 8px; margin: 0;
@@ -201,9 +201,140 @@
 
 /* ---------- Dark mode refinements ---------- */
 @media (prefers-color-scheme: dark) {
-  .rg-home .rg-speak { background: linear-gradient(180deg, color-mix(in srgb, var(--rg-green) 94%, white) 0%, var(--rg-green) 60%); box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 8px 20px -14px rgba(134, 211, 163, .5); }
-  .rg-home { --home-shadow: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 8px 22px -10px rgba(0, 0, 0, .7); }
+  .rg-home .rg-speak { box-shadow: none; }
 }
 
 /* Solid fallback under the gradient (also what contrast tools read): white on --rg-green is >= 6:1. */
 .rg-home .rg-primary.rg-speak { background-color: var(--rg-green); }
+
+/* ---------- v2: head, mode switch, recent places, desktop sidebar ---------- */
+.rg-home-head { margin: 0; }
+.rg-home .rg-home-head .rg-home-title { margin-top: clamp(var(--s-5), 5vh, var(--s-8)); }
+.rg-home.has-places .rg-home-head .rg-home-title { margin-top: clamp(var(--s-4), 3.5vh, var(--s-7)); }
+
+/* Mode switch placeholder (agent C wires data-action="mode-toggle"). Quiet, but a full 48px target. */
+.rg-home-mode { display: flex; margin-top: var(--s-3); }
+.rg-home .rg-mode-toggle {
+  display: inline-flex; align-items: center; gap: 10px; min-height: var(--rg-control); padding: 0 var(--s-4) 0 var(--s-3);
+  border-radius: var(--r-pill); border: 1px solid transparent; background: transparent; color: var(--rg-sage);
+  font: inherit; font-size: var(--t-meta); font-weight: var(--w-semibold);
+  transition: background-color var(--m-small) var(--e-std), transform var(--m-press) var(--e-out);
+}
+.rg-home .rg-mode-toggle .rg-icon { width: 20px; height: 20px; }
+@media (hover: hover) { .rg-home .rg-mode-toggle:hover { background: var(--rg-mint); color: var(--rg-green); } }
+.rg-home .rg-mode-toggle:active { transform: scale(var(--press-scale)); }
+
+/* Recent places: the same inset grouped list as the links, lighter. */
+.rg-home .rg-recent { margin-top: var(--s-6); }
+.rg-home .rg-saved + .rg-recent { margin-top: var(--s-5); }
+.rg-place-list {
+  list-style: none; margin: 10px 0 0; padding: 0; overflow: hidden;
+  background: var(--rg-surface); border: 1px solid var(--rg-line); border-radius: var(--r-lg); box-shadow: var(--elev-1);
+}
+.rg-place-list > li { position: relative; }
+.rg-place-list > li + li::before { content: ""; position: absolute; top: 0; left: 62px; right: 0; border-top: 1px solid var(--rg-line); }
+.rg-home .rg-place-row {
+  display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 10px 14px;
+  border: 0; background: transparent; color: var(--rg-ink); font: inherit; text-align: left;
+  transition: background-color var(--m-small) var(--e-std);
+}
+.rg-home .rg-place-row:focus-visible { outline-offset: -3px !important; border-radius: var(--r-lg); }
+@media (hover: hover) { .rg-home .rg-place-row:hover { background: color-mix(in srgb, var(--rg-green) 4%, var(--rg-surface)); } }
+.rg-home .rg-place-row:active { background: color-mix(in srgb, var(--rg-green) 7%, var(--rg-surface)); }
+.rg-place-icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: var(--r-sm); background: var(--rg-bg); color: var(--rg-sage); box-shadow: inset 0 0 0 1px var(--rg-line); }
+.rg-place-icon .rg-icon { width: 19px; height: 19px; }
+.rg-home .rg-place-row .rg-link-text > span { font-size: var(--t-body); line-height: 1.3; font-weight: var(--w-semibold); color: var(--rg-ink); overflow-wrap: anywhere; }
+.rg-home .rg-place-row .rg-link-text > small { font-size: var(--t-meta); line-height: 1.35; color: var(--rg-ink-2); }
+
+/* Desktop and tablet: the brand lives in the panel header, so the home starts with the question. */
+@media (min-width: 801px) {
+  .rg-home { max-width: none; padding: var(--s-2) var(--rg-gutter) var(--s-6); }
+  .rg-home .rg-home-head .rg-home-title { margin-top: var(--s-5); font-size: 2.375rem; }
+  .rg-home.has-places .rg-home-head .rg-home-title { margin-top: var(--s-4); }
+  .rg-home-sub { font-size: var(--t-body); max-width: 32ch; }
+  .rg-home .rg-hero { margin-top: var(--s-5); gap: 10px; }
+  .rg-home .rg-speak { min-height: 72px; font-size: 1.25rem; }
+  .rg-speak-icon { width: 50px; height: 50px; }
+  .rg-speak-icon::after { inset: -5px; }
+  .rg-home .rg-hero .rg-field { min-height: 56px; }
+  .rg-motif-wrap { margin-top: var(--s-5); }
+  .rg-motif { max-height: 96px; }
+  .rg-home .rg-links { margin-top: var(--s-5); box-shadow: var(--elev-1); }
+  .rg-home .rg-links > .rg-link { min-height: 64px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rg-home .rg-mode-toggle, .rg-home .rg-place-row { transition: none; }
+  .rg-home .rg-mode-toggle:active { transform: none; }
+}
+
+/* ---------- Settings (viewAccess) and Transit data (viewSources): grouped, calm, readable ---------- */
+.rove-accessible :is(.rg-settings-page, .rg-sources-page) { max-width: var(--rg-measure); padding-top: var(--s-2); }
+@media (min-width: 801px) { .rove-accessible :is(.rg-settings-page, .rg-sources-page) { max-width: none; } }
+.rove-accessible :is(.rg-settings-page, .rg-sources-page) .rg-title { font-size: var(--t-title-1); line-height: 1.12; font-weight: var(--w-bold); letter-spacing: var(--track-title); }
+.rove-accessible .rg-sources-page .rg-lede { margin-top: var(--s-2); font-size: var(--t-body); }
+.rove-accessible :is(.rg-settings-page, .rg-sources-page) .rg-settings { margin-top: var(--s-7); gap: var(--s-3); }
+.rove-accessible :is(.rg-settings-page, .rg-sources-page) .rg-settings > .rg-label { padding-left: var(--s-1); }
+
+.rg-group {
+  list-style: none; margin: 0; padding: 0; overflow: hidden;
+  background: var(--rg-surface); border: 1px solid var(--rg-line); border-radius: var(--r-lg); box-shadow: var(--elev-1);
+}
+.rg-group > * + * { border-top: 1px solid var(--rg-line); }
+
+/* Switch rows: the whole row is the target; the name is the title, the detail is its description. */
+.rove-accessible .rg-settings .rg-switch-row {
+  display: flex; align-items: center; gap: var(--s-4); min-height: 76px; margin: 0; padding: var(--s-4);
+  border: 0; border-radius: 0; background: transparent; color: var(--rg-ink-2); cursor: pointer; font-size: var(--t-meta); line-height: 1.45;
+}
+.rove-accessible .rg-group > .rg-switch-row + .rg-switch-row { border-top: 1px solid var(--rg-line); }
+.rg-switch-text { display: flex; flex-direction: column; gap: var(--s-1); flex: 1; min-width: 0; }
+.rove-accessible .rg-settings .rg-switch-row strong { font-size: var(--t-body); font-weight: var(--w-semibold); color: var(--rg-ink); }
+.rg-switch-detail { color: var(--rg-ink-2); }
+.rove-accessible .rg-settings .rg-switch-row .rg-switch {
+  -webkit-appearance: none; appearance: none; position: relative; flex: none; width: 52px; height: 32px; min-height: 32px; margin: 0;
+  border-radius: var(--r-pill); border: 2px solid var(--rg-ink-2); background: var(--rg-surface); cursor: pointer;
+  transition: background-color var(--m-small) var(--e-std), border-color var(--m-small) var(--e-std);
+}
+.rove-accessible .rg-settings .rg-switch-row .rg-switch::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--rg-ink-2);
+  transition: transform var(--m-small) var(--e-out), background-color var(--m-small) var(--e-std);
+}
+.rove-accessible .rg-settings .rg-switch-row .rg-switch:checked { background: var(--rg-green); border-color: var(--rg-green); }
+.rove-accessible .rg-settings .rg-switch-row .rg-switch:checked::before { transform: translateX(20px); background: var(--rg-on-green); }
+@media (hover: hover) { .rove-accessible .rg-settings .rg-switch-row:hover { background: color-mix(in srgb, var(--rg-green) 4%, var(--rg-surface)); } }
+@media (forced-colors: active) {
+  .rove-accessible .rg-settings .rg-switch-row .rg-switch { -webkit-appearance: auto; appearance: auto; width: 24px; height: 24px; min-height: 24px; }
+  .rove-accessible .rg-settings .rg-switch-row .rg-switch::before { content: none; }
+}
+
+.rove-accessible .rg-settings-page .rg-quiet { display: inline-flex; align-items: center; justify-content: center; gap: 10px; border-radius: var(--r-md); border-width: 1px; box-shadow: var(--elev-1); }
+.rove-accessible .rg-settings-page .rg-quiet .rg-icon { width: 20px; height: 20px; color: var(--rg-green); }
+.rove-accessible .rg-fine { font-size: var(--t-meta); line-height: var(--lh-body); padding: 0 var(--s-1); }
+
+/* Numbered steps in mint markers. */
+.rove-accessible .rg-settings .rg-steps { list-style: none; counter-reset: rg-step; margin: 0; padding: 0; display: grid; gap: var(--s-3); font-size: var(--t-body); line-height: var(--lh-body); color: var(--rg-ink); }
+.rove-accessible .rg-steps li { counter-increment: rg-step; position: relative; padding: 2px 0 0 44px; min-height: 32px; }
+.rove-accessible .rg-steps li::before {
+  content: counter(rg-step); position: absolute; left: 0; top: 0; width: 30px; height: 30px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--rg-mint); color: var(--rg-green); font-size: var(--t-meta); font-weight: var(--w-bold); font-variant-numeric: tabular-nums;
+}
+.rg-callout { display: flex; align-items: flex-start; gap: var(--s-3); padding: var(--s-4); border-radius: var(--r-md); background: var(--rg-warn-bg); color: var(--rg-warn); }
+.rg-callout .rg-icon { margin-top: 2px; }
+.rove-accessible .rg-callout .rg-body { color: var(--rg-warn); }
+
+/* Transit data */
+.rg-source-row { display: flex; align-items: flex-start; gap: var(--s-3); padding: 14px var(--s-4); }
+.rg-source-dot { flex: none; width: 12px; height: 12px; margin-top: 6px; border-radius: 50%; box-shadow: 0 0 0 2px var(--rg-surface), 0 0 0 3px var(--rg-line); }
+.rg-source-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rg-source-name { font-size: var(--t-body); font-weight: var(--w-semibold); color: var(--rg-ink); }
+.rg-source-meta { font-size: var(--t-meta); line-height: 1.4; color: var(--rg-ink-2); font-variant-numeric: tabular-nums; }
+.rove-accessible .rg-sources-page .rg-coverage { margin: 0; border: 1px solid var(--rg-line); border-radius: var(--r-lg); background: var(--rg-surface); overflow: hidden; }
+.rove-accessible .rg-sources-page .rg-coverage li { padding: 12px var(--s-4); border-bottom: 1px solid var(--rg-line); }
+.rove-accessible .rg-sources-page .rg-coverage li:last-child { border-bottom: 0; }
+.rove-accessible .rg-sources-page .empty { margin: 0; padding: 0 var(--s-1); font-size: var(--t-meta); line-height: var(--lh-body); color: var(--rg-ink-2); }
+.rg-credits { display: grid; gap: var(--s-2); padding: var(--s-4); border-radius: var(--r-lg); background: color-mix(in srgb, var(--rg-surface) 60%, var(--rg-bg)); border: 1px solid var(--rg-hairline); }
+.rg-credits p { margin: 0; font-size: var(--t-meta); line-height: var(--lh-body); color: var(--rg-ink-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rove-accessible .rg-settings .rg-switch-row .rg-switch, .rove-accessible .rg-settings .rg-switch-row .rg-switch::before { transition: none; }
+}

@@ -1,4 +1,4 @@
-/* Rove design: search. Owned by one workstream; see docs/design/OWNERSHIP.md.
+/* Rove design v2: search (agent A; see docs/design/OWNERSHIP-V2.md). Tokens: css/rg-tokens.css.
  * Directions screen: voice row, from/to fields, suggestions, trip options, submit, notices.
  * Everything is scoped under .rove-accessible so it wins over the layered legacy rules in styles.css. */
 
@@ -8,42 +8,42 @@
   --rg-search-field: 64px;
 }
 
-/* ---------- Header and voice row ---------- */
-.rove-accessible .plan-hero { padding: 4px var(--rg-gutter) 12px; }
-.rove-accessible .plan-hero .title-2 { margin: 0; font-size: 1.75rem; line-height: 1.15; font-weight: 760; letter-spacing: -.025em; color: var(--rg-ink); }
-
-.rove-accessible .rg-voice-row { align-items: center; gap: 12px; margin-bottom: 4px; padding-bottom: 12px; }
-.rove-accessible .rg-voice-row .rg-mic {
-  min-height: 52px; min-width: 112px; padding: 0 20px 0 16px; gap: 8px; justify-content: center;
-  border: 0; border-radius: 999px; background: var(--rg-green); color: var(--rg-on-green);
-  font-size: 1.0625rem; font-weight: 720; letter-spacing: .005em;
-  box-shadow: 0 1px 2px rgba(23, 32, 26, .12), 0 6px 16px -8px rgba(31, 90, 61, .55);
-  transition: transform var(--m-press) var(--e-out), background-color var(--m-small) var(--e-std);
+/* ---------- Header: title with a quiet Speak control beside it ---------- */
+.rove-accessible .plan-hero { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); padding: var(--s-1) var(--rg-gutter) var(--s-4); }
+.rove-accessible .plan-hero .title-2 { flex: 1 1 auto; min-width: 0; margin: 0; font-size: var(--t-title-2); line-height: 1.15; font-weight: var(--w-bold); letter-spacing: var(--track-title); color: var(--rg-ink); }
+/* The voice row's children join the header row; the status slot (agent E) takes the full width when it has content. */
+.rove-accessible .plan-hero .rg-voice-row { display: contents; }
+.rove-accessible .plan-hero .rg-voice-slot:empty { display: none; }
+.rove-accessible .plan-hero .rg-voice-slot { flex: 1 1 100%; min-width: 0; }
+.rove-accessible .plan-hero .rg-mic {
+  flex: none; min-height: var(--rg-control); min-width: 0; padding: 0 var(--s-4) 0 14px; gap: var(--s-2); justify-content: center;
+  border: 1px solid var(--rg-mint-line); border-radius: var(--r-pill); background: var(--rg-mint); color: var(--rg-green);
+  font-size: var(--t-body); font-weight: var(--w-semibold); letter-spacing: .005em; box-shadow: none;
+  transition: transform var(--m-press) var(--e-out), background-color var(--m-small) var(--e-std), border-color var(--m-small) var(--e-std);
 }
-.rove-accessible .rg-voice-row .rg-mic svg { width: 22px; height: 22px; }
-.rove-accessible .rg-voice-row .rg-mic:active { transform: scale(.97); background: var(--rg-green-press); }
-.rove-accessible .rg-voice-row .rg-voice-slot { align-self: center; }
-@media (max-width: 340px) { .rove-accessible .rg-voice-row { align-items: flex-start; } .rove-accessible .rg-voice-row .rg-voice-slot { align-self: stretch; } }
+.rove-accessible .plan-hero .rg-mic svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@media (hover: hover) { .rove-accessible .plan-hero .rg-mic:hover { border-color: var(--rg-green); } }
+.rove-accessible .plan-hero .rg-mic:active { transform: scale(var(--press-scale)); }
 
 /* ---------- From / to fields ---------- */
 .rove-accessible .plan-form { padding: 0 var(--rg-gutter); }
 .rove-accessible .plan-form .plan-fields {
-  position: relative; display: grid; grid-template-columns: minmax(0, 1fr); border: 1.5px solid var(--rg-line); border-radius: 18px; overflow: visible;
-  background: var(--rg-surface); box-shadow: 0 1px 2px rgba(23, 32, 26, .05);
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid var(--rg-line); border-radius: var(--r-lg); overflow: visible;
+  background: var(--rg-surface); box-shadow: var(--elev-2);
 }
 /* One focus indicator only: the focused field gets the ring, the box itself never does. */
-.rove-accessible .plan-form .plan-fields:focus-within { outline: none !important; border-color: var(--rg-line) !important; box-shadow: 0 1px 2px rgba(23, 32, 26, .05) !important; }
+.rove-accessible .plan-form .plan-fields:focus-within { outline: none !important; border-color: var(--rg-line) !important; box-shadow: var(--elev-2) !important; }
 /* The dotted route line joining the two markers. */
 .rove-accessible .plan-form .plan-fields::before {
   content: ""; position: absolute; left: 25px; top: calc(var(--rg-search-field) / 2 + 9px); bottom: calc(var(--rg-search-field) / 2 + 9px);
-  width: 0; border-left: 2px dotted var(--rg-ink-2); opacity: .55; pointer-events: none; z-index: 1;
+  width: 0; border-left: 2px dotted var(--rg-sage); opacity: .7; pointer-events: none; z-index: 1;
 }
 .rove-accessible .plan-form .plan-field {
   position: relative; display: flex; align-items: stretch; height: auto; min-height: var(--rg-search-field);
   background: transparent; box-shadow: none; border-radius: 0; transform: none; cursor: text;
 }
-.rove-accessible .plan-form .plan-field-from { border-radius: 16.5px 16.5px 0 0; }
-.rove-accessible .plan-form .plan-field-to { border-radius: 0 0 16.5px 16.5px; }
+.rove-accessible .plan-form .plan-field-from { border-radius: 19px 19px 0 0; }
+.rove-accessible .plan-form .plan-field-to { border-radius: 0 0 19px 19px; }
 .rove-accessible .plan-form .plan-field + .plan-field { border-top: 0; }
 .rove-accessible .plan-form .plan-field + .plan-field::before {
   content: ""; position: absolute; top: 0; left: 52px; right: 72px; height: 1px; background: var(--rg-line);
@@ -79,16 +79,25 @@
 .rove-accessible .plan-form .plan-field.invalid input { color: var(--rg-bad); }
 .rove-accessible .plan-form .plan-field.invalid:not(:focus-within) { outline: 2px solid var(--rg-bad); outline-offset: -1.5px; }
 
-/* Swap: a round control sitting on the divider between the two fields. */
+/* Swap: a round control on the divider. After a swap the icon turns half a revolution and the two
+ * values trade places (transform and opacity only; removed under reduced motion). */
 .rove-accessible .plan-form .swap-button {
-  position: absolute; right: 12px; top: 50%; z-index: 3; width: 48px; height: 48px; display: grid; place-items: center;
-  border-radius: 50%; border: 1.5px solid var(--rg-line); background: var(--rg-bg); color: var(--rg-green);
-  transform: translateY(-50%); box-shadow: 0 1px 3px rgba(23, 32, 26, .08);
-  transition: transform var(--m-press) var(--e-out), background-color var(--m-small) var(--e-std);
+  position: absolute; right: 12px; top: 50%; z-index: 3; width: var(--rg-control); height: var(--rg-control); display: grid; place-items: center;
+  border-radius: 50%; border: 1px solid var(--rg-line); background: var(--rg-surface); color: var(--rg-green);
+  transform: translateY(-50%); box-shadow: var(--elev-1);
+  transition: transform var(--m-press) var(--e-out), background-color var(--m-small) var(--e-std), border-color var(--m-small) var(--e-std);
 }
-.rove-accessible .plan-form .swap-button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-.rove-accessible .plan-form .swap-button:active { transform: translateY(-50%) scale(.92); background: var(--rg-tint); }
-@media (hover: hover) { .rove-accessible .plan-form .swap-button:hover { background: var(--rg-tint); transform: translateY(-50%); } }
+.rove-accessible .plan-form .swap-button .rg-swap-icon { width: 22px; height: 22px; stroke-width: 2; }
+.rove-accessible .plan-form .swap-button:active { transform: translateY(-50%) scale(.92); background: var(--rg-mint); }
+@media (hover: hover) { .rove-accessible .plan-form .swap-button:hover { background: var(--rg-mint); border-color: var(--rg-mint-line); transform: translateY(-50%); } }
+@media (prefers-reduced-motion: no-preference) {
+  .rove-accessible .plan-fields.is-swapped .rg-swap-icon { animation: rg-swap-turn var(--m-card) var(--e-out) both; }
+  .rove-accessible .plan-fields.is-swapped .plan-field-from input { animation: rg-swap-down var(--m-card) var(--e-out) both; }
+  .rove-accessible .plan-fields.is-swapped .plan-field-to input { animation: rg-swap-up var(--m-card) var(--e-out) both; }
+}
+@keyframes rg-swap-turn { from { transform: rotate(-180deg); } to { transform: none; } }
+@keyframes rg-swap-down { from { opacity: 0; transform: translate3d(0, 14px, 0); } to { opacity: 1; transform: none; } }
+@keyframes rg-swap-up { from { opacity: 0; transform: translate3d(0, -14px, 0); } to { opacity: 1; transform: none; } }
 
 /* ---------- Suggestions ---------- */
 .rove-accessible .plan-suggest { margin: 8px calc(-1 * var(--rg-gutter)) 0; padding-bottom: 8px; }
@@ -142,41 +151,58 @@
 
 /* ---------- Trip options ---------- */
 .rove-accessible .plan-body { padding-top: 4px; }
-.rove-accessible .plan-options { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
-.rove-accessible .plan-options .segmented.mode-switch { gap: 4px; padding: 4px; border-radius: 16px; background: var(--rg-tint); border: 0; }
+.rove-accessible .plan-options { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); margin-top: var(--s-4); }
+.rove-accessible .plan-options .segmented.mode-switch { flex: 1 1 100%; gap: var(--s-1); padding: var(--s-1); border-radius: var(--r-md); background: var(--rg-mint); border: 0; }
 .rove-accessible .plan-options .seg-option {
-  min-height: 48px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  font-size: 1rem; font-weight: 680; color: var(--rg-ink-2); background: transparent; box-shadow: none;
+  min-height: var(--rg-control); border-radius: var(--r-sm); display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: var(--t-meta); font-weight: var(--w-semibold); color: var(--rg-ink); background: transparent; box-shadow: none;
 }
 .rove-accessible .plan-options .seg-option .mode-icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-.rove-accessible .plan-options .seg-option[aria-pressed="true"] { background: var(--rg-surface); color: var(--rg-green); box-shadow: 0 1px 3px rgba(23, 32, 26, .12); }
+.rove-accessible .plan-options .seg-option[aria-pressed="true"] { background: var(--rg-surface); color: var(--rg-green); box-shadow: var(--elev-1); }
 .rove-accessible .plan-options .seg-option[aria-disabled="true"] { opacity: .6; }
 
-.rove-accessible .time-select { position: relative; display: inline-flex; align-items: center; flex: 0 1 auto; }
-.rove-accessible .time-select .rg-icon { position: absolute; left: 14px; width: 20px; height: 20px; color: var(--rg-green); pointer-events: none; }
-.rove-accessible .time-select select {
-  min-height: 48px; height: 48px; padding: 0 40px 0 44px; border: 1.5px solid var(--rg-line); border-radius: 999px;
-  background: var(--rg-surface); color: var(--rg-ink); font: inherit; font-size: 1rem; font-weight: 680;
+/* "When": Leave now / Depart at / Arrive by as a segmented radio group (drives the hidden #planTimeMode). */
+.rove-accessible .rg-when { flex: 1 1 100%; min-width: 0; margin: 0; padding: 0; border: 0; }
+.rove-accessible .rg-when-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-1); padding: var(--s-1); border-radius: var(--r-md); background: var(--rg-mint); }
+.rove-accessible .rg-when-opt {
+  position: relative; display: flex; align-items: center; justify-content: center; min-height: var(--rg-control); padding: var(--s-1) var(--s-2);
+  border-radius: var(--r-sm); color: var(--rg-ink); font-size: var(--t-meta); font-weight: var(--w-semibold); line-height: 1.2; text-align: center; cursor: pointer;
+  transition: background-color var(--m-small) var(--e-std), color var(--m-small) var(--e-std);
 }
-.rove-accessible .time-select::after { right: 18px; border-color: var(--rg-ink-2); }
-.rove-accessible .plan-options input[type="datetime-local"] {
-  flex: 1 1 100%; min-height: 52px; height: 52px; padding: 0 16px; border: 1.5px solid var(--rg-line); border-radius: 14px;
-  background: var(--rg-surface); color: var(--rg-ink); font: inherit; font-size: 1rem; font-variant-numeric: tabular-nums; color-scheme: light dark;
+.rove-accessible .rg-when-opt input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; min-height: 0; }
+.rove-accessible .rg-when-opt:has(input:checked) { background: var(--rg-surface); color: var(--rg-green); box-shadow: var(--elev-1); }
+.rove-accessible .rg-when .rg-when-opt input:focus-visible { outline: none !important; box-shadow: none !important; }
+.rove-accessible .rg-when-opt:has(input:focus-visible) { outline: 3px solid var(--rg-focus); outline-offset: 2px; z-index: 1; }
+@media (hover: hover) { .rove-accessible .rg-when-opt:not(:has(input:checked)):hover { background: color-mix(in srgb, var(--rg-surface) 55%, transparent); } }
+.rove-accessible .rg-when-time {
+  flex: 1 1 100%; display: flex; align-items: center; gap: var(--s-3); min-height: 56px; padding: 0 var(--s-2) 0 var(--s-4);
+  border: 1px solid var(--rg-line); border-radius: var(--r-md); background: var(--rg-surface); box-shadow: var(--elev-1); color: var(--rg-ink);
 }
+.rove-accessible .rg-when-time .rg-icon { width: 20px; height: 20px; color: var(--rg-green); }
+.rove-accessible .rg-when-time-label { flex: none; font-size: var(--t-meta); font-weight: var(--w-semibold); color: var(--rg-ink-2); }
+.rove-accessible .rg-when-time:focus-within { outline: 3px solid var(--rg-focus); outline-offset: 2px; }
+.rove-accessible .rg-when-time input[type="datetime-local"]:focus-visible { outline: none !important; box-shadow: none !important; }
+.rove-accessible .plan-options .rg-when-time input[type="datetime-local"] {
+  flex: 1 1 0; width: 0; min-width: 0; min-height: 52px; height: 52px; padding: 0 var(--s-1); border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--rg-ink); font: inherit; font-size: var(--t-body); font-weight: var(--w-semibold); font-variant-numeric: tabular-nums; color-scheme: light dark; text-align: left;
+}
+.rove-accessible .rg-when-time { min-width: 0; max-width: 100%; box-sizing: border-box; }
+@media (max-width: 420px) { .rove-accessible .rg-when-time-label { display: none; } }
+.rove-accessible .rg-when-time.invalid { border-color: var(--rg-bad); }
 .rove-accessible .plan-options input.invalid { border-color: var(--rg-bad); color: var(--rg-bad); }
 .rove-accessible .plan-hint { margin: 14px 2px 0; font-size: 1rem; line-height: 1.5; color: var(--rg-ink-2); }
 
 /* ---------- Find routes ---------- */
 .rove-accessible .plan-submit.button.primary {
   display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
-  min-height: 60px; height: auto; margin-top: 18px; border: 0; border-radius: var(--rg-radius);
-  background: var(--rg-green); color: var(--rg-on-green); font: inherit; font-size: 1.125rem; font-weight: 740; letter-spacing: .005em;
-  box-shadow: 0 1px 2px rgba(23, 32, 26, .12), 0 10px 24px -14px rgba(31, 90, 61, .7); overflow: visible;
+  min-height: 60px; height: auto; margin-top: var(--s-5); border: 0; border-radius: var(--r-md);
+  background: var(--rg-green); color: var(--rg-on-green); font: inherit; font-size: var(--t-lead); font-weight: var(--w-bold); letter-spacing: .005em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), var(--elev-2); overflow: visible;
   transition: transform var(--m-press) var(--e-out), background-color var(--m-small) var(--e-std);
 }
 .rove-accessible .plan-submit.button.primary::after { content: none; }
 .rove-accessible .plan-submit .rg-icon { width: 22px; height: 22px; stroke-width: 2; }
-@media (hover: hover) { .rove-accessible .plan-submit.button.primary:hover { transform: none; background: var(--rg-green-press); box-shadow: 0 1px 2px rgba(23, 32, 26, .12), 0 10px 24px -14px rgba(31, 90, 61, .7); } }
+@media (hover: hover) { .rove-accessible .plan-submit.button.primary:hover { transform: none; background: var(--rg-green-press); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), var(--elev-2); } }
 .rove-accessible .plan-submit.button.primary:active { transform: scale(.98); background: var(--rg-green-press); }
 .rove-accessible .plan-submit.button.primary[aria-busy="true"] { opacity: 1; cursor: progress; background: var(--rg-green-press); }
 .plan-submit-dots { display: inline-flex; gap: 4px; }
@@ -230,8 +256,9 @@
 /* ---------- Desktop: the panel is a calm left column beside the map ---------- */
 @media (min-width: 801px) {
   .rove-accessible .plan-hero { padding-top: 8px; padding-bottom: 14px; }
-  .rove-accessible .plan-form .plan-fields { box-shadow: 0 1px 2px rgba(23, 32, 26, .05), 0 12px 32px -20px rgba(23, 32, 26, .35); }
-  .rove-accessible .plan-form:not(.suggesting) .plan-fields:focus-within { box-shadow: 0 1px 2px rgba(23, 32, 26, .05), 0 12px 32px -20px rgba(23, 32, 26, .35) !important; }
+  .rove-accessible .plan-form .plan-fields { box-shadow: var(--elev-1); }
+  .rove-accessible .plan-form:not(.suggesting) .plan-fields:focus-within { box-shadow: var(--elev-1) !important; }
+  .rove-accessible .plan-hero .title-2 { font-size: 1.5rem; }
   .rove-accessible .plan-suggest .suggest-section > .label { padding-top: 4px; }
 }
 
@@ -239,6 +266,7 @@
 @media (prefers-color-scheme: dark) {
   .rove-accessible .plan-form:not(.suggesting) .plan-fields, .rove-accessible .plan-form:not(.suggesting) .plan-fields:focus-within, .rove-accessible .plan-form .swap-button { box-shadow: none !important; }
   .rove-accessible .rg-voice-row .rg-mic, .rove-accessible .plan-submit.button.primary { box-shadow: none; }
+  .rove-accessible .rg-when-opt:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--rg-green); }
   .rove-accessible .plan-options .seg-option[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--rg-green); }
 }
 
@@ -252,6 +280,10 @@
   .rove-accessible .plan-suggest .rows li > .row, .rove-accessible .plan-form .swap-button,
   .rove-accessible .rg-voice-row .rg-mic, .rove-accessible .plan-submit.button.primary { transition: none; }
   .rove-accessible .plan-suggest .sk, .plan-submit-dots i { animation: none; }
+  .rove-accessible .plan-fields.is-swapped .rg-swap-icon, .rove-accessible .plan-fields.is-swapped .plan-field-from input,
+  .rove-accessible .plan-fields.is-swapped .plan-field-to input { animation: none; }
+  .rove-accessible .plan-hero .rg-mic, .rove-accessible .rg-when-opt { transition: none; }
+  .rove-accessible .plan-hero .rg-mic:active { transform: none; }
   .rove-accessible .plan-form .swap-button:active { transform: translateY(-50%); }
   .rove-accessible .plan-submit.button.primary:active, .rove-accessible .rg-voice-row .rg-mic:active { transform: none; }
 }
