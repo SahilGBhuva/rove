@@ -110,3 +110,13 @@ test('QA P1: designed control heights override the generic 48px floor; text foll
   assert.match(css, /@media \(min-width: 801px\) \{ \.speech-bar \{ top: 16px; bottom: auto; \}/);
   assert.match(css, /@media \(max-height: 560px\) \{ \.rg-dock \{ position: static;/);
 });
+
+test('rider can answer each navigation step by voice without GPS auto-confirming', () => {
+  const src = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
+  assert.match(src, /data-action="rg-checkin"/);
+  assert.match(src, /case 'rg-checkin'/);
+  assert.match(src, /nav\.gs\.index !== phaseIndex/);
+  assert.match(src, /yesNo\(answer\) === 'yes'/);
+  assert.match(src, /handleAction\(confirm\)/);
+  assert.match(src, /Say yes to confirm, no to hear it again/);
+});

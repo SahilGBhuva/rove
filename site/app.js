@@ -3817,6 +3817,7 @@ function viewNavigate() {
         : `<button type="button" class="rg-confirm" data-action="rg-confirm" data-phase="${i}"${phase.confirmAria ? ` aria-label="${esc(phase.confirmAria)}"` : ''}>${esc(arrive ? 'Done' : phase.confirmLabel)}</button>`}
       <div class="rg-dock-row">
         <button type="button" class="rg-secondary" data-action="rg-repeat" aria-label="Repeat current directions aloud">Repeat directions</button>
+        ${arrive || nav.showHelp ? '' : '<button type="button" class="rg-secondary" data-action="rg-checkin">Answer by voice</button>'}
         ${arrive || nav.showHelp ? '' : '<button type="button" class="rg-secondary" data-action="rg-help" aria-expanded="false" aria-controls="rgHelp">Help</button>'}
       </div>
     </div>
@@ -4525,6 +4526,28 @@ function handleAction(el) {
       nav.flash = { index: next.index, text: { board: `Boarded ${before.vehicle?.name || ''}`.trim(), ride: `Got off at ${before.place}`, walk: `At ${before.place}`, transfer: `At ${before.place}`, drive: `At ${before.place}` }[before.kind] || 'Confirmed', at: Date.now() };
       accessVibrate(before.kind === 'board' ? [120, 70, 120] : [70]);
       guideEnter(nav, before.confirmSpeech);
+      break;
+    }
+    case 'rg-checkin': {
+      const nav = state.nav;
+      const phase = guidePhase(nav);
+      if (!nav?.gs || !phase || phase.kind === 'arrive' || nav.showHelp) break;
+      const phaseIndex = nav.gs.index;
+      const prompt = `Have you completed this step: ${phase.heading}? Say yes to confirm, no to hear it again, or help for assistance.`;
+      voiceCancelAll();
+      voiceIntent = { handle: words => {
+        if (state.nav !== nav || nav.gs.index !== phaseIndex) return;
+        const answer = String(words || '').toLowerCase();
+        if (/\b(help|assistance|stuck)\b/.test(answer)) {
+          nav.showHelp = true; render(); guideSay('Help is open. Choose an option or tap Repeat directions.', { force: true });
+        } else if (yesNo(answer) === 'yes') {
+          const confirm = document.querySelector(`.rg-confirm[data-phase="${phaseIndex}"]`);
+          if (confirm) handleAction(confirm);
+        } else {
+          guideSay(`${guideSpeech(phase)} ${answer.includes('repeat') || yesNo(answer) === 'no' ? 'When ready, tap Answer by voice again or use the confirmation button.' : 'I did not catch a confirmation. Nothing was changed.'}`, { force: true });
+        }
+      }};
+      voiceAgain(false, prompt);
       break;
     }
     case 'rg-repeat': { const nav = state.nav; const phase = guidePhase(nav); if (!phase) break; const st = guideStatus(nav); guideSay(`${guideSpeech(phase)}${st ? ' ' + st.message : ''}${liveSummary(nav)}`, { force: true }); break; }
