@@ -5,7 +5,7 @@
 import {readFileSync} from 'node:fs';
 import {gunzipSync} from 'node:zlib';
 import {directFootpaths, reverseFootpaths, forwardRounds, latestDeparture, buildTripIndex, tripStops, buildStopPatterns,
-  WALK_METERS_PER_SECOND, BOARDING_MARGIN_SECONDS, MIN_TRANSFER_SECONDS} from '../../experiments/bay-router/route.mjs';
+  walkSecondsForMeters, BOARDING_MARGIN_SECONDS, MIN_TRANSFER_SECONDS} from '../../experiments/bay-router/route.mjs';
 import {combineServiceDays} from '../../experiments/bay-router/combine-days.mjs';
 import {enrichWalks} from '../../experiments/bay-router/pedestrian.mjs';
 import {rankItineraries, revisitsEarlierStations, paretoFilter, generalizedCost} from '../../experiments/bay-router/rank.mjs';
@@ -25,6 +25,8 @@ export const PLANNING = Object.freeze({
   IMPRACTICAL_WAIT_SECONDS: 60 * 60,  // a single wait at a stop this long is never recommended
   LONG_WALK_LEG_METERS: 800,          // LONG_WALK warning (straight-line estimate)
   LONG_WALK_TOTAL_METERS: 1500,
+  DIRECT_WALK_MAX_METERS: 2500,       // closer than this (straight line), report the direct walk estimate
+  SEVERE_BACKTRACK_METERS: 3000,      // backtracking beyond max(this, trip distance) is not practical
 });
 const loaded = new Map();
 const prepared = new Map();
@@ -144,6 +146,8 @@ export function diverseCandidateStops(stops,point,maxMeters=1800,options={}) {
 export const ACCESS = Object.freeze({
   NEAREST_STOPS: 6,     // always keep the closest served stops
   MAX_STOPS: 48,        // cap on access (or egress) stops per end
+  BASE_METERS: 800,     // every served stop this close may be used
+  SPARSE_PATTERNS: 6,   // beyond BASE_METERS, bus stops are added only while fewer patterns are covered
 });
 /**
  * Route-diverse access (side 'origin') or egress (side 'destination') stops within maxMeters.
@@ -153,8 +157,13 @@ export const ACCESS = Object.freeze({
  * closest, a stop is kept only when it serves a route pattern (route + headsign) that no closer
  * kept stop serves, so a dozen stops along one hilltop bus line no longer hide the busy street
  * 400 m away. Farther stops cost more walking in the ranking, so they win only when worth it.
+ * The radius adapts to density: past BASE_METERS only rail stations (BART, Caltrain, light rail)
+ * are added in well-served areas; bus stops out there are added only while fewer than
+ * SPARSE_PATTERNS route patterns are reachable closer in (hills, suburbs, edges of service).
+ * `active` (optional Uint8Array by pattern id) limits that density count to patterns that run
+ * around the requested time, so at night the radius stretches to reach the all-night lines.
  */
-export function accessCandidates(stops,point,maxMeters,stopIndex,side='origin') {
+export function accessCandidates(stops,point,maxMeters,stopIndex,side='origin',active=null) {
   const served=side==='origin'?stopIndex.boards:stopIndex.alights;
   const patterns=side==='origin'?stopIndex.boardPatterns:stopIndex.alightPatterns;
   const all=[];
@@ -164,18 +173,27 @@ export function accessCandidates(stops,point,maxMeters,stopIndex,side='origin') 
     if(d<=maxMeters) all.push({index:i,distance:d});
   }
   all.sort((a,b)=>a.distance-b.distance);
-  const chosen=[], covered=new Set();
+  const chosen=[], covered=new Set(), activeCovered=new Set();
   for (const s of all) {
     const own=patterns[s.index];
+    if (s.distance>ACCESS.BASE_METERS && !stopIndex.rail[s.index] && activeCovered.size>=ACCESS.SPARSE_PATTERNS) continue;
     let adds=false;
     for (const p of own) if(!covered.has(p)) {adds=true;break;}
     if (chosen.length<ACCESS.NEAREST_STOPS || adds) {
       chosen.push(s);
-      for (const p of own) covered.add(p);
+      for (const p of own) { covered.add(p); if (!active || active[p]) activeCovered.add(p); }
       if (chosen.length>=ACCESS.MAX_STOPS) break;
     }
   }
   return chosen;
+}
+// Route patterns with at least one departure in [fromSeconds, toSeconds].
+export function activePatterns(data,stopIndex,fromSeconds,toSeconds) {
+  const active=new Uint8Array(stopIndex.patternCount), {connections}=data;
+  let lo=0, hi=connections.length;
+  while (lo<hi) { const m=(lo+hi)>>>1; if (connections[m][2]<fromSeconds) lo=m+1; else hi=m; }
+  for (let i=lo;i<connections.length && connections[i][2]<=toSeconds;i++) active[stopIndex.patternOfTrip[connections[i][4]]]=1;
+  return active;
 }
 function legEndpoint(stop) {
   return {name:stop[1],lat:stop[2],lon:stop[3],stop:{id:stop[0]}};
@@ -199,7 +217,7 @@ export function buildItinerary(journey, prep, endpoints, requestMs, serviceMidni
   const at=s=>serviceMidnight+s*1000;
   const legs=[], visits=[];
   const first=journey.legs[0];
-  const accessSeconds=Math.ceil(origin.distance/WALK_METERS_PER_SECOND);
+  const accessSeconds=walkSecondsForMeters(origin.distance);
   const boardStop=legEndpoint(data.stops[first.fromIndex]);
   const leaveMs=at(first.depart-BOARDING_MARGIN_SECONDS)-accessSeconds*1000;
   if (origin.distance>1) legs.push(walkLeg({name:'Starting point',lat:from.lat,lon:from.lon},boardStop,leaveMs,accessSeconds,origin.distance));
@@ -227,7 +245,7 @@ export function buildItinerary(journey, prep, endpoints, requestMs, serviceMidni
       intermediateStopCount:Math.max(0,stopsOnTrip.length-2)});
     clock=step.arrive;
   }
-  const egressSeconds=Math.ceil(target.distance/WALK_METERS_PER_SECOND);
+  const egressSeconds=walkSecondsForMeters(target.distance);
   if (egressSeconds>0) {
     const last=legs.at(-1);
     legs.push(walkLeg(last.to,{name:'Destination',lat:to.lat,lon:to.lon},Date.parse(last.end.scheduled),egressSeconds,target.distance));
@@ -261,8 +279,13 @@ export function buildItinerary(journey, prep, endpoints, requestMs, serviceMidni
   if (it.detour) warnings.push('DETOUR');
   if (backtrackMeters>Math.max(2000,0.25*straightLineMeters(from,to))) warnings.push('BACKTRACKS');
   it.warnings=warnings;
+  // Riding away from the destination for more than the whole trip distance (and at least 3 km) is
+  // never a sensible recommendation, like a detour (Mountain View Transit Center to El Camino
+  // Hospital, 2.9 km, via Caltrain to Sunnyvale and a bus back: 96 minutes).
+  const severeBacktrack=backtrackMeters>Math.max(PLANNING.SEVERE_BACKTRACK_METERS,straightLineMeters(from,to));
   it.practical=it.initialWaitSeconds<=PLANNING.PRACTICAL_START_SECONDS &&
-    it.longestWaitSeconds<PLANNING.IMPRACTICAL_WAIT_SECONDS && !it.detour;
+    it.longestWaitSeconds<PLANNING.IMPRACTICAL_WAIT_SECONDS && !it.detour && !severeBacktrack;
+  Object.defineProperty(it,'severeBacktrack',{value:severeBacktrack,enumerable:false});
   it.generalizedCost=Math.round(generalizedCost(it,requestMs));
   return it;
 }
@@ -273,8 +296,8 @@ export function searchJourneys(prep, origins, destinations, requestSeconds) {
   const {timetable:data, footpaths, incoming}=prep;
   const found=new Map();
   for (const walkFactor of [1, 2.5]) {
-    const seeds=origins.map(o=>({index:o.index,accessSeconds:Math.ceil(walkFactor*o.distance/WALK_METERS_PER_SECOND)}));
-    const targets=destinations.map(d=>({index:d.index,egressSeconds:Math.ceil(walkFactor*d.distance/WALK_METERS_PER_SECOND)}));
+    const seeds=origins.map(o=>({index:o.index,accessSeconds:Math.ceil(walkFactor*walkSecondsForMeters(o.distance))}));
+    const targets=destinations.map(d=>({index:d.index,egressSeconds:Math.ceil(walkFactor*walkSecondsForMeters(d.distance))}));
     let departFrom=requestSeconds;
     for (let pass=0; pass<3; pass++) {
       const front=forwardRounds(data,seeds,targets,departFrom,{footpaths,maxSeconds:PLANNING.SEARCH_SECONDS,maxRides:PLANNING.MAX_VEHICLES});
@@ -293,6 +316,46 @@ export function searchJourneys(prep, origins, destinations, requestSeconds) {
     }
   }
   return [...found.values()];
+}
+
+/**
+ * Variants of a journey that walk to its second vehicle (or from its second-to-last vehicle)
+ * instead of riding a first (or last) short hop. The search optimises arrival per number of
+ * vehicles, and the walk-averse pass inflates access walks, so "ride Muni one stop to BART" can
+ * be found without the same BART and bus trips reached on foot. These variants put that option in
+ * front of the ranking, which then drops the hop when it saves little (onlyAddsShortHop).
+ * Walks keep the normal access/egress limits (1.8 km / 1.5 km straight line).
+ */
+export function walkInsteadVariants(journey,data,from,to,requestSeconds) {
+  const transitAt=journey.legs.map((l,i)=>l.type==='transit'?i:-1).filter(i=>i>=0);
+  if (transitAt.length<2) return [];
+  const point=i=>({lat:data.stops[i][2],lon:data.stops[i][3]});
+  const out=[];
+  const second=journey.legs[transitAt[1]];
+  const accessMeters=straightLineMeters(from,point(second.fromIndex));
+  let front=null;
+  if (accessMeters<=1800) {
+    const accessSeconds=walkSecondsForMeters(accessMeters);
+    const doorDeparture=second.depart-BOARDING_MARGIN_SECONDS-accessSeconds;
+    if (doorDeparture>=requestSeconds) {
+      front={...journey,legs:journey.legs.slice(transitAt[1]),originIndex:second.fromIndex,accessSeconds,doorDeparture,vehicles:journey.vehicles-1};
+      out.push(front);
+    }
+  }
+  const trimBack=j=>{
+    const at=j.legs.map((l,i)=>l.type==='transit'?i:-1).filter(i=>i>=0);
+    if (at.length<2) return null;
+    const prev=j.legs[at.at(-2)];
+    const egressMeters=straightLineMeters(point(prev.toIndex),to);
+    if (egressMeters>1500) return null;
+    const egressSeconds=walkSecondsForMeters(egressMeters);
+    return {...j,legs:j.legs.slice(0,at.at(-2)+1),targetIndex:prev.toIndex,egressSeconds,
+      doorArrival:prev.arrive+egressSeconds,vehicles:j.vehicles-1};
+  };
+  const back=trimBack(journey);
+  if (back) out.push(back);
+  if (front) { const both=trimBack(front); if (both) out.push(both); }
+  return out.filter(j=>j.originIndex!==j.targetIndex);
 }
 
 function bad(status,error,field) {return {status,body:{error,field}};}
@@ -319,16 +382,20 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
   try {prep=preparedFor(time,loader);}
   catch {return bad(503,'Scheduled timetable unavailable for this date; try another service date.');}
   const {context:ctx,timetable:data,stopIndex}=prep;
-  const origins=accessCandidates(data.stops,from,1800,stopIndex,'origin');
-  const destinations=accessCandidates(data.stops,to,1500,stopIndex,'destination');
+  const active=activePatterns(data,stopIndex,ctx.seconds,ctx.seconds+PLANNING.PRACTICAL_START_SECONDS+3600);
+  const origins=accessCandidates(data.stops,from,1800,stopIndex,'origin',active);
+  const destinations=accessCandidates(data.stops,to,1500,stopIndex,'destination',active);
   if(!origins.length||!destinations.length)
     return bad(422,'No transit stops within walking reach of one or both places. Try a nearby station or a closer starting point.');
   const requestMs=time.getTime();
   const serviceMidnight=pacificMidnight(ctx.baseDay);
   const originBy=new Map(origins.map(o=>[o.index,o])), targetBy=new Map(destinations.map(d=>[d.index,d]));
   const all=[];
-  for (const journey of searchJourneys(prep,origins,destinations,ctx.seconds)) {
-    const origin=originBy.get(journey.originIndex), target=targetBy.get(journey.targetIndex);
+  const stopPoint=i=>({lat:data.stops[i][2],lon:data.stops[i][3]});
+  const endpoint=(map,index,point)=>map.get(index)||{index,distance:straightLineMeters(point,stopPoint(index))};
+  const found=searchJourneys(prep,origins,destinations,ctx.seconds);
+  for (const journey of [...found,...found.flatMap(j=>walkInsteadVariants(j,data,from,to,ctx.seconds))]) {
+    const origin=endpoint(originBy,journey.originIndex,from), target=endpoint(targetBy,journey.targetIndex,to);
     if (!origin||!target||journey.originIndex===journey.targetIndex) continue;
     all.push(buildItinerary(journey,prep,{from,to,origin,target},requestMs,serviceMidnight));
   }
@@ -340,10 +407,21 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
       maxTransfers:PLANNING.MAX_VEHICLES-1,minTransferSeconds:MIN_TRANSFER_SECONDS,boardingMarginSeconds:BOARDING_MARGIN_SECONDS,
       practicalStartSeconds:PLANNING.PRACTICAL_START_SECONDS}};
   const body={request:{time:time.toISOString()},routing,itineraries,errors:[]};
+  // Very short trips: say honestly when simply walking is estimated to be as quick. Straight-line
+  // estimate only (no pedestrian routing here), so it is a note and a warning, never an itinerary.
+  const directMeters=straightLineMeters(from,to);
+  if (directMeters<=PLANNING.DIRECT_WALK_MAX_METERS) {
+    const seconds=walkSecondsForMeters(directMeters);
+    routing.directWalk={straightLineMeters:Math.round(directMeters),estimatedSeconds:seconds,approximate:true};
+    const quicker=itineraries.filter(it=>Date.parse(it.end)>=requestMs+seconds*1000);
+    for (const it of quicker) it.warnings.push('WALKING_MAY_BE_FASTER');
+    if (itineraries.length && quicker.length===itineraries.length)
+      routing.notes.push(`These places are about ${Math.round(directMeters/10)*10} m apart in a straight line. Walking (roughly ${Math.round(seconds/60)} minutes, not a checked route) may be as quick as any scheduled option.`);
+  }
   if (itineraries.length) return {status:200,body};
   // Nothing practical: never present a multi-hour wait or a much later start as "leave now".
   // Only trips that exist in the timetable are offered, separately, as later options.
-  const later=paretoFilter(all.filter(it=>!it.detour && it.longestWaitSeconds<PLANNING.IMPRACTICAL_WAIT_SECONDS))
+  const later=paretoFilter(all.filter(it=>!it.detour && !it.severeBacktrack && it.longestWaitSeconds<PLANNING.IMPRACTICAL_WAIT_SECONDS))
     .sort((a,b)=>Date.parse(a.start)-Date.parse(b.start) || a.generalizedCost-b.generalizedCost).slice(0,2);
   if (later.length) {
     const next=later[0];

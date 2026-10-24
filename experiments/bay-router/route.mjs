@@ -39,6 +39,32 @@ export function directFootpaths(stops, radiusMeters = 220, maxPerStop = 12, serv
   return footpaths;
 }
 
+// Struct-of-arrays copy of the connection list, built once per (immutable) timetable. Scanning
+// typed arrays is several times more cache-friendly than 1.5 M small JS arrays.
+const packCache = new WeakMap();
+export function packedConnections(connections) {
+  let p = packCache.get(connections);
+  if (p) return p;
+  const n = connections.length;
+  p = { from: new Int32Array(n), to: new Int32Array(n), dep: new Float64Array(n), arr: new Float64Array(n),
+    trip: new Int32Array(n), flags: new Uint8Array(n) };
+  for (let i = 0; i < n; i++) {
+    const c = connections[i];
+    p.from[i] = c[0]; p.to[i] = c[1]; p.dep[i] = c[2]; p.arr[i] = c[3]; p.trip[i] = c[4]; p.flags[i] = c[5];
+  }
+  packCache.set(connections, p);
+  return p;
+}
+function lowerBoundPacked(dep, time) {
+  let low = 0, high = dep.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (dep[mid] < time) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
 function lowerBoundConnection(connections, time) {
   let low = 0, high = connections.length;
   while (low < high) {
@@ -191,35 +217,38 @@ export function forwardRounds(data, seeds, targets, departSeconds, options = {})
   }
   const front = [];
   let bestDoor = Infinity;
-  const first = lowerBoundConnection(connections, departSeconds);
+  const C = packedConnections(connections), cFrom = C.from, cTo = C.to, cDep = C.dep, cArr = C.arr, cTrip = C.trip, cFlags = C.flags;
+  const N = cDep.length, first = lowerBoundPacked(cDep, departSeconds);
   const boardStop = new Int32Array(trips.length), boardDep = new Float64Array(trips.length);
   for (let r = 1; r <= maxRides; r++) {
     const cur = inherit(prev);
     boardStop.fill(-1);
     let roundBest = bestDoor, improved = false;
-    for (let ci = first; ci < connections.length; ci++) {
-      const c = connections[ci], dep = c[2];
+    const prevTime = prev.time, prevRides = prev.rides, curTime = cur.time;
+    for (let ci = first; ci < N; ci++) {
+      const dep = cDep[ci];
       if (dep > limit || dep >= roundBest) break;
-      const trip = c[4];
+      const trip = cTrip[ci], flags = cFlags[ci];
       if (boardStop[trip] < 0) {
-        if (!(c[5] & 1)) continue;
-        const ready = prev.time[c[0]];
+        if (!(flags & 1)) continue;
+        const from = cFrom[ci], ready = prevTime[from];
         if (ready === Infinity) continue;
-        const buffer = prev.rides[c[0]] === 0 ? BOARDING_MARGIN_SECONDS : MIN_TRANSFER_SECONDS;
+        const buffer = prevRides[from] === 0 ? BOARDING_MARGIN_SECONDS : MIN_TRANSFER_SECONDS;
         if (ready + buffer > dep) continue;
-        boardStop[trip] = c[0]; boardDep[trip] = dep;
+        boardStop[trip] = from; boardDep[trip] = dep;
       }
-      if (!(c[5] & 2)) continue;
-      const to = c[1], arr = c[3];
-      if (arr > limit || arr >= cur.time[to]) continue;
-      cur.time[to] = arr; cur.kind[to] = RIDE; cur.rides[to] = r;
+      if (!(flags & 2)) continue;
+      const to = cTo[ci], arr = cArr[ci];
+      if (arr > limit || arr >= curTime[to]) continue;
+      curTime[to] = arr; cur.kind[to] = RIDE; cur.rides[to] = r;
       cur.a[to] = trip; cur.b[to] = boardStop[trip]; cur.t[to] = boardDep[trip];
       improved = true;
       if (arr + egress[to] < roundBest) roundBest = arr + egress[to];
-      for (const [nb, seconds] of footpaths[to] || []) {
-        const walkArr = arr + seconds;
-        if (walkArr <= limit && walkArr < cur.time[nb]) {
-          cur.time[nb] = walkArr; cur.kind[nb] = WALK; cur.rides[nb] = r; cur.a[nb] = to; cur.w[nb] = seconds;
+      const fp = footpaths[to];
+      if (fp) for (let k = 0; k < fp.length; k++) {
+        const nb = fp[k][0], seconds = fp[k][1], walkArr = arr + seconds;
+        if (walkArr <= limit && walkArr < curTime[nb]) {
+          curTime[nb] = walkArr; cur.kind[nb] = WALK; cur.rides[nb] = r; cur.a[nb] = to; cur.w[nb] = seconds;
           if (walkArr + egress[nb] < roundBest) roundBest = walkArr + egress[nb];
         }
       }
@@ -256,7 +285,8 @@ export function latestDeparture(data, seeds, targets, deadline, earliestDoorDepa
   let prevBoard = newLabels(n, -Infinity);
   let best = null;
   const tripAlight = new Int32Array(trips.length), tripAlightArr = new Float64Array(trips.length);
-  const hi = lowerBoundConnection(connections, deadline + 1) - 1;
+  const C = packedConnections(connections), cFrom = C.from, cTo = C.to, cDep = C.dep, cArr = C.arr, cTrip = C.trip, cFlags = C.flags;
+  const hi = lowerBoundPacked(cDep, deadline + 1) - 1;
   const roundsL = [prev], roundsB = [prevBoard];
   for (let k = 1; k <= maxRides; k++) {
     const cur = inherit(prev), board = inherit(prevBoard);
@@ -264,14 +294,15 @@ export function latestDeparture(data, seeds, targets, deadline, earliestDoorDepa
     // No useful first boarding can happen before this (later rounds only need strictly later).
     const floor = Math.max(earliestDoorDeparture, best ? best.doorDeparture + 1 : -Infinity) + BOARDING_MARGIN_SECONDS + minAccess;
     let changed = false;
+    const prevTime = prev.time;
     for (let ci = hi; ci >= 0; ci--) {
-      const c = connections[ci], dep = c[2];
+      const dep = cDep[ci];
       if (dep < floor) break;
-      const trip = c[4];
+      const trip = cTrip[ci], flags = cFlags[ci];
       // Alight as early along the trip as still works (connections are visited latest first).
-      if ((c[5] & 2) && c[3] <= prev.time[c[1]]) { tripAlight[trip] = c[1]; tripAlightArr[trip] = c[3]; }
-      if (tripAlight[trip] < 0 || !(c[5] & 1)) continue;
-      const s = c[0];
+      if ((flags & 2) && cArr[ci] <= prevTime[cTo[ci]]) { tripAlight[trip] = cTo[ci]; tripAlightArr[trip] = cArr[ci]; }
+      if (tripAlight[trip] < 0 || !(flags & 1)) continue;
+      const s = cFrom[ci];
       if (dep > board.time[s]) {
         board.time[s] = dep; board.kind[s] = BOARD; board.a[s] = trip; board.b[s] = tripAlight[trip]; board.t[s] = tripAlightArr[trip];
         changed = true;
