@@ -78,7 +78,7 @@ const KILL = {
 };
 /* A motion token (--m-*) is zeroed by rg-tokens.css under reduced motion, so motion timed by it is removed too. */
 const tokensZeroed = reduceRules.filter(r => r.sheet === 'css/rg-tokens.css').flatMap(r => r.decls)
-  .filter(d => /^--m-[\w-]+$/.test(d.prop) && /^0m?s$/.test(d.value)).map(d => d.prop);
+  .filter(d => /^--m-[\w-]+$/.test(d.prop) && /^0(m?s|px)?$/.test(d.value)).map(d => d.prop); // durations to 0ms, travel distances to 0px
 const timedByZeroedToken = value => {
   const durations = value.match(/var\(\s*(--[\w-]+)/g)?.map(v => v.replace(/var\(\s*/, '')) || [];
   const literal = /(^|[\s,])\d*\.?\d+m?s\b/.test(value.replace(/var\([^)]*\)/g, ''));
@@ -112,7 +112,7 @@ test('rg-tokens.css zeroes every motion duration token under reduced motion', ()
   assert.ok(tokens, 'rg-tokens.css exists');
   const defined = tokens.rules.filter(r => r.selector && !r.media.length).flatMap(r => r.decls).filter(d => /^--m-/.test(d.prop)).map(d => d.prop);
   assert.ok(defined.length >= 4, 'motion tokens defined');
-  for (const t of defined) assert.ok(tokensZeroed.includes(t), `${t} is set to 0ms under prefers-reduced-motion: reduce`);
+  for (const t of defined) assert.ok(tokensZeroed.includes(t), `${t} is set to 0 (ms or px) under prefers-reduced-motion: reduce`);
 });
 
 test('every animation that uses a keyframe (rg-*.css and styles.css) is removed under reduced motion', () => {
