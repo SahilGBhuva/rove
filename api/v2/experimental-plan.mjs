@@ -49,7 +49,8 @@ export function loadFor(instant, loader=loadDay) {
   const timetable=combineServiceDays(days);
   if (loader===loadDay) {
     combinedCache.set(key,timetable);
-    if (combinedCache.size>2) combinedCache.delete(combinedCache.keys().next().value);
+    // One combined timetable is enough for repeated demo searches; bound memory.
+    if (combinedCache.size>1) combinedCache.delete(combinedCache.keys().next().value);
   }
   return {context,timetable};
 }
