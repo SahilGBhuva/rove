@@ -2783,7 +2783,7 @@ function viewNavigate() {
   return `<div class="rg-nav${nav.demo ? ' is-demo' : ''}${arrive ? ' is-arrived' : ''}" data-kind="${esc(phase.kind)}">
     <div class="rg-top">
       ${arrive ? '<span></span>' : '<button type="button" class="rg-end" data-action="rg-end">End trip</button>'}
-      ${nav.demo ? `<span class="rg-demo-chip">Demo · simulated</span>` : ''}
+      ${nav.demo ? `<span class="rg-demo-chip">Demo<span class="visually-hidden">. Simulated times from a published timetable. Not live.</span><span aria-hidden="true"> · not live</span></span>` : ''}
       <p class="rg-step">Step ${i + 1} of ${phases.length}</p>
     </div>
     ${journeyLineHtml(nav)}
