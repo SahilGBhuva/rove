@@ -1602,3 +1602,21 @@ body .panel-body:has(.rg-nav) { scroll-padding-bottom: 180px; scroll-padding-top
 
 /* Desktop panel caption: legible size and >= 4.5:1 on the warm background. */
 .rove-accessible .brand-caption { color: var(--rg-ink-2); font-size: .6875rem; }
+
+/* MODE SWITCH (agent C) */
+/* Classic (map-first) mode restores the map that the audio-first phone layout above hides; the
+   bottom sheet itself lives in css/rg-sheet.css. Audio-first (body.mode-audio) changes nothing here. */
+@media (max-width: 800px) {
+  body.mode-classic .map-area { display: block !important; inset: 0 !important; }
+  body.mode-classic .map-controls { display: flex !important; }
+  body.mode-classic .map-pick:not([hidden]) { display: flex !important; }
+  body.mode-classic .layers-popover:not([hidden]) { display: block !important; }
+}
+@media (max-width: 767px) {
+  body.mode-classic .map-mobile-brand { display: flex !important; }
+}
+/* Between the phone and desktop layouts, classic docks a narrower panel beside the map. */
+@media (min-width: 768px) and (max-width: 800px) {
+  body.mode-classic .panel { inset: 0 auto 0 0 !important; width: min(380px, 50vw) !important; height: 100dvh !important; border-right: 1px solid var(--rg-line) !important; }
+  body.mode-classic .map-area { left: min(380px, 50vw) !important; }
+}
