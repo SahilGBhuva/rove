@@ -71,15 +71,15 @@
    * rejects with the browser's error (NotAllowedError, NotFoundError, ...) or an AbortError.
    * onState('waiting' | 'listening') reports progress; onLevel(level, rms) reports the live input level (smoothed for display, then raw). */
   function record({ leadInMs = 700, onState, onLevel } = {}) {
-    const Ctx = root.AudioContext || root.webkitAudioContext;
-    let ctx = null;
-    try { ctx = Ctx ? new Ctx() : null; ctx?.resume?.(); } catch { ctx = null; } // inside the tap for iOS
-    let stream = null, recorder = null, timer = null, cancelled = false, settle = null;
+    // One shared context, unlocked by the rider's first tap, so the tone and level meter still work
+    // when recording starts later (after Rove finishes speaking), outside that tap.
+    const ctx = audioCtx();
+    let stream = null, recorder = null, timer = null, cancelled = false, settle = null, source = null;
     const chunks = [];
     const cleanup = () => {
       clearInterval(timer); clearTimeout(timer);
       stream?.getTracks().forEach(track => track.stop());
-      setTimeout(() => { try { ctx?.close?.(); } catch { /* already closed */ } }, 300);
+      try { source?.disconnect(); } catch { /* already disconnected */ }
     };
     const done = new Promise((resolve, reject) => {
       settle = { resolve, reject };
@@ -106,7 +106,8 @@
           if (ctx) {
             const analyser = ctx.createAnalyser();
             analyser.fftSize = 1024;
-            ctx.createMediaStreamSource(stream).connect(analyser);
+            source = ctx.createMediaStreamSource(stream);
+            source.connect(analyser);
             const data = new Float32Array(analyser.fftSize);
             const feed = createEndpointer();
             const meter = createLevelMeter();
@@ -139,11 +140,22 @@
 
   /* Short sound cues so riders know what is happening without looking:
    * start = rising (speak now), stop = falling (got it), ok = bright (done), error = low double. */
-  let earCtx = null;
-  function earcon(kind) {
+  let shared = null;
+  function audioCtx() {
     const Ctx = root.AudioContext || root.webkitAudioContext;
-    if (!Ctx) return;
-    try { earCtx ||= new Ctx(); earCtx.resume?.(); } catch { return; }
+    if (!Ctx) return null;
+    try { if (!shared || shared.state === 'closed') shared = new Ctx(); shared.resume?.(); } catch { shared = null; }
+    return shared;
+  }
+  /* Call from a tap: unlocks audio output for the rest of the visit (iOS needs the gesture). */
+  function unlock() {
+    const ctx = audioCtx();
+    if (ctx) beepAt(ctx, 1, ctx.currentTime, 10); // a silent blip starts the output inside the gesture
+    return Boolean(ctx);
+  }
+  function earcon(kind) {
+    const earCtx = audioCtx();
+    if (!earCtx) return;
     const notes = { start: [660, 880], stop: [880, 587], ok: [784, 1047], error: [330, 262] }[kind] || [660];
     notes.forEach((f, i) => { const t = earCtx.currentTime + i * 0.13; beepAt(earCtx, f, t, 120); });
   }
@@ -158,5 +170,5 @@
     } catch { /* no audio output */ }
   }
 
-  root.RoveVoice = Object.freeze({ supported, pickType, record, blobToBase64, createEndpointer, earcon });
+  root.RoveVoice = Object.freeze({ supported, pickType, record, blobToBase64, createEndpointer, earcon, unlock });
 })(typeof globalThis !== 'undefined' ? globalThis : window);

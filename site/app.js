@@ -2385,12 +2385,13 @@ function viewAccess() {
     <section class="rg-settings" aria-labelledby="rgSettingsTitle">
       <h2 id="rgSettingsTitle" class="rg-label">Settings</h2>
       <div class="rg-group">
+        ${setting('wake', 'Ask where to go when Rove opens', 'Rove opens with one large Start button. Tap it and Rove asks your destination out loud.', accessPreference('wake', true))}
         ${setting('speak', 'Rove voice', 'Rove reads each step and reminder aloud. If you use VoiceOver or TalkBack, you can turn this off; your screen reader will announce updates instead.', accessPreference('speak', true))}
         ${setting('haptics', 'Vibration', 'For reminders and confirmations, on phones that support it. iPhone Safari does not.', accessPreference('haptics', true))}
       </div>
       <button type="button" class="rg-quiet" data-action="access-demo">${rgIcon('speaker')}<span>Test Rove voice</span></button>
       ${window.RoveMode ? (() => { const audio = RoveMode.get() === 'audio'; return `<div class="rg-group rg-mode-setting" role="group" aria-labelledby="rgModeTitle"><p class="rg-switch-text"><strong id="rgModeTitle">Display</strong><span class="rg-switch-detail">${audio ? 'Audio-first: no map, spoken guidance and large controls.' : 'Map view: map with a sliding panel. Spoken guidance still works.'}</span></p><button type="button" class="rg-quiet" data-action="mode-set" data-mode="${audio ? 'classic' : 'audio'}">${audio ? 'Switch to map view' : 'Switch to audio-first'}</button></div>`; })() : ''}
-      <p class="rg-body rg-fine">When you speak a destination, the recording is sent to a speech-to-text service (through Vercel AI Gateway) to turn it into text. Rove does not store recordings. If that service is unavailable, Rove uses your browser's own voice input.</p>
+      <p class="rg-body rg-fine">When you speak a destination, the recording is sent to a speech-to-text service (Groq Whisper) to turn it into text. Rove does not store recordings. If that service is unavailable, Rove uses your browser's own voice input.</p>
     </section>
     <section class="rg-settings" aria-labelledby="rgHowTitle">
       <h2 id="rgHowTitle" class="rg-label">How a trip works</h2>
@@ -3828,7 +3829,7 @@ const BrowserRecognition = () => window.SpeechRecognition || window.webkitSpeech
 const VOICE_ERRORS = new Proxy({
   'not-allowed': 'Microphone is blocked for this site. Allow it in site settings (the icon beside the web address), then try again.',
   'service-not-allowed': 'Voice input is turned off in this browser. Type your destination, or turn on speech recognition in browser settings.',
-  'no-speech': "I didn't hear anything. Try again, or type your destination.",
+  'no-speech': "I still didn't hear anything. Tap Speak to try again, or type your destination.",
   'audio-capture': 'No microphone found. Connect one and try again, or type your destination.',
   offline: "You're offline. Voice needs a connection, so type your destination instead.",
   'voice-service': "Voice service isn't responding. Try again, or type your destination.",
@@ -3928,6 +3929,13 @@ function spokenDestination(words) {
 function voiceHeard(words, demo) {
   if (voiceIntent) { const intent = voiceIntent; voiceIntent = null; state.plan.voice = null; updateVoiceSlot(); intent.handle(words); return; }
   const plan = state.plan;
+  voiceSilences = 0;
+  if (!demo && /^\W*(resume|continue)\b/i.test(String(words)) && loadTrip()) {
+    plan.voice = null; updateVoiceSlot();
+    const t = loadTrip(); state.plan.to = t.destination;
+    beginNav(t.it, { destination: t.destination, access: t.access, demo: t.demo, restore: t });
+    return;
+  }
   const text = spokenDestination(words) || String(words || '').trim();
   if (!text) { voiceFail('no-speech', demo); return; }
   if (demo) { plan.voice = null; startDemo(text); return; }
@@ -3939,14 +3947,53 @@ function voiceHeard(words, demo) {
   if (autocomplete.status !== 'loading') voiceResultsReady();
   setTimeout(voiceResultsReady, 3000); // geocoder slow or offline: announce local stop matches anyway
 }
+let voiceRetried = false;   // one automatic retry after a dropped transcription request
+let voiceSilences = 0;      // times in a row nothing was heard for the destination question
+const VOICE_REASKS = 2;
+/* Speak a short prompt, then the tone, then listen again. */
+function voiceAgain(demo, prompt) {
+  capture = null;
+  state.plan.voice = { state: 'starting', mode: voiceMode() };
+  updateVoiceSlot();
+  sayThenWait(prompt).then(() => { if (state.plan.voice?.state === 'starting') voiceListen({ demo }); });
+}
 function voiceFail(error, demo) {
   const plan = state.plan;
+  if (error === 'no-speech' && !voiceIntent && voiceSilences < VOICE_REASKS) {
+    voiceSilences++;
+    voiceAgain(demo, demo ? "I didn't hear anything. Say Lake Merritt after the tone." : "I didn't hear anything. Where would you like to go? Say it after the tone.");
+    return;
+  }
+  voiceSilences = 0;
   earcon('error');
   if (voiceIntent) { voiceIntent = null; plan.voice = null; updateVoiceSlot(); guideSay(error === 'no-speech' ? "I didn't hear an answer. You can tap your choice instead." : "Voice isn't working right now. You can tap your choice instead."); return; }
   plan.voice = { state: 'error', error };
   updateVoiceSlot();
   guideSay(VOICE_ERRORS[error] || "Voice input didn't work. Try again, or type your destination.");
-  if (!demo && error !== 'no-speech') $('#planTo')?.focus({ preventScroll: true });
+  if (!demo) $('#planTo')?.focus({ preventScroll: true });
+}
+/* ---- Start screen: browsers only allow sound after a tap, so Rove opens on one large button that
+ * fills the screen. The first tap (or Enter) unlocks audio and Rove asks where to go out loud. ---- */
+function showWake() {
+  if (document.getElementById('rgWake') || state.nav || currentView().name !== 'home' || !accessPreference('wake', true)) return;
+  const saved = loadTrip();
+  const wrap = document.createElement('div');
+  wrap.id = 'rgWake'; wrap.className = 'rg-wake';
+  wrap.setAttribute('role', 'dialog'); wrap.setAttribute('aria-modal', 'true'); wrap.setAttribute('aria-label', 'Start Rove');
+  wrap.innerHTML = `<button type="button" class="rg-wake-go" id="rgWakeGo"><span class="rg-wake-mic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span><strong class="rg-wake-title">Tap anywhere to start</strong><span class="rg-wake-sub">${saved ? 'Rove will ask if you want to continue your trip.' : 'Rove will ask where you want to go.'} Speak after the tone.</span></button><button type="button" class="rg-wake-skip" id="rgWakeSkip">Use the screen instead</button>`;
+  document.body.appendChild(wrap);
+  document.body.classList.add('has-wake');
+  const close = () => { wrap.remove(); document.body.classList.remove('has-wake'); };
+  wrap.querySelector('#rgWakeGo').addEventListener('click', () => {
+    close();
+    try { window.RoveVoice?.unlock?.(); } catch { /* no audio */ }
+    const t = loadTrip();
+    if (t) voiceDestination({ prompt: `You have an unfinished trip to ${t.destination?.name || 'your destination'}. Say resume to continue it, or say where you'd like to go, after the tone.` });
+    else voiceDestination();
+  });
+  wrap.querySelector('#rgWakeSkip').addEventListener('click', () => { close(); (document.querySelector('#panel h1, #panel [data-action="voice-destination"]'))?.focus?.({ preventScroll: true }); });
+  wrap.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); } });
+  wrap.querySelector('#rgWakeGo').focus({ preventScroll: true });
 }
 function voiceCancelAll() {
   try { recognition?.abort(); } catch { /* none active */ }
@@ -3958,16 +4005,13 @@ function voiceCancelAll() {
  * whole destination and route choice works without seeing the screen. ---- */
 let voiceIntent = null; // set while Rove waits for a spoken answer (yes/no, start/next/repeat)
 let voiceServerModel = null; // which server model is configured; a failure is remembered per model
-const VOICE_DOWN_KEY = 'rove-voice-server-down';
+// Older builds remembered a server failure for hours and then used the browser recognizer, which
+// fails in many browsers. The flag is no longer used; clear any left behind.
+try { localStorage.removeItem('rove-voice-server-down'); } catch { /* storage unavailable */ }
 function earcon(kind) { try { window.RoveVoice?.earcon?.(kind); } catch { /* no audio */ } }
-function voiceServerKnownDown() {
-  try {
-    const mark = JSON.parse(localStorage.getItem(VOICE_DOWN_KEY) || 'null');
-    // A new provider (for example after Groq is configured) is tried again straight away.
-    return Boolean(mark && mark.model === voiceServerModel && Date.now() - mark.at < 6 * 3600e3);
-  } catch { return false; }
-}
-function voiceMode() { return voiceServer !== false && !voiceServerKnownDown() && window.RoveVoice?.supported() && navigator.onLine ? 'server' : 'browser'; }
+/* Rove's own speech service is the default everywhere it can record; the browser recognizer is
+ * only for when the server says it is not configured, or the browser cannot record. */
+function voiceMode() { return voiceServer !== false && window.RoveVoice?.supported() ? 'server' : 'browser'; }
 /* Speak and resolve once finished (or after a reading-time estimate when the screen reader is the
  * voice), so the microphone never records Rove or VoiceOver. */
 function sayThenWait(text) {
@@ -4039,15 +4083,16 @@ async function voiceOfferRoutes(k = 0, retried = false) {
   voiceListen({});
 }
 
-async function voiceDestination({ demo = false } = {}) {
+async function voiceDestination({ demo = false, prompt = null } = {}) {
   stopSpeaking();
   voiceCancelAll();
   voiceIntent = null;
   if (!demo && currentView().name !== 'plan') openPlan({});
   state.plan.voiceFlow = !demo;
+  voiceSilences = 0; voiceRetried = false;
   state.plan.voice = { state: 'starting', mode: voiceMode() };
   updateVoiceSlot();
-  await sayThenWait(demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.' : 'Where would you like to go? Say it after the tone.');
+  await sayThenWait(prompt || (demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.' : 'Where would you like to go? Say it after the tone.'));
   if (state.plan.voice?.state !== 'starting') return; // cancelled while Rove was speaking
   voiceListen({ demo });
 }
@@ -4083,12 +4128,12 @@ function voiceViaServer({ demo, leadIn = 1300 }) {
     } catch { res = null; }
     if (capture !== c) return; // the rider cancelled or started again
     capture = null;
-    if (res?.ok) { if (body?.text) voiceHeard(body.text, demo); else voiceFail('no-speech', demo); return; }
-    if (body?.code === 'VOICE_BUSY') { voiceFail('voice-busy', demo); return; }
-    // Rove's speech service is not usable here: fall back to the browser's recognizer right away.
-    voiceServer = false;
-    try { localStorage.setItem(VOICE_DOWN_KEY, JSON.stringify({ at: Date.now(), model: voiceServerModel })); } catch { /* storage unavailable */ }
-    if (BrowserRecognition()) { capture = null; sayThenWait('Sorry, please say that once more after the tone.').then(() => { earcon('start'); setTimeout(() => voiceViaBrowser({ demo }), 320); }); return; }
+    if (res?.ok) { voiceRetried = false; if (body?.text) voiceHeard(body.text, demo); else voiceFail('no-speech', demo); return; }
+    const notConfigured = body?.code === 'VOICE_UNAVAILABLE' || res?.status === 404 || res?.status === 405;
+    if (notConfigured) voiceServer = false; // this deployment has no speech service: use the browser's
+    // A slow or dropped connection is usually momentary: ask once more instead of showing an error.
+    if (!notConfigured && !voiceRetried) { voiceRetried = true; voiceAgain(demo, 'Sorry, I missed that. Please say it again after the tone.'); return; }
+    if (notConfigured && BrowserRecognition()) { voiceAgain(demo, 'Sorry, please say that once more after the tone.'); return; }
     voiceFail(navigator.onLine ? 'voice-service' : 'offline', demo);
   }, error => {
     if (capture !== c) return;
@@ -4096,8 +4141,7 @@ function voiceViaServer({ demo, leadIn = 1300 }) {
     if (error?.name === 'AbortError') return;
     if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') { voiceFail('not-allowed', demo); return; }
     if (error?.name === 'NotFoundError' || error?.name === 'OverconstrainedError') { voiceFail('audio-capture', demo); return; }
-    voiceServer = false;
-    if (BrowserRecognition()) voiceViaBrowser({ demo }); else voiceFail('voice-service', demo);
+    if (BrowserRecognition()) { voiceServer = false; voiceViaBrowser({ demo }); } else voiceFail('voice-service', demo);
   });
 }
 
@@ -4128,6 +4172,7 @@ async function recognitionError(error, { demo, local }) {
   if ((error === 'network' || error === 'language-not-supported') && typeof Recognition?.available === 'function') {
     try { availability = await Recognition.available({ langs: ['en-US'], processLocally: true }); } catch { availability = 'unsupported'; }
   }
+  if (['network', 'service-not-allowed', 'language-not-supported'].includes(error) && voiceServer !== false && window.RoveVoice?.supported()) { voiceViaServer({ demo, leadIn: 200 }); return; }
   const step = RoveSpeech.recognitionFallback({ error, onLine: navigator.onLine, local, availability });
   if (step.action === 'retry-local') { voiceUseLocal = true; voiceViaBrowser({ demo, local: true }); return; }
   // Never ask the rider to download anything: if on-device voice isn't ready, go straight to typing.
@@ -4211,9 +4256,9 @@ function routeDetailSpeech(it) {
 
 document.addEventListener('change', event => {
   const key = event.target?.dataset?.accessSetting;
-  if (!['haptics', 'autoVoice', 'speak'].includes(key)) return;
+  if (!['haptics', 'autoVoice', 'speak', 'wake'].includes(key)) return;
   accessSetting(key, Boolean(event.target.checked));
-  announceAccess(({ haptics: 'Vibration', autoVoice: 'Automatic route speech', speak: 'Rove voice' })[key] + (event.target.checked ? ' on' : ' off'));
+  announceAccess(({ haptics: 'Vibration', autoVoice: 'Automatic route speech', speak: 'Rove voice', wake: 'Ask on open' })[key] + (event.target.checked ? ' on' : ' off'));
 });
 function clearSearchField() {
   state.searchQuery = '';
@@ -5819,6 +5864,7 @@ async function init() {
   loadRealtime();
   fetchPlanStatus();
   probeVoiceServer();
+  showWake();
   updateOnlineStatus();
   state.realtimeTimer = setInterval(loadRealtime, 60000);
   setInterval(() => { if (!document.hidden) { prefetchVisibleArrivals(); refreshLiveViews(); } }, 30000);

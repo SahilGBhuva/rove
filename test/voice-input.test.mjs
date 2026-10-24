@@ -47,10 +47,18 @@ test('"network" while online is not reported as offline; on-device recognition i
 
 test('app prefers server transcription, falls back to the browser recognizer, then typing', () => {
   assert.ok(html.indexOf('voice-capture.js') < html.indexOf('app.js?'));
-  assert.match(app, /function voiceMode\(\) \{ return voiceServer !== false && !voiceServerKnownDown\(\) && window\.RoveVoice\?\.supported\(\) && navigator\.onLine \? 'server' : 'browser'; \}/);
+  // Rove's own service is used wherever the browser can record; a past failure is never remembered,
+  // because the browser recognizer it fell back to fails in many browsers ("Voice service isn't responding").
+  assert.match(app, /function voiceMode\(\) \{ return voiceServer !== false && window\.RoveVoice\?\.supported\(\) \? 'server' : 'browser'; \}/);
+  assert.doesNotMatch(app, /localStorage\.setItem\('rove-voice-server-down'|VOICE_DOWN_KEY/);
+  // Only a "not configured" answer switches to the browser; a dropped request is retried once.
+  assert.match(app, /const notConfigured = body\?\.code === 'VOICE_UNAVAILABLE'/);
+  assert.match(app, /if \(!notConfigured && !voiceRetried\)/);
+  // A browser recognizer that cannot reach its cloud hands over to Rove's service.
+  assert.match(app, /\['network', 'service-not-allowed', 'language-not-supported'\]\.includes\(error\) && voiceServer !== false/);
   assert.match(app, /if \(voiceMode\(\) === 'server'\) voiceViaServer\(\{ demo, leadIn: 200 \}\);\s*else \{ earcon\('start'\); setTimeout\(\(\) => voiceViaBrowser\(\{ demo \}\), 320\); \}/);
   assert.match(app, /fetch\('\/api\/v2\/transcribe', \{ method: 'POST'/);
-  assert.match(app, /voiceServer = false;\s*if \(BrowserRecognition\(\)\)/);
+  assert.match(app, /if \(BrowserRecognition\(\)\) \{ voiceServer = false; voiceViaBrowser/);
   assert.match(app, /RoveSpeech\.recognitionFallback\(/);
   assert.doesNotMatch(app, /Voice input needs an internet connection/, 'the misleading message is gone');
   assert.match(app, /offline: "You're offline/);
@@ -61,7 +69,7 @@ test('voice status is patched in place so VoiceOver focus does not move while th
   const body = app.slice(start, app.indexOf('\nfunction ', start + 10));
   assert.match(body, /slot\.innerHTML = voiceStatusHtml\(\)/);
   assert.match(app, /RoveVoice\.record\(\{ leadInMs: leadIn,/);
-  assert.match(app, /await sayThenWait\(demo \? 'Say your destination after the tone/, 'the prompt finishes before the microphone opens');
+  assert.match(app, /await sayThenWait\(prompt \|\| \(demo \? 'Say your destination after the tone/, 'the prompt finishes before the microphone opens');
 });
 
 test('voice never asks the rider to download anything; it falls back to typing', () => {
@@ -73,9 +81,11 @@ test('voice works without sight: spoken prompts, sound cues, yes/no and start/ne
   assert.match(app, /Say yes to go there, or no for the next match\./);
   assert.match(app, /Say start to begin this route/);
   for (const cue of ["earcon('start')", "earcon('stop')", "earcon('ok')", "earcon('error')"]) assert.ok(app.includes(cue), cue);
-  assert.match(app, /localStorage\.setItem\(VOICE_DOWN_KEY/, 'a failing server model is remembered so riders are not asked twice');
+  // Silence: Rove asks again (twice) before suggesting typing.
+  assert.match(app, /I didn't hear anything\. Where would you like to go\? Say it after the tone\./);
+  assert.match(app, /const VOICE_REASKS = 2;/);
   const cap = readFileSync(new URL('../site/public/js/voice-capture.js', import.meta.url), 'utf8');
-  assert.match(cap, /earcon \}\);/);
+  assert.match(cap, /earcon, unlock \}\);/);
 });
 
 test('spoken requests are reduced to the place before searching', () => {
@@ -86,4 +96,15 @@ test('spoken requests are reduced to the place before searching', () => {
   assert.equal(spokenDestination('How do I get to SFO?'), 'SFO');
   assert.equal(spokenDestination('Going to Oakland'), 'Oakland');
   assert.equal(spokenDestination('Lake Merritt'), 'Lake Merritt');
+});
+
+test('Rove opens on one large Start button, then asks the destination out loud', () => {
+  assert.match(app, /function showWake\(\)/);
+  assert.match(app, /Tap anywhere to start/);
+  assert.match(app, /window\.RoveVoice\?\.unlock\?\.\(\)/, 'the tap unlocks audio for later tones and the level meter');
+  assert.match(app, /probeVoiceServer\(\);\n  showWake\(\);/);
+  assert.match(app, /Say resume to continue it/);
+  const cap = readFileSync(new URL('../site/public/js/voice-capture.js', import.meta.url), 'utf8');
+  assert.match(cap, /function unlock\(\)/);
+  assert.doesNotMatch(cap, /ctx\?\.close/, 'the shared audio context stays open between recordings');
 });
