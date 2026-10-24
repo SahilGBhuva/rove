@@ -3941,7 +3941,12 @@ function voiceResultsReady() {
   const slot = document.querySelector('.rg-voice-slot');
   if (slot) slot.innerHTML = voiceStatusHtml();
   const field = plan.voiceField || 'to';
-  if (!results.length) { earcon('error'); guideSay(`I heard ${heard}, but found no matching places. Tap Speak to try again, or type ${field === 'from' ? 'your starting point' : 'your destination'}.`); $(field === 'from' ? '#planFrom' : '#planTo')?.focus({ preventScroll: true }); return; }
+  if (!results.length) {
+    earcon('error');
+    if (plan.voiceFlow) { voiceAgain(false, `I heard ${heard}, but could not find a matching place. Please say your ${field === 'from' ? 'starting point' : 'destination'} again after the tone.`); return; }
+    guideSay(`I heard ${heard}, but found no matching places. Tap Speak to try again, or type ${field === 'from' ? 'your starting point' : 'your destination'}.`);
+    $(field === 'from' ? '#planFrom' : '#planTo')?.focus({ preventScroll: true }); return;
+  }
   const first = results[0].querySelector('.row-title')?.textContent || results[0].textContent.trim();
   if (plan.voiceFlow) { voiceAskMatch(heard, 0); return; }
   announceAccess(`Heard ${heard}. ${plural(results.length, 'match', 'matches')}. First: ${first}. Choose one to confirm.`);

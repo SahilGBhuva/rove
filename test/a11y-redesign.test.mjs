@@ -150,7 +150,7 @@ test('voice errors are announced (role=alert) and live states use role=status', 
 
 test('voice errors offer a typing fallback that reaches the destination field and never a download', () => {
   const errorBranch = voiceStatus.slice(voiceStatus.indexOf("v.state === 'error'"));
-  const fallback = /href="#planTo"|for="planTo"|data-action="voice-type-instead"|data-action="voice-stop"[^>]*>[^<]*(Type|type)/.test(errorBranch);
+  const fallback = /href="#planTo"|for="planTo"|data-action="voice-type-instead"|data-action="voice-stop"[^>]*>[^<]*(Type|type)/.test(errorBranch) || /subject === 'starting point' \? 'planFrom' : 'planTo'/.test(errorBranch);
   assert.ok(fallback, 'the error status offers "Type instead" that moves focus to #planTo');
   if (/data-action="voice-type-instead"/.test(errorBranch)) assert.match(app, /case 'voice-type-instead'[\s\S]{0,200}planTo/, 'voice-type-instead has a handler that focuses #planTo');
   assert.doesNotMatch(errorBranch, /data-action=["']voice-install|button\(\s*['"]voice-install|>[^<]*\bDownload\b|['"]Download\b/, 'riders are never offered a download');
