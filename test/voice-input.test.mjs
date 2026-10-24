@@ -47,7 +47,8 @@ test('"network" while online is not reported as offline; on-device recognition i
 
 test('app prefers server transcription, falls back to the browser recognizer, then typing', () => {
   assert.ok(html.indexOf('voice-capture.js') < html.indexOf('app.js?'));
-  assert.match(app, /if \(voiceServer !== false && window\.RoveVoice\?\.supported\(\) && navigator\.onLine\) voiceViaServer\(\{ demo \}\);\s*else voiceViaBrowser\(\{ demo \}\);/);
+  assert.match(app, /function voiceMode\(\) \{ return voiceServer !== false && !voiceServerKnownDown\(\) && window\.RoveVoice\?\.supported\(\) && navigator\.onLine \? 'server' : 'browser'; \}/);
+  assert.match(app, /if \(voiceMode\(\) === 'server'\) voiceViaServer\(\{ demo, leadIn: 200 \}\);\s*else \{ earcon\('start'\); setTimeout\(\(\) => voiceViaBrowser\(\{ demo \}\), 320\); \}/);
   assert.match(app, /fetch\('\/api\/v2\/transcribe', \{ method: 'POST'/);
   assert.match(app, /voiceServer = false;\s*if \(BrowserRecognition\(\)\)/);
   assert.match(app, /RoveSpeech\.recognitionFallback\(/);
@@ -59,9 +60,20 @@ test('voice status is patched in place so VoiceOver focus does not move while th
   const start = app.indexOf('function updateVoiceSlot()');
   const body = app.slice(start, app.indexOf('\nfunction ', start + 10));
   assert.match(body, /slot\.innerHTML = voiceStatusHtml\(\)/);
-  assert.match(app, /RoveVoice\.record\(\{ leadInMs: 1300/);
+  assert.match(app, /RoveVoice\.record\(\{ leadInMs: leadIn,/);
+  assert.match(app, /await sayThenWait\(demo \? 'Say your destination after the tone/, 'the prompt finishes before the microphone opens');
 });
 
 test('voice never asks the rider to download anything; it falls back to typing', () => {
   assert.match(app, /voiceFail\(step\.action === 'offer-download' \? 'voice-service' : step\.code, demo\);/);
+});
+
+test('voice works without sight: spoken prompts, sound cues, yes/no and start/next by voice', () => {
+  assert.match(app, /Where would you like to go\? Say it after the tone\./);
+  assert.match(app, /Say yes to go there, or no for the next match\./);
+  assert.match(app, /Say start to begin this route/);
+  for (const cue of ["earcon('start')", "earcon('stop')", "earcon('ok')", "earcon('error')"]) assert.ok(app.includes(cue), cue);
+  assert.match(app, /localStorage\.setItem\(VOICE_DOWN_KEY/, 'a failing server model is remembered so riders are not asked twice');
+  const cap = readFileSync(new URL('../site/public/js/voice-capture.js', import.meta.url), 'utf8');
+  assert.match(cap, /earcon \}\);/);
 });

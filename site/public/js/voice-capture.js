@@ -89,7 +89,7 @@
         onState?.('waiting');
         setTimeout(() => {
           if (cancelled) return;
-          if (ctx) beep(ctx);
+          if (ctx) { beepAt(ctx, 660, ctx.currentTime, 110); beepAt(ctx, 880, ctx.currentTime + 0.13, 120); }
           const type = pickType();
           try { recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined); }
           catch (error) { cleanup(); reject(error); return; }
@@ -137,5 +137,26 @@
     };
   }
 
-  root.RoveVoice = Object.freeze({ supported, pickType, record, blobToBase64, createEndpointer });
+  /* Short sound cues so riders know what is happening without looking:
+   * start = rising (speak now), stop = falling (got it), ok = bright (done), error = low double. */
+  let earCtx = null;
+  function earcon(kind) {
+    const Ctx = root.AudioContext || root.webkitAudioContext;
+    if (!Ctx) return;
+    try { earCtx ||= new Ctx(); earCtx.resume?.(); } catch { return; }
+    const notes = { start: [660, 880], stop: [880, 587], ok: [784, 1047], error: [330, 262] }[kind] || [660];
+    notes.forEach((f, i) => { const t = earCtx.currentTime + i * 0.13; beepAt(earCtx, f, t, 120); });
+  }
+  function beepAt(ctx, freq, t, ms) {
+    try {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.frequency.value = freq; osc.connect(gain).connect(ctx.destination);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
+      osc.start(t); osc.stop(t + ms / 1000 + 0.02);
+    } catch { /* no audio output */ }
+  }
+
+  root.RoveVoice = Object.freeze({ supported, pickType, record, blobToBase64, createEndpointer, earcon });
 })(typeof globalThis !== 'undefined' ? globalThis : window);

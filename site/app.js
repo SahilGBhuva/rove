@@ -2042,7 +2042,8 @@ async function submitPlan() {
     pushView({ name: 'results' }, { detent: 'half' });
     renderJourney(); revealJourney(); applyMapState(); updatePlanMarkers(); fitJourney(state.journey);
     const best = sortedItineraryIndexes()[0];
-    announceAccess(`${plural(Math.min(itineraries.length, 3), 'route')} found. ${routeChoiceSpeech(itineraries[best], 1)}`);
+    if (plan.voiceFlow) voiceOfferRoutes(0);
+    else announceAccess(`${plural(Math.min(itineraries.length, 3), 'route')} found. ${routeChoiceSpeech(itineraries[best], 1)}`);
   } catch (error) {
     plan.loading = false;
     // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
@@ -3095,7 +3096,7 @@ function voiceStatusHtml() {
 function updateVoiceSlot() {
   const slot = document.querySelector('.rg-voice-slot');
   if (slot) slot.innerHTML = voiceStatusHtml();
-  else render();
+  else if (['plan', 'demo'].includes(currentView().name)) render();
 }
 function planDestinationResults() { return $$('#planSuggest .result:not([data-action="plan-map"]):not([data-action="plan-locate"]):not([data-action="plan-pick-location"])'); }
 function voiceResultsReady() {
@@ -3109,12 +3110,14 @@ function voiceResultsReady() {
   if (slot) slot.innerHTML = voiceStatusHtml();
   if (!results.length) { announceAccess(`Heard ${heard}. No matching places. Try again, or type your destination.`); return; }
   const first = results[0].querySelector('.row-title')?.textContent || results[0].textContent.trim();
+  if (plan.voiceFlow) { voiceAskMatch(heard, 0); return; }
   announceAccess(`Heard ${heard}. ${plural(results.length, 'match', 'matches')}. First: ${first}. Choose one to confirm.`);
   results[0].focus({ preventScroll: true });
 }
 
 /* What happens with recognised words, whichever engine produced them. */
 function voiceHeard(words, demo) {
+  if (voiceIntent) { const intent = voiceIntent; voiceIntent = null; state.plan.voice = null; updateVoiceSlot(); intent.handle(words); return; }
   const plan = state.plan;
   const text = String(words || '').trim();
   if (!text) { voiceFail('no-speech', demo); return; }
@@ -3129,9 +3132,11 @@ function voiceHeard(words, demo) {
 }
 function voiceFail(error, demo) {
   const plan = state.plan;
+  earcon('error');
+  if (voiceIntent) { voiceIntent = null; plan.voice = null; updateVoiceSlot(); guideSay(error === 'no-speech' ? "I didn't hear an answer. You can tap your choice instead." : "Voice isn't working right now. You can tap your choice instead."); return; }
   plan.voice = { state: 'error', error };
   updateVoiceSlot();
-  announceAccess(VOICE_ERRORS[error] || "Voice input didn't work. Try again, or type your destination.");
+  guideSay(VOICE_ERRORS[error] || "Voice input didn't work. Try again, or type your destination.");
   if (error === 'voice-download') { $('[data-action="voice-install"]')?.focus({ preventScroll: true }); return; }
   if (!demo && error !== 'no-speech') $('#planTo')?.focus({ preventScroll: true });
 }
@@ -3141,22 +3146,104 @@ function voiceCancelAll() {
   const c = capture; capture = null; c?.cancel();
 }
 
-function voiceDestination({ demo = false } = {}) {
-  stopSpeaking();
-  voiceCancelAll();
-  if (!demo && currentView().name !== 'plan') openPlan({});
-  if (voiceServer !== false && window.RoveVoice?.supported() && navigator.onLine) voiceViaServer({ demo });
-  else voiceViaBrowser({ demo });
+/* ---- Voice conversation: everything a rider needs is spoken and signalled by sound, so the
+ * whole destination and route choice works without seeing the screen. ---- */
+let voiceIntent = null; // set while Rove waits for a spoken answer (yes/no, start/next/repeat)
+const VOICE_DOWN_KEY = 'rove-voice-server-down';
+function earcon(kind) { try { window.RoveVoice?.earcon?.(kind); } catch { /* no audio */ } }
+function voiceServerKnownDown() { try { return Date.now() - Number(localStorage.getItem(VOICE_DOWN_KEY) || 0) < 6 * 3600e3; } catch { return false; } }
+function voiceMode() { return voiceServer !== false && !voiceServerKnownDown() && window.RoveVoice?.supported() && navigator.onLine ? 'server' : 'browser'; }
+/* Speak and resolve once finished (or after a reading-time estimate when the screen reader is the
+ * voice), so the microphone never records Rove or VoiceOver. */
+function sayThenWait(text) {
+  return new Promise(resolve => {
+    let off = null, timer = null;
+    const done = () => { off?.(); clearTimeout(timer); resolve(); };
+    const estimate = Math.min(9000, 900 + String(text).length * 55);
+    if (accessPreference('speak', true) && speaker && speakOut(text)) {
+      off = speaker.onChange(st => { if (['done', 'failed', 'stopped', 'unsupported'].includes(st.state)) done(); });
+      timer = setTimeout(done, estimate + 4000);
+    } else {
+      announceAccess(text);
+      timer = setTimeout(done, estimate);
+    }
+  });
+}
+function voiceListen({ demo = false } = {}) {
+  if (voiceMode() === 'server') voiceViaServer({ demo, leadIn: 200 });
+  else { earcon('start'); setTimeout(() => voiceViaBrowser({ demo }), 320); }
+}
+function yesNo(words) {
+  const w = ` ${String(words).toLowerCase()} `;
+  if (/\b(yes|yeah|yep|yup|correct|right|sure|ok|okay|that one|go there)\b/.test(w)) return 'yes';
+  if (/\b(no|nope|next|wrong|another)\b/.test(w)) return 'no';
+  return null;
+}
+function matchLabel(btn) {
+  const title = btn.querySelector('.row-title')?.textContent?.trim() || btn.textContent.trim();
+  // Read the agency/area only: line badges and hidden helper text would run together ("BlueGreenOrange").
+  const metaEl = btn.querySelector('.row-meta')?.cloneNode(true);
+  metaEl?.querySelectorAll('.badge, .badges, .visually-hidden, [aria-hidden="true"]').forEach(n => n.remove());
+  const meta = metaEl?.textContent?.replace(/\s+/g, ' ').trim();
+  return meta ? `${title}, ${meta}` : title;
+}
+/* "I heard Lake Merritt. Best match: Lake Merritt, BART. Say yes, or no for the next match." */
+async function voiceAskMatch(heard, i = 0, retried = false) {
+  const btn = planDestinationResults()[i];
+  if (!btn) { voiceIntent = null; await sayThenWait(`That was the last match for ${heard}. Tap Speak to try again, or type your destination.`); return; }
+  if (!accessPreference('speak', true)) btn.focus({ preventScroll: true }); // screen-reader users can also double-tap it
+  await sayThenWait(retried ? 'Please say yes or no.' : i === 0 ? `I heard ${heard}. Best match: ${matchLabel(btn)}. Say yes to go there, or no for the next match.` : `Next match: ${matchLabel(btn)}. Say yes or no.`);
+  voiceIntent = { handle: words => {
+    const a = yesNo(words);
+    if (a === 'yes') { voiceIntent = null; earcon('ok'); handleAction(btn); }
+    else if (a === 'no') voiceAskMatch(heard, i + 1);
+    else if (!retried) voiceAskMatch(heard, i, true);
+    else { voiceIntent = null; sayThenWait('Sorry, I did not catch that. You can tap a match to choose it.'); }
+  } };
+  voiceListen({});
+}
+/* After routes are found by a voice flow: read one route at a time and act on start / next / repeat. */
+async function voiceOfferRoutes(k = 0, retried = false) {
+  const order = sortedItineraryIndexes().slice(0, 3);
+  const its = state.plan.results?.itineraries || [];
+  if (!order.length) return;
+  const n = ((k % order.length) + order.length) % order.length;
+  const it = its[order[n]];
+  await sayThenWait(retried ? 'Please say start, next, or repeat.'
+    : `${n === 0 && !retried ? `${plural(order.length, 'route')} found. ` : ''}${routeChoiceSpeech(it, n + 1)} Say start to begin this route${order.length > 1 ? ', next for another route' : ''}, or repeat.`);
+  if (currentView().name !== 'results') return;
+  toast('Listening: say start, next, or repeat');
+  voiceIntent = { handle: words => {
+    const w = ` ${String(words).toLowerCase()} `;
+    if (/\b(start|begin|go|yes|this one|let'?s go)\b/.test(w)) { voiceIntent = null; state.plan.voiceFlow = false; earcon('ok'); startNavigation(order[n]); }
+    else if (/\b(next|another|other|no)\b/.test(w)) voiceOfferRoutes(n + 1);
+    else if (/\b(repeat|again|what)\b/.test(w)) voiceOfferRoutes(n);
+    else if (!retried) voiceOfferRoutes(n, true);
+    else { voiceIntent = null; sayThenWait('Sorry, I did not catch that. You can tap Start route 1.'); }
+  } };
+  voiceListen({});
 }
 
-function voiceViaServer({ demo }) {
+async function voiceDestination({ demo = false } = {}) {
+  stopSpeaking();
+  voiceCancelAll();
+  voiceIntent = null;
+  if (!demo && currentView().name !== 'plan') openPlan({});
+  state.plan.voiceFlow = !demo;
+  state.plan.voice = { state: 'starting', mode: voiceMode() };
+  updateVoiceSlot();
+  await sayThenWait(demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.' : 'Where would you like to go? Say it after the tone.');
+  if (state.plan.voice?.state !== 'starting') return; // cancelled while Rove was speaking
+  voiceListen({ demo });
+}
+
+function voiceViaServer({ demo, leadIn = 1300 }) {
   const plan = state.plan;
   plan.voice = { state: 'starting', mode: 'server' };
   updateVoiceSlot();
-  announceAccess('Speak after the tone.');
-  // The lead-in lets a screen reader finish speaking before the microphone starts listening.
+  // The lead-in lets any remaining speech finish before the microphone starts listening.
   const levels = [0, 0, 0, 0, 0];
-  const c = RoveVoice.record({ leadInMs: 1300, onLevel: level => {
+  const c = RoveVoice.record({ leadInMs: leadIn, onLevel: level => {
     // Drive the waveform from the actual input level (no level, no movement).
     levels.shift(); levels.push(Math.max(0, Math.min(1, level))); // smoothed 0..1 level, exactly 0 when silent
     document.querySelectorAll('.rg-wave i').forEach((bar, k) => bar.style.setProperty('--l', (0.18 + levels[(k + 2) % 5] * 0.82).toFixed(2)));
@@ -3169,6 +3256,7 @@ function voiceViaServer({ demo }) {
   capture = c;
   c.done.then(async ({ blob, mediaType, heard }) => {
     if (capture !== c) return;
+    earcon('stop');
     if (!heard || blob.size < 1000) { capture = null; voiceFail('no-speech', demo); return; }
     plan.voice = { state: 'understanding', mode: 'server' };
     updateVoiceSlot();
@@ -3184,7 +3272,8 @@ function voiceViaServer({ demo }) {
     if (body?.code === 'VOICE_BUSY') { voiceFail('voice-busy', demo); return; }
     // Rove's speech service is not usable here: fall back to the browser's recognizer right away.
     voiceServer = false;
-    if (BrowserRecognition()) { announceAccess("Rove's voice service isn't available. Using your browser's voice input. Say it again now."); voiceViaBrowser({ demo }); return; }
+    try { localStorage.setItem(VOICE_DOWN_KEY, String(Date.now())); } catch { /* storage unavailable */ }
+    if (BrowserRecognition()) { capture = null; sayThenWait('Sorry, please say that once more after the tone.').then(() => { earcon('start'); setTimeout(() => voiceViaBrowser({ demo }), 320); }); return; }
     voiceFail(navigator.onLine ? 'voice-service' : 'offline', demo);
   }, error => {
     if (capture !== c) return;
@@ -3347,6 +3436,7 @@ function toggleSaved(agencyId, stopId) {
 
 function handleAction(el) {
   const action = el.dataset.action;
+  if (voiceIntent && !/^voice-/.test(action) && el.isConnected && !el.matches('#planSuggest .result') && action !== 'nav-start') { voiceIntent = null; voiceCancelAll(); }
   const view = currentView();
   const plan = state.plan;
   switch (action) {
@@ -3538,7 +3628,7 @@ function afterPick() {
   render();
   const next = picked === 'from' && !plan.to ? '#planTo' : picked === 'to' && !plan.from ? '#planFrom' : null;
   // Spoken destination confirmed by choosing a match: go straight to routes when the start is known.
-  if (picked === 'to' && plan.voice?.state === 'heard') {
+  if (picked === 'to' && (plan.voice?.state === 'heard' || plan.voiceFlow)) {
     plan.voice = null;
     if (plan.from) { announceAccess(`Destination: ${plan.to?.name}. Finding routes.`); submitPlan(); return; }
     announceAccess(`Destination: ${plan.to?.name}. Now choose a starting point. Use my location is first.`);
