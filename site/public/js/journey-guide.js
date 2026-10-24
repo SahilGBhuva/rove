@@ -86,9 +86,10 @@
           heading: drive ? `Drive to ${target}` : between ? `Transfer to ${nextVehicle.name}` : `Go to ${target}`,
           place: target,
           facts: [
-            between ? `Walk to ${target}` : null,
+            between ? `Change services here. Walk toward ${target}; confirm the boarding point before crossing or entering a platform.` : null,
+            between && nextVehicle ? `Next service: ${nextVehicle.name}.` : null,
             meters != null ? `About ${distanceWords(meters)}${verified || drive ? '' : ', straight-line estimate'}` : null,
-            verified || drive ? null : 'Walking path not verified. Use your usual mobility aids for crossings and obstacles.'
+            verified || drive ? (between ? 'Follow station signs or ask staff to verify the accessible transfer path; Rove does not detect obstacles or platform edges.' : null) : 'Walking path not verified. Use your usual mobility aids for crossings and obstacles.'
           ].filter(Boolean),
           confirmLabel: last ? "I've arrived" : `I'm at ${target}`,
           confirmSpeech: `Confirmed at ${target}.`
@@ -134,7 +135,7 @@
           `Get off at ${to}`,
           stops ? plural(stops, 'stop') : null,
           arrives != null ? `Arrives ${clock(arrives)}. ${t.text}` : t.text,
-          nextLeg ? `Then transfer to ${vehicle(nextLeg).name}${connectMin != null ? `, ${connectMin <= 0 ? 'a very tight connection' : plural(connectMin, 'minute') + ' to connect'}` : ''}.` : null
+          nextLeg ? `Next: change to ${vehicle(nextLeg).name}${connectMin != null ? `; ${connectMin <= 0 ? 'connection may already be missed' : connectMin < 7 ? `only ${plural(connectMin, 'minute')} scheduled to connect; consider another route if you need more time` : `${plural(connectMin, 'minute')} scheduled to connect`}` : ''}. Verify the next boarding location with station signs or staff.` : null
         ].filter(Boolean),
         confirmLabel: "I've got off",
         confirmAria: `I've got off at ${to}`,
@@ -164,6 +165,7 @@
       const parts = [`Ride to ${phase.place}.`];
       if (phase.stops) parts.push(`${plural(phase.stops, 'stop')}.`);
       if (phase.arrives != null) parts.push(`Arrival ${clock(phase.arrives)}, ${phase.live ? 'live time' : 'by the schedule'}.`);
+      if (phase.connectMin != null) parts.push(phase.connectMin <= 0 ? 'Your connection may already be missed. Open Help to find another route from your location.' : phase.connectMin < 7 ? `Only ${plural(phase.connectMin, 'minute')} scheduled for the transfer. You can open Help and find another route from your location if you need more time.` : `About ${plural(phase.connectMin, 'minute')} scheduled for your transfer. Verify the next boarding point with station staff.`);
       parts.push("Rove will remind you before your stop. Confirm it with the onboard announcement, then choose I've got off.");
       return parts.join(' ');
     }

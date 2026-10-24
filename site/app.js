@@ -2642,16 +2642,18 @@ function endTrip() {
 function guideHelpHtml(nav, phase) {
   const st = phase.kind === 'board' ? Guide.departureStatus(nav.gs, navNow(nav), { clock: rgClock }) : null;
   const speakOn = accessPreference('speak', true);
+  const transfer = phase.kind === 'transfer' || phase.isTransfer || (phase.kind === 'ride' && phase.connectMin != null);
   return `<section id="rgHelp" class="rg-help" aria-labelledby="rgHelpHeading">
     <h2 id="rgHelpHeading" tabindex="-1">Help</h2>
     <div class="rg-help-actions">
       ${st?.state === 'maybe-missed' ? '<button type="button" class="rg-row-button" data-action="rg-wait">I\'m still waiting</button>' : ''}
-      <button type="button" class="rg-row-button" data-action="rg-replan">Find another route</button>
+      <button type="button" class="rg-row-button" data-action="rg-replan">${transfer ? 'Find an easier transfer from here' : 'Find another route from here'}</button>
       <button type="button" class="rg-row-button" data-action="rg-where">Where am I?</button>
       ${nav.gs.history.length ? '<button type="button" class="rg-row-button" data-action="rg-back">Undo last confirmation</button>' : ''}
       <button type="button" class="rg-row-button" data-action="rg-voice" aria-pressed="${speakOn}">Rove voice: ${speakOn ? 'On' : 'Off'}</button>
     </div>
     <dl class="rg-tips">
+      <dt>Changing buses or trains</dt><dd>After you get off, Rove will guide you to the next boarding stop, then ask you to confirm boarding. You can use Find an easier transfer from here to recalculate with your current location. Rove does not automatically confirm platforms, crossings, or transfers.</dd>
       <dt>Finding the exact stop</dt><dd>GPS may place you several metres away from the actual boarding point. Do not use the map pin to decide where to stand or cross. Check the stop sign or ask transit staff to identify the correct boarding location.</dd>
       <dt>Several buses arriving together</dt><dd>Before boarding, ask the driver to confirm the route number and destination. Do not rely on the order buses arrive or Rove's location estimate.</dd>
       <dt>Lost or unsure</dt><dd>Stop somewhere safe. Ask transit staff or the operator, then use Where am I. That feature provides an approximate location, not an obstacle-free walking route.</dd>
