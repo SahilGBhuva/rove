@@ -32,6 +32,7 @@ test('walking longer than available transfer slot disables navigation',async()=>
  const ready=await enrichWalks(it,ok);
  assert.equal(ready,false);
  assert.equal(it.walkingVerified,false);
+ assert.equal(it.transferFeasible,false);
  assert.ok(walk.geometry.coordinates.length>2);
  assert.ok(walk.durationSeconds>walk.scheduledWalkSeconds);
 });
@@ -41,4 +42,26 @@ test('walking with adequate time and real geometry enables navigation',async()=>
  assert.equal(await enrichWalks(it,ok),true);
  assert.ok(it.walkSeconds>0);
  assert.equal(it.walkingVerified,true);
+});
+test('concurrent itineraries share one pedestrian network lookup',async()=>{
+ let calls=0;
+ const fetcher=async()=>{calls++;return {ok:true,json:async()=>sample};};
+ const from={...start,lat:start.lat+0.00017};
+ const to={...end,lat:end.lat+0.00017};
+ const [a,b]=await Promise.all([walkingPath(from,to,fetcher),walkingPath(from,to,fetcher)]);
+ assert.equal(calls,1);
+ assert.deepEqual(a,b);
+});
+test('an impossible later transfer is detected even if an earlier walk is unmapped',async()=>{
+ const first={mode:'WALK',from:{lat:37.70,lon:-122.4},to:{lat:37.73,lon:-122.4},
+   start:{scheduled:'2026-10-20T16:00:00Z'},end:{scheduled:'2026-10-20T16:40:00Z'}};
+ const ride={mode:'BUS',transit:true,from:first.to,to:start,
+   start:{scheduled:'2026-10-20T16:40:00Z'},end:{scheduled:'2026-10-20T17:00:00Z'}};
+ const second={mode:'WALK',from:start,to:end,
+   start:{scheduled:'2026-10-20T17:00:00Z'},end:{scheduled:'2026-10-20T17:00:10Z'}};
+ const final={mode:'BUS',transit:true,from:end,to:{lat:37.80,lon:-122.4},
+   start:{scheduled:'2026-10-20T17:00:10Z'},end:{scheduled:'2026-10-20T17:20:00Z'}};
+ const it={legs:[first,ride,second,final]};
+ assert.equal(await enrichWalks(it,ok),false);
+ assert.equal(it.transferFeasible,false);
 });
