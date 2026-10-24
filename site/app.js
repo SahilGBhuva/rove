@@ -4479,6 +4479,11 @@ window.addEventListener('online', () => { updateOnlineStatus(); loadRealtime(); 
 
 async function init() {
   document.body.classList.add('rove-accessible');
+  // Start the basemap request while the transit network downloads and indexes.
+  // Avoid the previous serial network -> index -> style waterfall on slow phones.
+  const savedMode = store.get(STORAGE.mapMode, null);
+  const mode = ['standard', 'satellite', 'dark'].includes(savedMode) ? savedMode : 'standard';
+  const stylePromise = typeof maplibregl === 'undefined' ? null : fetchStyle(mode);
   try {
     const response = await fetch('public/data/network.json');
     if (!response.ok) throw new Error(`The transit network could not be loaded (${response.status}).`);
@@ -4496,8 +4501,6 @@ async function init() {
   setDetent(isMobile() ? (window.innerHeight < 560 ? 'peek' : 'half') : 'half');
   render();
 
-  const savedMode = store.get(STORAGE.mapMode, null);
-  const mode = ['standard', 'satellite', 'dark'].includes(savedMode) ? savedMode : 'standard';
   state.mapMode = mode;
   document.body.classList.toggle('theme-dark', mode === 'dark');
   document.body.classList.toggle('map-satellite', mode === 'satellite');
@@ -4506,7 +4509,7 @@ async function init() {
   if (typeof maplibregl === 'undefined') {
     $('#mapLoading').innerHTML = '<span>The map could not be loaded. Search and stop information still work.</span>';
   } else {
-    const style = await fetchStyle(mode);
+    const style = await stylePromise;
     state.map = new maplibregl.Map({
       container: 'map',
       style,
