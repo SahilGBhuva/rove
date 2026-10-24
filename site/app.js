@@ -650,12 +650,25 @@ function addTransitLayers() {
   map.addLayer({ ...line, id: 'tr-light', minzoom: MAP_ZOOM.lightRail, filter: ['==', ['get', 'cat'], 'light'], paint: { 'line-color': ['get', 'lc'], 'line-width': lightWidth, 'line-opacity': 0.85 } }, before);
   map.addLayer({ ...line, id: 'tr-heavy-casing', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.casing], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 8], 'line-opacity': 0.9 } }, before);
   map.addLayer({ ...line, id: 'tr-heavy', filter: ['==', ['get', 'cat'], 'heavy'], paint: { 'line-color': ['get', 'lc'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.6, 12, 3, 16, 5], 'line-opacity': 0.94 } }, before);
+  // A soft halo lifts the chosen line above a busy regional map without recoloring agency routes.
+  // Only the selected route receives this GPU line-blur effect.
+  map.addLayer({ ...line, id: 'tr-selected-halo', filter: ['==', ['get', 'key'], ''],
+    paint: { 'line-color': ['get', 'lc'],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 8, 9, 12, 14, 16, 19],
+      'line-opacity': state.mapMode === 'satellite' ? 0.28 : 0.18, 'line-blur': 5 } }, before);
   map.addLayer({ ...line, id: 'tr-selected-casing', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['case', ['==', ['get', 'bright'], 1], t.brightCasing, t.casing], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 5, 12, 8, 16, 11] } }, before);
   map.addLayer({ ...line, id: 'tr-selected', filter: ['==', ['get', 'key'], ''], paint: { 'line-color': ['get', 'lc'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 12, 5, 16, 7] } }, before);
 
   const jl = { type: 'line', source: 'journey', layout: { 'line-cap': 'round', 'line-join': 'round' } };
   const jOpacity = ['case', ['==', ['get', 'dim'], 1], 0.35, 1];
   const jWidth = (base, focus) => ['case', ['==', ['get', 'focus'], 1], focus, base];
+  // A low-opacity glow is reserved for actual mapped transit geometry. Never glow a
+  // fallback straight line or an approximate transit alignment as if it were verified.
+  map.addLayer({ ...jl, id: 'journey-glow',
+    filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 0]],
+    paint: { 'line-color': ['get', 'color'], 'line-width': jWidth(17, 23),
+      'line-opacity': ['case', ['==', ['get', 'dim'], 1], 0.045, 0.16],
+      'line-blur': 6 } });
   map.addLayer({ ...jl, id: 'journey-casing', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': ['get', 'casing'], 'line-width': jWidth(9, 12), 'line-opacity': jOpacity } });
   map.addLayer({ ...jl, id: 'journey-transit', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 0]], paint: { 'line-color': ['get', 'color'], 'line-width': jWidth(5.5, 8), 'line-opacity': jOpacity } });
   map.addLayer({ ...jl, id: 'journey-approx', filter: ['all', ['==', ['get', 'mode'], 'TRANSIT'], ['==', ['get', 'approx'], 1]], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': ['get', 'stroke'], 'line-width': jWidth(4, 6), 'line-opacity': jOpacity, 'line-dasharray': [2, 1.5] } });
@@ -663,6 +676,11 @@ function addTransitLayers() {
   map.addLayer({ ...jl, id: 'journey-drive', filter: ['==', ['get', 'mode'], 'CAR'], paint: { 'line-color': t.journeyDrive || t.ink, 'line-width': jWidth(4.5, 7), 'line-opacity': jOpacity } });
   map.addLayer({ ...jl, id: 'journey-walk-casing', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': t.casing, 'line-width': jWidth(6, 8), 'line-opacity': ['case', ['==', ['get', 'dim'], 1], 0.2, state.mapMode === 'standard' ? 0 : 0.6], 'line-dasharray': [0.2, 1.2] } });
   map.addLayer({ ...jl, id: 'journey-walk', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': t.journeyWalk, 'line-width': jWidth(3.5, 5), 'line-opacity': jOpacity, 'line-dasharray': [0.2, 2] } });
+  // Subtle transfer/boarding halos separate important waypoints from nearby stop dots.
+  // They are decorative only; all journey instructions remain available as text.
+  map.addLayer({ id: 'journey-stop-halo', type: 'circle', source: 'journey-points',
+    paint: { 'circle-radius': ['case', ['==', ['get', 'kind'], 'transfer'], 17, 13],
+      'circle-color': ['get', 'color'], 'circle-opacity': 0.14, 'circle-blur': 0.45 } });
   map.addLayer({ id: 'journey-stops', type: 'circle', source: 'journey-points', paint: { 'circle-radius': ['case', ['==', ['get', 'kind'], 'transfer'], 7, 5.5], 'circle-color': t.surface, 'circle-stroke-color': ['case', ['==', ['get', 'kind'], 'transfer'], t.ink, ['get', 'color']], 'circle-stroke-width': 3 } });
   map.addLayer({ id: 'journey-stop-labels', type: 'symbol', source: 'journey-point-labels', minzoom: 10.5, layout: { 'text-field': ['get', 'name'], 'text-font': state.glyphFont, 'text-size': 12.5, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': t.label, 'text-halo-color': t.halo, 'text-halo-width': 1.8 } });
 
@@ -747,6 +765,7 @@ function applyMapState() {
   map.setPaintProperty('tr-light-casing', 'line-opacity', dimmed ? 0 : 0.8);
 
   const selFilter = focusKey ? ['==', ['get', 'key'], focusKey] : ['==', ['get', 'key'], ''];
+  map.setFilter('tr-selected-halo', selFilter);
   map.setFilter('tr-selected-casing', selFilter);
   map.setFilter('tr-selected', selFilter);
 
@@ -802,7 +821,11 @@ function revealSelectedRoute(key) {
   cancelAnimationFrame(revealFrame);
   if (!map?.getLayer('tr-selected')) return;
   const info = idx.routes.get(key);
-  const clear = () => { map.setPaintProperty('tr-selected', 'line-gradient', null); map.setPaintProperty('tr-selected-casing', 'line-gradient', null); };
+  const clear = () => {
+    map.setPaintProperty('tr-selected', 'line-gradient', null);
+    map.setPaintProperty('tr-selected-casing', 'line-gradient', null);
+    map.setPaintProperty('tr-selected-halo', 'line-gradient', null);
+  };
   if (!info || prefersReducedMotion()) { clear(); return; }
   const color = mapLineColor(info.color);
   const casing = luminance(color) > 0.55 ? theme().brightCasing : theme().casing;
@@ -816,13 +839,14 @@ function revealSelectedRoute(key) {
     const head = Math.max(0.001, e);
     map.setPaintProperty('tr-selected', 'line-gradient', ['step', ['line-progress'], color, head, 'rgba(0,0,0,0)']);
     map.setPaintProperty('tr-selected-casing', 'line-gradient', ['step', ['line-progress'], casing, head, 'rgba(0,0,0,0)']);
+    map.setPaintProperty('tr-selected-halo', 'line-gradient', ['step', ['line-progress'], color, head, 'rgba(0,0,0,0)']);
     revealFrame = requestAnimationFrame(step);
   };
   revealFrame = requestAnimationFrame(step);
 }
 
 /* A new trip fades onto the map instead of appearing all at once. */
-const JOURNEY_LINE_LAYERS = ['journey-casing', 'journey-transit', 'journey-approx', 'journey-drive-casing', 'journey-drive', 'journey-walk'];
+const JOURNEY_LINE_LAYERS = ['journey-glow', 'journey-casing', 'journey-transit', 'journey-approx', 'journey-drive-casing', 'journey-drive', 'journey-walk'];
 function revealJourney() {
   const map = state.map;
   if (!map?.getLayer('journey-transit') || prefersReducedMotion()) return;
@@ -833,7 +857,8 @@ function revealJourney() {
     requestAnimationFrame(() => {
       if (!map.getLayer(id)) return;
       map.setPaintProperty(id, 'line-opacity-transition', { duration: 520, delay: 0 });
-      map.setPaintProperty(id, 'line-opacity', target);
+      map.setPaintProperty(id, 'line-opacity', id === 'journey-glow'
+        ? ['case', ['==', ['get', 'dim'], 1], 0.045, 0.16] : target);
     });
   }
 }
@@ -888,6 +913,9 @@ function journeyFeatures(itinerary) {
   const focus = state.focusLeg;
   const features = (itinerary.legs || []).map((leg, legIndex) => {
     let coords = leg.geometry?.coordinates;
+    // No synthetic walking or driving shortcut: a direct line between two coordinates
+    // is not a safe or navigable street path. Preserve textual directions instead.
+    if ((!Array.isArray(coords) || coords.length < 2) && !isTransit(leg)) return null;
     if (!Array.isArray(coords) || coords.length < 2) coords = [[leg.from?.lon, leg.from?.lat], [leg.to?.lon, leg.to?.lat]];
     coords = coords.filter(c => Number.isFinite(c?.[0]) && Number.isFinite(c?.[1]));
     if (coords.length < 2) return null;
@@ -908,6 +936,21 @@ function renderJourney() {
   const points = journeyPointFeatures(state.journey);
   map?.getSource('journey-points')?.setData(points);
   map?.getSource('journey-point-labels')?.setData(points);
+
+  // A small map key is shown only for visual information present in this itinerary.
+  // In particular, never suggest that a direct endpoint-to-endpoint line is a walkable path.
+  const legs = state.journey?.legs || [];
+  const mappedTransit = legs.some(l => isTransit(l) && !legShapeMissing(l));
+  const approximateTransit = legs.some(l => isTransit(l) && legShapeMissing(l));
+  const unmappedWalk = legs.some(l => ['WALK', 'CAR'].includes(l.mode) &&
+    (!Array.isArray(l.geometry?.coordinates) || l.geometry.coordinates.length < 2));
+  const key = $('#rgMapLegend');
+  if (key) {
+    key.hidden = !state.journey || !(mappedTransit || approximateTransit || unmappedWalk);
+    $('#rgMapMappedLegend').hidden = !mappedTransit;
+    $('#rgMapApproxLegend').hidden = !approximateTransit;
+    $('#rgMapWalkWarning').hidden = !unmappedWalk;
+  }
 }
 
 
