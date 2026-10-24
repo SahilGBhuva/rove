@@ -2910,20 +2910,32 @@ let capture = null;
 let voiceServer = null;   // null = unknown, true/false after probing /api/v2/transcribe
 let voiceUseLocal = false; // browser cloud recognition failed while online; use on-device instead
 const BrowserRecognition = () => window.SpeechRecognition || window.webkitSpeechRecognition || null;
-const VOICE_ERRORS = {
-  'not-allowed': 'Microphone access is off for this site. Type your destination instead. To use voice later, allow the microphone in your browser settings for this site.',
-  'service-not-allowed': 'Voice input is turned off in this browser. Type your destination instead.',
+/* One message per real cause. Each reads "Short title. What to do." and is shown as a compact
+ * inline status (voiceStatusHtml) and announced by voiceFail. The proxy re-checks the two facts an
+ * error code alone can't tell: an insecure (http) page, where browsers hide the microphone, and a
+ * device that is truly offline. Online-but-unreachable is never called "offline". */
+const VOICE_ERRORS = new Proxy({
+  'not-allowed': 'Microphone is blocked for this site. Allow it in site settings (the icon beside the web address), then try again.',
+  'service-not-allowed': 'Voice input is turned off in this browser. Type your destination, or turn on speech recognition in browser settings.',
   'no-speech': "I didn't hear anything. Try again, or type your destination.",
-  'audio-capture': 'No microphone was found. Type your destination instead.',
-  offline: "You're offline, so voice input can't reach a speech service. Type your destination instead.",
-  'voice-service': "Voice input isn't available in this browser yet. Type your destination below.",
-  'voice-busy': 'The voice service is busy. Try again in a moment, or type your destination.',
-  'voice-download': 'This browser can understand speech on your device after a one-time download.',
-  network: "Voice input isn't working in this browser right now. Type your destination below. Your keyboard's dictation key also works.",
+  'audio-capture': 'No microphone found. Connect one and try again, or type your destination.',
+  offline: "You're offline. Voice needs a connection, so type your destination instead.",
+  'voice-service': "Voice service isn't responding. Try again, or type your destination.",
+  'voice-busy': 'Voice service is busy. Try again in a moment, or type your destination.',
+  // Riders are never asked to download anything; if this code ever appears it reads as a service problem.
+  'voice-download': "Voice service isn't responding. Try again, or type your destination.",
+  network: "Couldn't reach the speech service. Try again, or type your destination. Your keyboard's dictation key also works.",
   aborted: 'Stopped listening.',
-  unsupported: "Voice input isn't available in this browser. Type your destination. Your keyboard's dictation key also works."
-};
-const PERMANENT_VOICE_ERRORS = ['not-allowed', 'service-not-allowed', 'unsupported', 'audio-capture', 'voice-download'];
+  unsupported: "This browser doesn't support voice input. Type your destination. Your keyboard's dictation key also works.",
+  insecure: "Voice needs a secure page. This page isn't on https, so the browser won't share the microphone. Type your destination instead."
+}, {
+  get(messages, code) {
+    if (typeof code !== 'string') return messages[code];
+    if (navigator.onLine === false && ['network', 'voice-service', 'voice-download'].includes(code)) return messages.offline;
+    if (window.isSecureContext === false && ['not-allowed', 'service-not-allowed', 'audio-capture', 'unsupported', 'voice-service', 'voice-download'].includes(code)) return messages.insecure;
+    return messages[code];
+  }
+});
 
 async function probeVoiceServer() {
   try {
@@ -2950,7 +2962,23 @@ function voiceStatusHtml() {
   if (v.state === 'understanding') return `<div class="rg-listening rg-vx" data-vx="understanding" role="status">${thinking}${text('Understanding…')}</div>`;
   if (v.state === 'installing') return `<div class="rg-listening rg-vx" data-vx="installing" role="status">${thinking}${text('Downloading on-device voice…')}</div>`;
   if (v.state === 'heard') return `<p class="rg-heard rg-vx" data-vx="heard"${v.matches === 0 ? ' data-tone="none"' : ''}><span class="rg-vx-visual is-heard" aria-hidden="true"><svg class="rg-vx-glyph" viewBox="0 0 24 24">${v.matches === 0 ? '<path d="M12 7.5v5.5M12 16.5v.01"/>' : '<path d="m6.5 12.5 3.6 3.6 7.4-8.2"/>'}</svg></span><span class="rg-vx-text">Heard <q>${esc(v.heard)}</q>${v.matches === 0 ? '. No matches; try again or type.' : '. Choose the right match below.'}</span></p>`;
-  if (v.state === 'error') return `<div class="rg-voice-error rg-vx" data-vx="error" role="alert"><span class="rg-vx-visual is-error" aria-hidden="true"><svg class="rg-vx-glyph" viewBox="0 0 24 24"><path d="M12 7.5v5.5M12 16.5v.01"/></svg></span><p class="rg-vx-text">${esc(VOICE_ERRORS[v.error] || "Voice input didn't work. Try again, or type your destination.")}</p>${v.error === 'voice-download' || !PERMANENT_VOICE_ERRORS.includes(v.error) ? actions(v.error === 'voice-download' ? button('voice-install', 'Download on-device voice', true) : '', PERMANENT_VOICE_ERRORS.includes(v.error) ? '' : button(retry, 'Try again', true)) : ''}</div>`;
+  if (v.state === 'error') {
+    /* Compact inline status: one small icon, the cause, and what to do. It never covers the form:
+     * Retry only when retrying can help, and "Type instead" moves focus to the destination field
+     * (a native in-page link, so it works with keyboard, switch and screen reader alike). */
+    const insecure = window.isSecureContext === false;
+    const offline = navigator.onLine === false;
+    const cause = insecure && ['not-allowed', 'service-not-allowed', 'audio-capture', 'unsupported', 'voice-service', 'voice-download'].includes(v.error) ? 'insecure'
+      : offline && ['offline', 'network', 'voice-service', 'voice-download'].includes(v.error) ? 'offline' : (v.error || 'unknown');
+    const message = String(VOICE_ERRORS[v.error] || "Voice input didn't work. Try again, or type your destination.");
+    const cut = message.search(/[.!?]\s/);
+    const title = cut > 0 ? message.slice(0, cut + 1) : message;
+    const detail = cut > 0 ? message.slice(cut + 2) : '';
+    const canRetry = !['insecure', 'offline', 'unsupported', 'service-not-allowed'].includes(cause);
+    const typeInstead = currentView().name === 'plan' ? '<a class="rg-text-button rg-vx-button rg-vx-type" href="#planTo">Type instead</a>' : '';
+    const warn = '<svg class="rg-vx-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg>';
+    return `<div class="rg-voice-error rg-vx rg-vx-inline" data-vx="error" data-cause="${esc(cause)}" role="alert"><span class="rg-vx-visual is-error" aria-hidden="true">${warn}</span><p class="rg-vx-text"><strong class="rg-vx-title">${esc(title)}</strong>${detail ? ` <span class="rg-vx-detail">${esc(detail)}</span>` : ''}</p>${canRetry || typeInstead ? actions(canRetry ? button(retry, 'Try again', true) : '', typeInstead) : ''}</div>`;
+  }
   return '';
 }
 /* Patch the voice status in place: re-rendering would move screen-reader focus (and make

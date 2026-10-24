@@ -115,10 +115,48 @@
 .rg-heard.rg-vx q { color: var(--rg-ink); font-weight: 750; }
 .rg-heard.rg-vx[data-tone="none"] .rg-vx-visual { background: var(--rg-warn-bg); color: var(--rg-warn); }
 
-/* Error: same card in the alert palette. */
-.rg-voice-error.rg-vx { background: var(--rg-bad-bg); border-color: color-mix(in srgb, var(--rg-bad) 28%, transparent); color: var(--rg-bad); font-size: .9375rem; line-height: 1.45; }
-.rg-vx-visual.is-error { border-radius: 50%; background: var(--rg-bad); color: var(--rg-bad-bg); }
-.rg-voice-error.rg-vx .rg-vx-text { display: block; font-weight: 600; }
+/* Error: a compact inline status, not a panel. A small alert icon, the cause in one line (the
+ * "what to do" detail may wrap), then compact 48px actions. Neutral surface with ink text so it
+ * reads calmly and keeps >= 4.5:1 contrast in both themes; only the icon and a hairline carry red.
+ * It sits in the voice row's slot and never overlays or blocks the directions form. */
+.rg-voice-error.rg-vx-inline {
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 10px;
+  row-gap: 8px;
+  min-height: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--rg-surface);
+  border: 1px solid color-mix(in srgb, var(--rg-bad) 32%, var(--rg-line));
+  box-shadow: none;
+  color: var(--rg-ink);
+  font-size: .9375rem;
+  line-height: 1.4;
+}
+.rg-voice-error.rg-vx-inline .rg-vx-visual.is-error {
+  width: 22px; height: 22px; margin-top: 1px;
+  border-radius: 50%;
+  background: none;
+  color: var(--rg-bad);
+}
+.rg-voice-error.rg-vx-inline .rg-vx-glyph { width: 22px; height: 22px; stroke-width: 2; }
+.rg-voice-error.rg-vx-inline .rg-vx-text { display: block; margin: 0; font-weight: 520; color: var(--rg-ink-2); }
+.rg-voice-error.rg-vx-inline .rg-vx-title { font-size: .9375rem; font-weight: 720; color: var(--rg-ink); }
+.rg-voice-error.rg-vx-inline .rg-vx-detail { font-size: .9375rem; font-weight: 520; color: var(--rg-ink-2); }
+.rg-voice-error.rg-vx-inline .rg-vx-actions { grid-column: 2 / -1; gap: 8px; }
+.rg-voice-error.rg-vx-inline .rg-vx-button {
+  flex: 0 0 auto;
+  min-height: 48px; min-width: 48px; padding: 0 16px;
+  font-size: .9375rem;
+}
+.rg-voice-error.rg-vx-inline .rg-vx-button:focus-visible { outline: 3px solid var(--rg-focus, var(--rg-green)); outline-offset: 2px; }
+/* Narrow phones: actions start under the icon so both fit on one row. */
+@media (max-width: 359px) { .rg-voice-error.rg-vx-inline .rg-vx-actions { grid-column: 1 / -1; } }
+/* Older full-card error markup (if any other view renders it) keeps the alert palette. */
+.rg-voice-error.rg-vx:not(.rg-vx-inline) { background: var(--rg-bad-bg); border-color: color-mix(in srgb, var(--rg-bad) 28%, transparent); color: var(--rg-bad); font-size: .9375rem; line-height: 1.45; }
+.rg-voice-error.rg-vx:not(.rg-vx-inline) .rg-vx-visual.is-error { border-radius: 50%; background: var(--rg-bad); color: var(--rg-bad-bg); }
+.rg-voice-error.rg-vx:not(.rg-vx-inline) .rg-vx-text { display: block; font-weight: 600; }
 
 /* ---- Rove's own speech: a calm, elevated bar, distinct from listening ---- */
 .speech-bar {
