@@ -3634,11 +3634,15 @@ function guideTick() {
   const due = Guide.dueReminders(nav.gs, navNow(nav), { clock: rgClock });
   if (due.length) {
     for (const r of due) nav.gs = Guide.reduce(nav.gs, { type: 'REMINDED', key: r.key });
-    const r = due[due.length - 1];
+    // Exit and cancellation warnings outrank preparation reminders when several become due.
+    const priority = { exit: 4, uncertain: 3, prepare: 2 };
+    const r = [...due].sort((a, b) => (priority[b.level] || 1) - (priority[a.level] || 1))[0];
     nav.alert = { ...r, index: nav.gs.index };
     accessVibrate(r.level === 'exit' ? [250, 120, 250, 120, 250] : r.level === 'uncertain' ? [450] : [150, 100, 150]);
     const out = livePacer ? livePacer.offer({ key: r.key, message: r.message, priority: r.level === 'prepare' ? 1 : 2 }, Date.now()) : r;
-    if (out) guideSay(out.message);
+    // Critical guidance is spoken even when routine speech is disabled. The speech
+    // service replaces older utterances rather than stacking overlapping messages.
+    if (out) guideSay(out.message, { force: r.level === 'exit' || r.level === 'uncertain' });
     saveTrip(nav);
   }
   liveTick(nav);
@@ -4458,7 +4462,10 @@ function handleAction(el) {
       nav.showHelp = !nav.showHelp;
       render();
       (nav.showHelp ? document.getElementById('rgHelpHeading') : $('.rg-dock .rg-confirm'))?.focus({ preventScroll: true });
-      if (nav.showHelp) document.getElementById('rgHelp')?.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      if (nav.showHelp) {
+        document.getElementById('rgHelp')?.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+        guideSay('Help is open. You can repeat your instruction, go back one step, find another route, or check where you are. Close Help to confirm your current step.', { force: true });
+      } else guideSay('Help closed. ' + guideSpeech(guidePhase(nav)), { force: true });
       break;
     }
     case 'rg-back': { const nav = state.nav; if (!nav?.gs?.history.length) break; nav.gs = Guide.reduce(nav.gs, { type: 'BACK', now: navNow(nav) }); nav.showHelp = false; guideEnter(nav, 'Went back one step.'); break; }
