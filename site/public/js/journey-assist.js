@@ -31,6 +31,11 @@
       return {...current,pending:null,reason:'location-uncertain'};
     const next = stops[prev+1];
     if (!next) return current;
+    // Stops may be only a few metres apart. Never count another stop from the
+    // same stationary GPS position: require separation from the previous stop.
+    // Close stops stay unknown until the rider explicitly confirms progress.
+    if (distanceMetres(fix.point,stops[prev]) <= Math.max(80,fix.accuracy*2.5))
+      return {...current,pending:null,reason:'still-near-previous-stop'};
     const distance = distanceMetres(fix.point,next);
     if (distance > Math.max(75,fix.accuracy*2)) return {...current,pending:null,reason:'not-near-next-stop'};
     const pending = current.pending;

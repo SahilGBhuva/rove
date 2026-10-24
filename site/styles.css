@@ -1330,3 +1330,5 @@ body .sheet-grabber{display:none}
   body.map-visible .mobile-map-close{display:block!important;position:fixed;z-index:25;top:max(18px,env(safe-area-inset-top));left:16px;min-height:54px;padding:12px 18px;border-radius:12px;background:#fff;color:#101a29;font-weight:700;box-shadow:0 2px 12px rgba(0,0,0,.18)}
 }
 .nav-show-map{width:100%;margin:4px 0 12px;min-height:52px}
+
+.nav-offline{border:2px solid currentColor;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:16px;line-height:1.5}.nav-primary-actions [data-action='nav-voice']{min-height:52px}
