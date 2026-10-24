@@ -1,1 +1,23 @@
-/* Rove redesign: live. Owned by one workstream; see docs/design/OWNERSHIP-V2.md. */
+/* Rove live tracking panel (#rgLive): live countdown, vehicle position, GPS distance. Owned by the lead. */
+.rg-live { margin-top: 16px; padding: 14px 16px; border-radius: 16px; background: var(--rg-surface); border: 1.5px solid var(--rg-line); }
+.rg-live[hidden] { display: none; }
+.rg-live-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rg-live-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; border-radius: 999px; background: var(--rg-tint); color: var(--rg-green); font-size: .8125rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.rg-live-badge i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent); }
+.rg-live-badge.is-gps { background: color-mix(in srgb, var(--rg-ink-2) 12%, transparent); color: var(--rg-ink-2); }
+.rg-live-label { font-size: 1rem; font-weight: 650; color: var(--rg-ink-2); }
+.rg-live-time { margin-left: auto; display: inline-flex; align-items: baseline; gap: 4px; font-variant-numeric: tabular-nums; color: var(--rg-ink); }
+.rg-live-time b { font-size: 2.25rem; line-height: 1; font-weight: 800; letter-spacing: -.02em; }
+.rg-live-time small { font-size: 1rem; font-weight: 700; color: var(--rg-ink-2); }
+.rg-live-time.is-distance b { font-size: 1.5rem; }
+.rg-live-detail { margin: 10px 0 0; font-size: 1.0625rem; line-height: 1.4; color: var(--rg-ink); }
+.rg-live-next { margin: 6px 0 0; font-size: .9375rem; color: var(--rg-ink-2); }
+.rg-live-meta { margin: 8px 0 0; font-size: .8125rem; color: var(--rg-ink-2); }
+.rg-live-quiet, .rg-live-alert { display: flex; gap: 10px; align-items: flex-start; margin: 0; font-size: 1rem; line-height: 1.45; color: var(--rg-ink-2); }
+.rg-live-alert { color: var(--rg-bad); font-weight: 700; }
+.rg-live-quiet .rg-icon, .rg-live-alert .rg-icon { margin-top: 1px; }
+@media (prefers-reduced-motion: no-preference) {
+  .rg-live-badge:not(.is-gps) i { animation: rg-live-pulse 2.4s var(--e-out) 3; }
+}
+@keyframes rg-live-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent); } 80%, 100% { box-shadow: 0 0 0 8px transparent; } }
+@media (prefers-reduced-motion: reduce) { .rg-live-badge i { animation: none; } }
