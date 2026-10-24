@@ -3140,8 +3140,8 @@ function handleAction(el) {
       if (!nav) break;
       if (nav.demo) { guideSay('In the demo, Rove does not use your location. On a real trip, Find another route plans again from where you are.', { force: true }); break; }
       if (!navigator.onLine) { guideSay('You are offline, so Rove cannot find a new route. Ask transit staff, or try again when you have a connection.', { force: true }); break; }
-      if (!nav.fix) { guideSay('Rove needs your location to plan from here. Turn on location for this site, or end the trip and plan again from a stop name.', { force: true }); break; }
-      guideSay('Finding another route from your location.', { force: true });
+      if (!nav.fix || Date.now() - nav.fix.time > 60000 || !Number.isFinite(nav.fix.accuracy) || nav.fix.accuracy > 100) { guideSay('Rove needs a recent, reasonably accurate location to plan from here. Wait for a better GPS signal, or plan again using a stop name. Do not use the map pin to decide where to cross.', { force: true }); break; }
+      guideSay('Finding another route from your approximate location. Check the first boarding stop with signs or staff.', { force: true });
       navReroute(nav);
       break;
     }

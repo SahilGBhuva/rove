@@ -163,6 +163,7 @@
     }
     if (phase.kind === 'ride') {
       const parts = [`Ride to ${phase.place}.`];
+      if (phase.connectMin != null) parts.push('A transfer follows this stop. Wait until the vehicle stops and confirm the stop announcement before getting off.');
       if (phase.stops) parts.push(`${plural(phase.stops, 'stop')}.`);
       if (phase.arrives != null) parts.push(`Arrival ${clock(phase.arrives)}, ${phase.live ? 'live time' : 'by the schedule'}.`);
       if (phase.connectMin != null) parts.push(phase.connectMin <= 0 ? 'Your connection may already be missed. Open Help to find another route from your location.' : phase.connectMin < 7 ? `Only ${plural(phase.connectMin, 'minute')} scheduled for the transfer. You can open Help and find another route from your location if you need more time.` : `About ${plural(phase.connectMin, 'minute')} scheduled for your transfer. Verify the next boarding point with station staff.`);

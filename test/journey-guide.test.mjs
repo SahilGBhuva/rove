@@ -228,3 +228,25 @@ test('agency vocabulary covers Muni modes, VTA bus and Caltrain train numbers', 
   assert.equal(G.vehicle({ agencyId: 'caltrain', transitMode: 'RAIL', routeName: 'Local', tripShortName: '128' }).name, 'Caltrain Local train 128');
   assert.match(G.vehicle({ agencyId: 'caltrain', tripShortName: '128' }).check, /Confirm train 128/);
 });
+
+
+test('transfer speech names the change, connection window and confirmation requirement', () => {
+  const guide = G.buildGuide(synth());
+  const ridePhase = guide.phases.find(p => p.kind === 'ride' && p.connectMin != null);
+  const spoken = G.speech(ridePhase);
+  assert.match(spoken, /A transfer follows this stop/);
+  assert.match(spoken, /confirm the stop announcement before getting off/);
+  assert.match(spoken, /scheduled for the transfer/);
+  assert.match(spoken, /choose I've got off/);
+});
+
+test('very tight transfer speech suggests finding another route without automatically advancing', () => {
+  const it = synth();
+  it.legs[3] = railLeg({ startTime: iso(T0 + 26 * MIN) });
+  const guide = G.buildGuide(it);
+  const firstRide = guide.phases.find(p => p.kind === 'ride');
+  assert.match(G.speech(firstRide), /Only 1 minute scheduled for the transfer/);
+  assert.match(G.speech(firstRide), /find another route from your location/);
+  const state = { ...G.createState(guide, T0), index: guide.phases.indexOf(firstRide) };
+  assert.equal(G.reduce(state, { type: 'GPS_NEAR_STOP', now: T0 + 26 * MIN }).index, state.index);
+});
