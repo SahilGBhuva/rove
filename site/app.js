@@ -1907,9 +1907,9 @@ function openPlan({ from, to } = {}) {
 function viewPlan() {
   const plan = state.plan;
   const status = state.planStatus;
-  const field = (id, which, label) => {
+  const field = (id, which, label, tag) => {
     const value = plan[which]?.name || plan.draft[which] || '';
-    return `<label class="plan-field${plan.errorField === which ? ' invalid' : ''}"><span class="marker"><i></i></span><span class="visually-hidden">${label}</span>
+    return `<label class="plan-field plan-field-${which}${plan.errorField === which ? ' invalid' : ''}"><span class="marker" aria-hidden="true"><i></i></span><span class="plan-field-tag">${tag}<span class="visually-hidden">, ${label.toLowerCase()}</span></span>
     <input id="${id}" data-plan-field="${which}" value="${esc(value)}" placeholder="${label}" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="${which === 'to' ? 'search' : 'next'}" role="combobox" aria-autocomplete="list" aria-controls="planSuggest" aria-expanded="${plan.focus === which}" ${plan.errorField === which ? 'aria-invalid="true" aria-describedby="planError"' : ''} /></label>`;
   };
   const hasFrom = Boolean(plan.from || plan.draft.from.trim());
@@ -1920,25 +1920,25 @@ function viewPlan() {
   const access = driveSupported(plan.access) ? plan.access : 'WALK';
   let submit;
   if (status && !status.available) submit = '';
-  else if (coverage) submit = `<p class="plan-coverage" role="status">${esc(coverage.text)}</p>`;
-  else if (hasFrom && hasTo) submit = `<button type="submit" class="button primary block plan-submit" ${plan.loading ? 'aria-busy="true" disabled' : ''}>${plan.loading ? 'Finding routes' : 'Find routes'}</button>`;
+  else if (coverage) submit = `<p class="plan-coverage" role="status">${rgIcon('info')}<span>${esc(coverage.text)}</span></p>`;
+  else if (hasFrom && hasTo) submit = `<button type="submit" class="button primary block plan-submit" ${plan.loading ? 'aria-busy="true" disabled' : ''}><span>${plan.loading ? 'Finding routes' : 'Find routes'}</span>${plan.loading ? '<span class="plan-submit-dots" aria-hidden="true"><i></i><i></i><i></i></span>' : rgIcon('arrow')}</button>`;
   else submit = `<p class="caption plan-hint">${hasFrom ? 'Enter a destination address, place, or stop to see routes.' : hasTo ? 'Enter a starting address, place, or stop to see routes.' : 'Enter a starting point and a destination. Any Bay Area address, place, or stop works.'}</p>`;
   const modeButton = (key, icon, label) => `<button type="button" class="seg-option mode-option" data-action="first-mile" data-first-mile="${key}" aria-pressed="${access === key}" ${key === 'CAR_PARKING' && !driveOk ? 'aria-disabled="true" aria-describedby="driveNote"' : ''}>${icon}<span>${label}</span></button>`;
   return `${backHeader()}
-    <div class="hero" style="padding-bottom:8px"><h1 class="title-2">Directions</h1></div>
+    <div class="hero plan-hero"><h1 class="title-2">Directions</h1></div>
     <div id="planNotice">${planNoticeHtml()}</div>
     <div class="rg-voice-row"><button type="button" class="rg-mic" data-action="voice-destination" aria-label="Speak destination">${MIC_ICON}<span>Speak</span></button><div class="rg-voice-slot">${voiceStatusHtml()}</div></div>
     <form class="plan-form${plan.focus ? ' suggesting' : ''}" data-plan-form novalidate>
       <div class="plan-fields">
-        ${field('planFrom', 'from', 'Starting point')}
-        ${field('planTo', 'to', 'Destination')}
+        ${field('planFrom', 'from', 'Starting point', 'From')}
+        ${field('planTo', 'to', 'Destination', 'To')}
         <button type="button" class="swap-button" data-action="plan-swap" aria-label="Swap starting point and destination">${ICONS.swap}</button>
       </div>
       <div id="planSuggest" class="plan-suggest" role="listbox" aria-label="Suggestions"></div>
       <div class="plan-body">
         ${coverage ? '' : `<div class="plan-options">
           ${driveOk || dropOk ? `<div class="segmented mode-switch${dropOk ? ' three' : ''}" role="group" aria-label="Getting to transit">${modeButton('WALK', MODE_ICONS.walk, 'Walk')}${driveOk ? modeButton('CAR_PARKING', MODE_ICONS.car, 'Drive') : ''}${dropOk ? modeButton('CAR_DROP_OFF', MODE_ICONS.car, 'Drop-off') : ''}</div>` : ''}
-          <label class="time-select"><span class="visually-hidden">When</span><select id="planTimeMode">
+          <label class="time-select">${rgIcon('clock')}<span class="visually-hidden">When</span><select id="planTimeMode">
             <option value="now" ${plan.timeMode === 'now' ? 'selected' : ''}>Leave now</option>
             <option value="depart" ${plan.timeMode === 'depart' ? 'selected' : ''}>Depart at</option>
             <option value="arrive" ${plan.timeMode === 'arrive' ? 'selected' : ''}>Arrive by</option>
@@ -1950,7 +1950,7 @@ function viewPlan() {
         ${access === 'CAR_DROP_OFF' ? `<p class="caption plan-hint">Rove plans a drive to a street near the station, where you are dropped off, then transit from there. ${driveLimitText()}</p>` : ''}`}
         ${submit}
         ${plan.loading ? '<ul class="itineraries skeleton-list" aria-hidden="true">' + '<li><div class="itinerary"><span class="sk sk-line"></span><span class="sk sk-bar"></span><span class="sk sk-line short"></span></div></li>'.repeat(3) + '</ul>' : ''}
-        ${plan.error ? `<div class="plan-error-group"><p class="empty plan-error" id="planError" role="alert">${esc(plan.error)}</p>${plan.noServiceWindow && plan.later?.length ? `<button class="button secondary plan-later" type="button" data-action="plan-show-later">Show the ${esc(clock(new Date(plan.later[0].startTime)))} trip</button>` : plan.noServiceWindow && plan.timeMode === 'now' ? '<button class="button secondary plan-later" type="button" data-action="plan-next-morning">Try tomorrow at 8:15 AM</button>' : ''}</div>` : ''}
+        ${plan.error ? `<div class="plan-error-group"><p class="empty plan-error" id="planError" role="alert">${rgIcon('info')}<span>${esc(plan.error)}</span></p>${plan.noServiceWindow && plan.later?.length ? `<button class="button secondary plan-later" type="button" data-action="plan-show-later">Show the ${esc(clock(new Date(plan.later[0].startTime)))} trip</button>` : plan.noServiceWindow && plan.timeMode === 'now' ? '<button class="button secondary plan-later" type="button" data-action="plan-next-morning">Try tomorrow at 8:15 AM</button>' : ''}</div>` : ''}
       </div>
     </form>`;
 }
@@ -4224,7 +4224,8 @@ function placeOptionRow(p, action, icon, extra = '') {
   const data = Object.entries({ lat: p.lat, lon: p.lon, name: p.name, detail: p.detail || '', kind: p.kind, agency: p.agency || '', stop: p.stop || '', layer: p.layer || '' }).map(([k, v]) => `data-p-${k}="${esc(v)}"`).join(' ');
   const fixedLabel = p.label === 'Home' || p.label === 'Work';
   const meta = fixedLabel ? [p.name, p.detail].filter(Boolean).join(' · ') : p.detail || (p.kind === 'stop' ? AGENCY_SHORT[p.agency] || '' : '');
-  return `<li><button type="button" class="row result place-row" data-action="${action}" ${data} ${extra}><span class="place-icon ${icon === 'saved' ? 'is-saved' : ''}">${PLACE_ICON[icon] || PLACE_ICON.place}</span><span class="row-main"><span class="row-title">${esc(p.label === 'Home' || p.label === 'Work' ? p.label : p.name)}</span>${meta ? `<span class="row-meta">${esc(meta.replace(/ · $/, ''))}</span>` : ''}</span></button></li>`;
+  const glyph = { recent: rgIcon('clock'), place: rgIcon('pin') }[icon] || PLACE_ICON[icon] || rgIcon('pin');
+  return `<li><button type="button" class="row result place-row" data-action="${action}" ${data} ${extra}><span class="place-icon is-${icon in PLACE_ICON ? icon : 'place'}" aria-hidden="true">${glyph}</span><span class="row-main"><span class="row-title">${esc(p.label === 'Home' || p.label === 'Work' ? p.label : p.name)}</span>${meta ? `<span class="row-meta">${esc(meta.replace(/ · $/, ''))}</span>` : ''}</span></button></li>`;
 }
 
 function placeFromRow(el) {
@@ -4321,7 +4322,7 @@ function updatePlanSuggestions() {
   const sections = [];
   const top = [];
   if (currentLocationPlace() && other?.kind !== 'location' && (!q || 'your location'.startsWith(q.toLowerCase()))) top.push(placeOptionRow({ kind: 'location', name: 'Your location', lat: state.userLocation[1], lon: state.userLocation[0] }, 'plan-pick-location', 'location'));
-  else if (!state.userLocation && !q && 'geolocation' in navigator) top.push(`<li><button type="button" class="row result place-row" data-action="plan-locate"><span class="place-icon">${PLACE_ICON.location}</span><span class="row-main"><span class="row-title">Use my location</span><span class="row-meta">Your browser will ask for permission</span></span></button></li>`);
+  else if (!state.userLocation && !q && 'geolocation' in navigator) top.push(`<li><button type="button" class="row result place-row" data-action="plan-locate"><span class="place-icon is-location" aria-hidden="true">${PLACE_ICON.location}</span><span class="row-main"><span class="row-title">Use my location</span><span class="row-meta">Your browser will ask for permission</span></span></button></li>`);
   for (const [p, icon] of matchingPersonalPlaces(q, q ? 3 : 6)) top.push(placeOptionRow(p, 'plan-place', icon));
   if (top.length) sections.push(`<ul class="rows">${top.join('')}</ul>`);
   let stops = [];
@@ -4329,14 +4330,23 @@ function updatePlanSuggestions() {
     const localMatches = searchNetwork(q, { routes: false, stopLimit: 4 });
     stops = localMatches.stops;
     if (localMatches.correction) sections.push(`<p class="search-correction" role="status">Showing stops for <strong>${esc(localMatches.correction)}</strong></p>`);
-    if (stops.length) sections.push(`<section class="section suggest-section"><h2 class="label">Stops and stations</h2><ul class="rows">${stops.map(({ a, s }) => `<li><button type="button" class="row result" data-action="plan-pick" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}">${badgesFor(sortRoutes(routesForStop(a.id, s.id)), 3)}<span class="row-main"><span class="row-title">${highlight(s.n, q)}</span><span class="row-meta">${esc(AGENCY_SHORT[a.id])}</span></span></button></li>`).join('')}</ul></section>`);
+    // One icon column for every row; the lines serving a stop sit on a single line under its name.
+    const stopRow = ({ a, s }) => {
+      const seen = new Set();
+      const routes = sortRoutes(routesForStop(a.id, s.id)).filter(r => !seen.has(r.badge) && seen.add(r.badge));
+      const mode = routes.some(r => r.cat === 'heavy') || a.id === 'bart' || a.id === 'caltrain' ? 'train' : routes.some(r => r.cat === 'light') ? 'tram' : 'bus';
+      const max = 3;
+      const lines = routes.length ? `<span class="plan-lines"><span class="visually-hidden">, lines </span>${routes.slice(0, max).map(r => badgeHtml(r)).join('')}${routes.length > max ? `<span class="badge plan-more">+${routes.length - max}<span class="visually-hidden"> more</span></span>` : ''}</span>` : '';
+      return `<li><button type="button" class="row result place-row stop-row" data-action="plan-pick" data-agency="${esc(a.id)}" data-stop="${esc(s.id)}"><span class="place-icon is-stop" aria-hidden="true">${MODE_ICONS[mode]}</span><span class="row-main"><span class="row-title">${highlight(s.n, q)}</span><span class="row-meta plan-stop-meta"><span class="plan-agency">${esc(AGENCY_SHORT[a.id])}</span>${lines}</span></span></button></li>`;
+    };
+    if (stops.length) sections.push(`<section class="section suggest-section"><h2 class="label">Stops and stations</h2><ul class="rows">${stops.map(stopRow).join('')}</ul></section>`);
   }
   const places = autocomplete.target === plan.focus ? autocompleteSectionHtml('plan-place') : '';
   if (places) {
     if (!stationsLead(q, stops)) sections.splice(top.length ? 1 : 0, 0, places); else sections.push(places);
   }
-  if (q.length > 0 && q.length < 3 && !sections.length) sections.push('<p class="empty">Keep typing to search addresses and places.</p>');
-  if (window.innerWidth > 800) sections.push(`<ul class="rows"><li><button type="button" class="row result place-row" data-action="plan-map"><span class="place-icon">${PLACE_ICON.map}</span><span class="row-main"><span class="row-title">Choose on map</span><span class="row-meta">Tap any point on the map</span></span></button></li></ul>`);
+  if (q.length > 0 && q.length < 3 && !sections.length) sections.push('<p class="empty plan-suggest-quiet">Keep typing to search addresses and places.</p>');
+  if (window.innerWidth > 800) sections.push(`<ul class="rows plan-map-row"><li><button type="button" class="row result place-row" data-action="plan-map"><span class="place-icon is-map" aria-hidden="true">${PLACE_ICON.map}</span><span class="row-main"><span class="row-title">Choose on map</span><span class="row-meta">Tap any point on the map</span></span></button></li></ul>`);
   box.innerHTML = sections.join('');
 }
 
