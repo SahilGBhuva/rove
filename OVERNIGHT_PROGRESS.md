@@ -70,8 +70,15 @@ NOT verified: audible playback on a physical iPhone. Manual check:
 ### 7. Preview (current)
 https://rove-cac-preview-m4au73b38-sahilgbhuva.vercel.app. Vercel target "preview", verified through `vercel curl` to serve styles v33 / app v39 with the P0 fix.
 
+### 8. Voice input that works in every browser (commit d21b641)
+- Reported bug: "Voice input needs an internet connection" while online. Cause: Chromium-based browsers report `network` when their cloud speech service is unreachable (Brave, Electron apps, some Chromium builds), and Rove treated that as offline.
+- Now: record with MediaRecorder (iPhone Safari, Chrome, Firefox, Edge), auto-stop on a pause, then transcribe on the server with `openai/gpt-4o-transcribe` through Vercel AI Gateway (`api/v2/transcribe.mjs`, OIDC auth, Bay Area vocabulary prompt). If that is unavailable, Rove uses the browser recognizer (on-device retry or one-time download when its cloud fails), then typing.
+- Verified in the browser with a synthetic audio stream: recording, auto-stop, upload, "Heard …", focus on the first match; server unavailable → automatic browser fallback; `network` while online → honest message, focus on the field.
+- **Blocked on the account:** the deployed preview reaches AI Gateway with OIDC, but the Gateway answers `403 customer_verification_required`. The Vercel team must complete AI Gateway customer verification (billing) in the dashboard. Until then the preview uses the browser fallback. After verification no code change is needed; check with `vercel curl /api/v2/transcribe --deployment <url> -- -X POST ...`.
+- Preview: https://rove-cac-preview-hx7w8ktj6-sahilgbhuva.vercel.app
+
 ### Tests now
-`npm test`: 193 tests, 188 pass, 0 fail, 5 skipped (need OTP or a 511 key).
+`npm test`: 205 tests, 200 pass, 0 fail, 5 skipped (need OTP or a 511 key).
 
 ## Merge instructions (safe, no force-push)
 `feature/rove-a11y-journey-20261023` is based on `origin/integration/rove-accessible-preview` @ 03ec00c, which has not moved, so it fast-forwards.

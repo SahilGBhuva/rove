@@ -30,7 +30,7 @@ These describe the code in this repository. **[Student]** must mark which parts 
 3. **Agency-aware wording.** BART lines by colour, Caltrain service and train number, Muni bus / Metro train / cable car, VTA light rail vs bus, AC Transit bus, each with an appropriate way to verify the vehicle (for example, ask the driver to confirm the route number on buses). Missing direction or platform data is stated as missing, never guessed.
 4. **Reliable speech output** (`site/public/js/speech.js`). One speech path for the app that works around mobile WebKit problems: it speaks inside the tap, cancels only when busy, keeps utterances alive, chunks long text, resumes paused speech, and has a watchdog that reports speech that never starts instead of failing silently.
 5. **Screen-reader-safe updates.** Live information (countdowns, reminders, GPS quality, offline state) is patched in place, because re-rendering would move VoiceOver focus. After each confirmation, focus moves to the new instruction heading. Rove's own voice and the screen-reader live region are never used at the same time.
-6. **Voice destination entry** with visible and announced states (listening, what was heard, number of matches) and specific recovery for denied microphone, silence, no microphone, offline and unsupported browsers.
+6. **Voice destination entry that works in every browser.** Audio is recorded with MediaRecorder and ends automatically when the rider pauses (an adaptive noise-floor detector), then transcribed on the server by `openai/gpt-4o-transcribe` through Vercel AI Gateway with a prompt of Bay Area station names; the browser's own recognizer (including on-device) and typing are fallbacks. It has visible and announced states (listening, what was heard, number of matches) and specific recovery for denied microphone, silence, no microphone, offline and unsupported browsers.
 7. **Multi-criteria schedule planner** (`api/v2/experimental-plan.mjs`, `experiments/bay-router/route.mjs`, `rank.mjs`). Works from bundled GTFS timetables for all five agencies. It runs a transfer-bounded forward search, then a "leave as late as possible" pass, then Pareto filtering on arrival, transfers, walking and waits, then a documented generalized-cost ranking with detour detection. Transfers need a minimum buffer. When there is no practical service (for example overnight), it reports the next real departure instead of recommending an extreme trip.
 8. **Realtime plumbing** (`lib/realtime/*`, local server). Server-side 511 GTFS-Realtime fetching with caching, request budgeting and strict ID matching, so a prediction is never attached to the wrong trip. Match quality varies by agency (see Limitations).
 
@@ -50,7 +50,7 @@ These describe the code in this repository. **[Student]** must mark which parts 
 3. **Never guessing about boarding.** Phone GPS cannot tell which vehicle a rider is on, so auto-advancing on location could tell someone they are on the right train when they are not. The journey became a state machine where only the rider's confirmation moves it forward, and GPS only gives clearly labeled estimates.
 
 ## Testing evidence (23 October 2026)
-- `npm test`: 193 tests, 188 pass, 0 fail, 5 skipped. The skipped tests need a running OpenTripPlanner or live 511 key. Rerun before submitting and update these numbers.
+- `npm test`: 205 tests, 200 pass, 0 fail, 5 skipped. The skipped tests need a running OpenTripPlanner or live 511 key. Rerun before submitting and update these numbers.
 - Journey-guide tests use real scheduled journeys from the bundled timetables for BART, Muni, VTA, Caltrain and AC Transit, plus a Muni-to-BART transfer.
 - Routing regression matrix (`test/routing-quality.test.mjs`): Sunnyvale → Chase Center at 00:24 and 08:15, Sunnyvale → UC Berkeley, Powell → Oakland, single-agency trips for each agency, BART + AC Transit, cross-midnight, invalid coordinates, missing timetable day, long walk. Each itinerary is checked for time order, transfer buffers and no repeated stops.
 - Browser checks (desktop Chromium emulating a 390×844 phone): the full demo journey, voice entry with a simulated recognizer (success and denied microphone), route-choice speech, Stop speaking, and the overnight service-gap message. See `OVERNIGHT_PROGRESS.md` and `docs/qa/QA_REPORT.md`.
@@ -59,6 +59,7 @@ These describe the code in this repository. **[Student]** must mark which parts 
 ## Honest limitations
 - **Not a safety or mobility aid.** Rove does not detect obstacles, safe crossings, platform edges or which vehicle you are on. Walking distances in the preview are straight-line estimates, not verified paths.
 - **Schedule-only preview.** The deployed preview plans from published timetables. Live predictions need the local server with a 511 key, and even then coverage is uneven: Muni and AC Transit matched fully in a sampled feed, while VTA, Caltrain and BART are partial.
+- **Voice transcription service.** The server model needs AI Gateway enabled and verified on the Vercel account. Without it, Rove falls back to the browser's voice input, whose quality and availability vary.
 - **Browser limits.** A web app cannot control Siri or VoiceOver, and phones may pause web apps when locked. Vibration is not supported in iPhone Safari. Speech recognition availability varies by browser.
 - **Reminders are time-based.** Exit reminders use itinerary times. If a vehicle is late and there is no live data, a reminder can come early. Rove says "by the schedule" and tells riders to trust onboard announcements.
 - **Timetable window.** Bundled timetables cover 19–27 October 2026 and must be refreshed for later dates. Late-evening requests cannot yet see the next morning's first trips.
@@ -79,6 +80,7 @@ Open-source and third-party components:
 - `gtfs-realtime-bindings` (Apache-2.0); `graphql` (MIT, dev only)
 - OpenTripPlanner (LGPL), local full planner only
 - Atkinson Hyperlegible Next font (SIL Open Font License 1.1)
+- Speech to text: OpenAI gpt-4o-transcribe via Vercel AI Gateway (requires the Vercel account's AI Gateway verification; recordings are sent to the service and not stored by Rove)
 - Geocoding: Stadia Maps, with Photon by Komoot as a fallback
 - Transit data: 511.org, BART, SFMTA, VTA, AC Transit (CC BY 3.0), Caltrain. Rove is not affiliated with or endorsed by these agencies.
 
