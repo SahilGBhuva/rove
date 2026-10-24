@@ -77,3 +77,13 @@ test('voice works without sight: spoken prompts, sound cues, yes/no and start/ne
   const cap = readFileSync(new URL('../site/public/js/voice-capture.js', import.meta.url), 'utf8');
   assert.match(cap, /earcon \}\);/);
 });
+
+test('spoken requests are reduced to the place before searching', () => {
+  const src = app.match(/function spokenDestination[\s\S]*?\n}\n/)[0];
+  const spokenDestination = new Function(`${src}; return spokenDestination;`)();
+  assert.equal(spokenDestination('Take me to Fruitvale, BART'), 'Fruitvale, BART');
+  assert.equal(spokenDestination('I want to go to the Ferry Building, please.'), 'Ferry Building');
+  assert.equal(spokenDestination('How do I get to SFO?'), 'SFO');
+  assert.equal(spokenDestination('Going to Oakland'), 'Oakland');
+  assert.equal(spokenDestination('Lake Merritt'), 'Lake Merritt');
+});

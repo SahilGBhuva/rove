@@ -3816,10 +3816,17 @@ function voiceResultsReady() {
 }
 
 /* What happens with recognised words, whichever engine produced them. */
+/* "Take me to Fruitvale BART, please." -> "Fruitvale BART": people speak requests, search wants places. */
+function spokenDestination(words) {
+  return String(words || '').trim()
+    .replace(/^(?:hey rove,?\s*)?(?:(?:please\s+)?(?:take|bring|get) me to|(?:i (?:want|need|would like|'d like) to )?go to|(?:i(?:'m| am) )?going to|directions to|navigate to|how do i get to|route to|find)\s+(?:the\s+)?/i, '')
+    .replace(/[,.!?\s]+(?:please|thanks?|thank you)?[.!?]*$/i, '')
+    .trim();
+}
 function voiceHeard(words, demo) {
   if (voiceIntent) { const intent = voiceIntent; voiceIntent = null; state.plan.voice = null; updateVoiceSlot(); intent.handle(words); return; }
   const plan = state.plan;
-  const text = String(words || '').trim();
+  const text = spokenDestination(words) || String(words || '').trim();
   if (!text) { voiceFail('no-speech', demo); return; }
   if (demo) { plan.voice = null; startDemo(text); return; }
   plan.voice = { state: 'heard', heard: text };
