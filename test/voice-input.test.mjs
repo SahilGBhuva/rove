@@ -82,7 +82,8 @@ test('voice works without sight: spoken prompts, sound cues, yes/no and start/ne
   assert.match(app, /Say start to begin this route/);
   for (const cue of ["earcon('start')", "earcon('stop')", "earcon('ok')", "earcon('error')"]) assert.ok(app.includes(cue), cue);
   // Silence: Rove asks again (twice) before suggesting typing.
-  assert.match(app, /I didn't hear anything\. Where would you like to go\? Say it after the tone\./);
+  assert.match(app, /I didn't hear anything\. Where are you starting from\?/);
+  assert.match(app, /voiceJourneyStep === 'from'/);
   assert.match(app, /const VOICE_REASKS = 2;/);
   const cap = readFileSync(new URL('../site/public/js/voice-capture.js', import.meta.url), 'utf8');
   assert.match(cap, /earcon, unlock \}\);/);
@@ -107,4 +108,13 @@ test('Rove opens on one large Start button, then asks the destination out loud',
   const cap = readFileSync(new URL('../site/public/js/voice-capture.js', import.meta.url), 'utf8');
   assert.match(cap, /function unlock\(\)/);
   assert.doesNotMatch(cap, /ctx\?\.close/, 'the shared audio context stays open between recordings');
+});
+
+
+test('guided voice planning collects and confirms starting point before destination', () => {
+  assert.match(app, /Where are you starting from\? Say a place or my current location after the tone/);
+  assert.match(app, /function voiceContinueToDestination\(\)/);
+  assert.match(app, /plan\[which\] = null; plan\.draft\[which\] = text/);
+  assert.match(app, /requestAutocomplete\(text, which\)/);
+  assert.match(app, /pick === 'from' && voiceJourneyStep === 'from'/);
 });

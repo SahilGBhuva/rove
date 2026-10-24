@@ -3861,7 +3861,7 @@ async function probeVoiceServer() {
 function voiceStatusHtml() {
   const v = state.plan.voice;
   if (!v) return '';
-  const retry = currentView().name === 'demo' ? 'demo-speak' : 'voice-destination';
+  const retry = currentView().name === 'demo' ? 'demo-speak' : voiceJourneyStep === 'to' ? 'voice-retry-destination' : 'voice-destination';
   /* Every visual reflects real state: the bars move only from the live microphone level
    * (server mode); the browser recognizer gives no level, so it gets a ring instead. */
   const mic = '<svg class="rg-vx-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>';
@@ -3911,7 +3911,7 @@ function voiceResultsReady() {
   plan.voice = { state: 'heard', heard, matches: results.length };
   const slot = document.querySelector('.rg-voice-slot');
   if (slot) slot.innerHTML = voiceStatusHtml();
-  if (!results.length) { announceAccess(`Heard ${heard}. No matching places. Try again, or type your destination.`); return; }
+  if (!results.length) { announceAccess(`Heard ${heard}. No matching places. Try again, or type the place.`); return; }
   const first = results[0].querySelector('.row-title')?.textContent || results[0].textContent.trim();
   if (plan.voiceFlow) { voiceAskMatch(heard, 0); return; }
   announceAccess(`Heard ${heard}. ${plural(results.length, 'match', 'matches')}. First: ${first}. Choose one to confirm.`);
@@ -3940,9 +3940,14 @@ function voiceHeard(words, demo) {
   if (!text) { voiceFail('no-speech', demo); return; }
   if (demo) { plan.voice = null; startDemo(text); return; }
   plan.voice = { state: 'heard', heard: text };
-  plan.to = null; plan.draft.to = text; plan.query = text; plan.focus = 'to'; plan.voicePending = text;
+  const which = voiceJourneyStep === 'from' ? 'from' : 'to';
+  if (which === 'from' && /^(?:(?:my|your|current)\s+)?(?:current\s+)?location$|^here$|^where i am$/i.test(text.replace(/[.!?]+$/, ''))) {
+    if (currentLocationPlace()) { plan.from = currentLocationPlace(); plan.draft.from = ''; plan.voice = null; render(); voiceContinueToDestination(); return; }
+    plan.voice = null; announceAccess('Requesting your location. Your browser may ask for permission.'); locate({ thenPick: 'from' }); return;
+  }
+  plan[which] = null; plan.draft[which] = text; plan.query = text; plan.focus = which; plan.voicePending = text;
   render();
-  requestAutocomplete(text, 'to');
+  requestAutocomplete(text, which);
   updatePlanSuggestions();
   if (autocomplete.status !== 'loading') voiceResultsReady();
   setTimeout(voiceResultsReady, 3000); // geocoder slow or offline: announce local stop matches anyway
@@ -3961,7 +3966,7 @@ function voiceFail(error, demo) {
   const plan = state.plan;
   if (error === 'no-speech' && !voiceIntent && voiceSilences < VOICE_REASKS) {
     voiceSilences++;
-    voiceAgain(demo, demo ? "I didn't hear anything. Say Lake Merritt after the tone." : "I didn't hear anything. Where would you like to go? Say it after the tone.");
+    voiceAgain(demo, demo ? "I didn't hear anything. Say Lake Merritt after the tone." : voiceJourneyStep === 'from' ? "I didn't hear anything. Where are you starting from?" : "I didn't hear anything. Where would you like to go?");
     return;
   }
   voiceSilences = 0;
@@ -3970,7 +3975,7 @@ function voiceFail(error, demo) {
   plan.voice = { state: 'error', error };
   updateVoiceSlot();
   guideSay(VOICE_ERRORS[error] || "Voice input didn't work. Try again, or type your destination.");
-  if (!demo) $('#planTo')?.focus({ preventScroll: true });
+  if (!demo) $(voiceJourneyStep === 'from' ? '#planFrom' : '#planTo')?.focus({ preventScroll: true });
 }
 /* ---- Start screen: browsers only allow sound after a tap, so Rove opens on one large button that
  * fills the screen. The first tap (or Enter) unlocks audio and Rove asks where to go out loud. ---- */
@@ -4003,6 +4008,7 @@ function voiceCancelAll() {
 
 /* ---- Voice conversation: everything a rider needs is spoken and signalled by sound, so the
  * whole destination and route choice works without seeing the screen. ---- */
+let voiceJourneyStep = null; // 'from' then 'to' for guided planning
 let voiceIntent = null; // set while Rove waits for a spoken answer (yes/no, start/next/repeat)
 let voiceServerModel = null; // which server model is configured; a failure is remembered per model
 // Older builds remembered a server failure for hours and then used the browser recognizer, which
@@ -4083,16 +4089,25 @@ async function voiceOfferRoutes(k = 0, retried = false) {
   voiceListen({});
 }
 
+async function voiceContinueToDestination() {
+  voiceJourneyStep = 'to';
+  voiceCancelAll();
+  state.plan.voice = { state: 'starting', mode: voiceMode() };
+  updateVoiceSlot();
+  await sayThenWait('Where would you like to go? Say it after the tone.');
+  if (voiceJourneyStep === 'to' && state.plan.voice?.state === 'starting') voiceListen({});
+}
 async function voiceDestination({ demo = false, prompt = null } = {}) {
   stopSpeaking();
   voiceCancelAll();
   voiceIntent = null;
   if (!demo && currentView().name !== 'plan') openPlan({});
   state.plan.voiceFlow = !demo;
+  voiceJourneyStep = demo ? null : 'from';
   voiceSilences = 0; voiceRetried = false;
   state.plan.voice = { state: 'starting', mode: voiceMode() };
   updateVoiceSlot();
-  await sayThenWait(prompt || (demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.' : 'Where would you like to go? Say it after the tone.'));
+  await sayThenWait(prompt || (demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.' : 'Where are you starting from? Say a place or my current location after the tone.'));
   if (state.plan.voice?.state !== 'starting') return; // cancelled while Rove was speaking
   voiceListen({ demo });
 }
@@ -4466,7 +4481,8 @@ function handleAction(el) {
     case 'trip-resume': { const t = loadTrip(); if (!t) { render(); announceAccess('That trip has expired.'); break; } state.plan.to = t.destination; beginNav(t.it, { destination: t.destination, access: t.access, demo: t.demo, restore: t }); break; }
     case 'trip-discard': clearTrip(); render(); announceAccess('Saved trip discarded.'); document.getElementById('roveHomeTitle')?.focus({ preventScroll: true }); break;
     case 'voice-destination': voiceDestination(); break;
-    case 'voice-stop': voiceCancelAll(); state.plan.voice = null; updateVoiceSlot(); announceAccess('Stopped listening.'); if (currentView().name === 'plan') $('#planTo')?.focus({ preventScroll: true }); break;
+    case 'voice-retry-destination': voiceContinueToDestination(); break;
+    case 'voice-stop': voiceJourneyStep = null; voiceCancelAll(); state.plan.voice = null; updateVoiceSlot(); announceAccess('Stopped listening.'); if (currentView().name === 'plan') $('#planTo')?.focus({ preventScroll: true }); break;
     case 'voice-done': capture?.stop(); break;
     case 'voice-install': voiceInstallLocal(); break;
     case 'demo': state.plan.voice = null; pushView({ name: 'demo' }, { detent: 'full' }); break;
@@ -4489,8 +4505,11 @@ function afterPick() {
   render();
   const next = picked === 'from' && !plan.to ? '#planTo' : picked === 'to' && !plan.from ? '#planFrom' : null;
   // Spoken destination confirmed by choosing a match: go straight to routes when the start is known.
+  if (picked === 'from' && voiceJourneyStep === 'from' && (plan.voice?.state === 'heard' || plan.voiceFlow)) {
+    plan.voice = null; voiceContinueToDestination(); return;
+  }
   if (picked === 'to' && (plan.voice?.state === 'heard' || plan.voiceFlow)) {
-    plan.voice = null;
+    plan.voice = null; voiceJourneyStep = null;
     if (plan.from) { announceAccess(`Destination: ${plan.to?.name}. Finding routes.`); submitPlan(); return; }
     announceAccess(`Destination: ${plan.to?.name}. Now choose a starting point. Use my location is first.`);
   }
@@ -4706,7 +4725,7 @@ function onPosition(pos) {
     if (first || pick) toast('You are outside the Bay Area. Search for a Bay Area place to plan a trip.');
     if (pick) return;
   }
-  if (pick && currentView().name === 'plan') { state.plan[pick] = currentLocationPlace(); afterPick(); return; }
+  if (pick && currentView().name === 'plan') { state.plan[pick] = currentLocationPlace(); if (pick === 'from' && voiceJourneyStep === 'from') { state.plan.draft.from = ''; state.plan.voice = null; render(); voiceContinueToDestination(); return; } afterPick(); return; }
   if (first && ['home'].includes(currentView().name)) render();
 }
 
@@ -5319,7 +5338,7 @@ function onAutocompleteResults(target) {
   if ((target === 'from' || target === 'to') && currentView().name === 'plan' && state.plan.focus === target) {
     updatePlanSuggestions();
     if (autocomplete.commitOnResults === target) { autocomplete.commitOnResults = null; commitPlanField(target); }
-    if (target === 'to' && state.plan.voicePending) voiceResultsReady();
+    if (state.plan.voicePending && target === state.plan.focus) voiceResultsReady();
   }
 }
 
