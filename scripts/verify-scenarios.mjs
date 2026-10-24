@@ -10,6 +10,13 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const base = process.env.ROVE_URL || 'http://localhost:4173';
+// These launch scenarios require the full OTP server and its local place index.
+// Vercel preview exposes a smaller schedule-only contract with external geocoding.
+const capabilities = await fetch(`${base}/api/v2/status`, { signal: AbortSignal.timeout(15000) }).then(r => r.json());
+if (capabilities?.routing?.engine === 'EXPERIMENTAL_SCHEDULE_ONLY') {
+  console.log('SKIPPED: full-engine launch scenarios do not apply to the schedule-only preview. Run scripts/demo-readiness.mjs instead.');
+  process.exit(3);
+}
 const DAY = process.env.ROVE_TEST_DAY || nextWeekday();
 const results = [];
 let failures = 0;

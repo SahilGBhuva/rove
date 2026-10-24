@@ -7,6 +7,13 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const base = process.env.ROVE_URL || 'http://localhost:4173';
+// This suite verifies full OTP geometry, agency metadata and arrive-by behavior.
+// The Vercel schedule-only preview intentionally does not promise those features.
+const capabilities = await fetch(`${base}/api/v2/status`, { signal: AbortSignal.timeout(15000) }).then(r => r.json());
+if (capabilities?.routing?.engine === 'EXPERIMENTAL_SCHEDULE_ONLY') {
+  console.log('SKIPPED: full-engine routing checks do not apply to the schedule-only preview. Run scripts/demo-readiness.mjs instead.');
+  process.exit(3);
+}
 
 const CASES = [
   { name: 'Powell St (SF) to Lake Merritt (Oakland)', from: [37.78461, -122.40734], to: [37.79740, -122.26510], expectAny: ['bart'] },
