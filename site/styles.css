@@ -1598,3 +1598,64 @@ body .panel-body:has(.rg-nav) { scroll-padding-bottom: 180px; scroll-padding-top
 .rove-accessible .wordmark, .rove-accessible .wordmark-mark { color: var(--rg-green); }
 .rg-pulse.is-waiting { background: #b7791f; animation: none; box-shadow: none; }
 .rg-listening .spinner { flex: none; }
+
+/* Rove motion polish — only compositor-friendly movement; never animate the sticky dock.
+   Navigation semantics and focus are unaffected by these visual transitions. */
+@media (prefers-reduced-motion: no-preference) {
+  .rove-accessible .rg-card { animation: rove-step-reveal 340ms cubic-bezier(.16,1,.3,1) both; }
+  .rove-accessible .rg-card .rg-kind { animation: rove-step-reveal 300ms cubic-bezier(.16,1,.3,1) both; }
+  .rove-accessible .rg-card h1 { animation: rove-step-reveal 380ms cubic-bezier(.16,1,.3,1) 35ms both; }
+  .rove-accessible .rg-card .rg-facts,
+  .rove-accessible .rg-card .rg-check { animation: rove-step-reveal 370ms cubic-bezier(.16,1,.3,1) 65ms both; }
+  @keyframes rove-step-reveal {
+    from { opacity: .35; transform: translate3d(0,9px,0); }
+    to { opacity: 1; transform: translate3d(0,0,0); }
+  }
+  .rove-accessible .rg-progress li.now { position: relative; overflow: hidden; }
+  .rove-accessible .rg-progress li.now::after {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    background: rgba(255,255,255,.38);
+    transform: translate3d(-110%,0,0);
+    animation: rove-progress-glint 2.8s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes rove-progress-glint {
+    0%, 45% { transform: translate3d(-110%,0,0); }
+    75%, 100% { transform: translate3d(110%,0,0); }
+  }
+  .rove-accessible .rg-listening .rg-pulse:not(.is-waiting) {
+    animation: rove-record-ring 1.65s cubic-bezier(.2,.7,.3,1) infinite;
+  }
+  @keyframes rove-record-ring {
+    0% { box-shadow: 0 0 0 0 rgba(192,57,43,.38); transform: scale(.94); }
+    65% { box-shadow: 0 0 0 10px rgba(192,57,43,0); transform: scale(1.06); }
+    100% { box-shadow: 0 0 0 0 rgba(192,57,43,0); transform: scale(.94); }
+  }
+  .rove-accessible .rg-primary,
+  .rove-accessible .rg-confirm,
+  .rove-accessible .rg-secondary,
+  .rove-accessible .rg-read,
+  .rove-accessible .rg-mic,
+  .rove-accessible .rg-chip,
+  .rove-accessible .rg-row-button {
+    transition: transform 170ms cubic-bezier(.2,.8,.2,1),
+      background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+  .rove-accessible :is(.rg-primary,.rg-confirm,.rg-secondary,.rg-read,.rg-mic,.rg-chip,.rg-row-button):active {
+    transform: scale(.985);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .rove-accessible :is(.rg-primary,.rg-confirm,.rg-mic):hover {
+      box-shadow: 0 5px 14px rgba(21,65,42,.17);
+    }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rove-accessible .rg-card,
+  .rove-accessible .rg-card *,
+  .rove-accessible .rg-progress li.now::after,
+  .rove-accessible .rg-listening .rg-pulse { animation: none !important; }
+  .rove-accessible :is(.rg-primary,.rg-confirm,.rg-secondary,.rg-read,.rg-mic,.rg-chip,.rg-row-button) {
+    transition: none !important; transform: none !important;
+  }
+}
