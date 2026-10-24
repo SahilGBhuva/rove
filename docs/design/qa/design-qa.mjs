@@ -7,6 +7,7 @@
  *        --puppeteer /path/to/dir/containing/node_modules \
  *        [--out docs/design/qa/report] [--chrome "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"] \
  *        [--only 390,390-dark] [--skip-perf]
+ *   node docs/design/qa/design-qa.mjs --from-json docs/design/qa/baseline.json   # re-render the Markdown only
  *
  * puppeteer-core is NOT a project dependency. Point --puppeteer (or env PUPPETEER_DIR) at any directory whose
  * node_modules contains puppeteer-core; without it the script tries a plain `import('puppeteer-core')`.
@@ -29,6 +30,7 @@ const CHROME = arg('chrome', process.env.CHROME_PATH || '/Applications/Google Ch
 const PPDIR = arg('puppeteer', process.env.PUPPETEER_DIR || '');
 const ONLY = arg('only', '') ? arg('only').split(',') : null;
 const SKIP_PERF = flag('skip-perf');
+const FROM_JSON = arg('from-json', '');
 
 async function loadPuppeteer() {
   if (PPDIR) {
@@ -446,7 +448,7 @@ async function keyboardPass(browser) {
 function markdown(r) {
   const L = [];
   const n = x => (x == null ? '—' : x);
-  L.push(`# Rove design QA report`, '', `Base URL: ${r.base}  `, `Run: ${r.startedAt} (${Math.round(r.durationMs / 1000)} s)  `, `Chrome: ${r.chrome}`, '');
+  L.push(`# Rove design QA report`, '', `Base URL: ${r.base}  `, `Run: ${r.startedAt} (${Math.round(r.durationMs / 1000)} s)  `, `Chrome: ${r.chrome}`, '', 'Rerun: `node scripts/preview-site.mjs 4348` then `node docs/design/qa/design-qa.mjs --base http://localhost:4348 --puppeteer <dir with node_modules/puppeteer-core> --out docs/design/qa/<name>`. Configs: widths 320/375/390/430/768/1024 at 844 high, 390 dark, landscape 844x390, short 390x500, 390 with 200% root font size.', '');
   L.push('Audits run with `prefers-reduced-motion: reduce`; motion/performance sections use normal motion. Contrast counts are unique element+colour pairs with ratio < 4.5:1 (WCAG fail column applies the 3:1 large-text threshold). Dock overlap counts interactive elements whose centre hits `.rg-dock` after `scrollIntoView({block:"nearest"})`.', '');
   L.push('## Summary by viewport and scene', '');
   L.push('| Config | Scene | View | H-overflow | Targets | <44px | <48px | Contrast <4.5 | WCAG fail | Dock overlap (now / after scroll) | Console errors |');
@@ -524,6 +526,11 @@ function markdown(r) {
 
 /* ---------------- Main ---------------- */
 const LAUNCH_ARGS = ['--no-sandbox', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=CalculateNativeWinOcclusion'];
+if (FROM_JSON) {
+  const r = JSON.parse(fs.readFileSync(FROM_JSON, 'utf8'));
+  const md = FROM_JSON.replace(/\.json$/, '') + '.md';
+  fs.writeFileSync(md, markdown(r)); console.log(`wrote ${md}`); process.exit(0);
+}
 const puppeteer = await loadPuppeteer();
 const startedAt = new Date().toISOString(); const t0 = Date.now();
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: LAUNCH_ARGS });
