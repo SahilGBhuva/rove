@@ -4,7 +4,7 @@
 // Algorithm, ranking weights and honesty rules: docs/ROUTING.md ("Schedule-only planner").
 import {readFileSync} from 'node:fs';
 import {gunzipSync} from 'node:zlib';
-import {directFootpaths, reverseFootpaths, forwardRounds, latestDeparture, buildTripIndex, tripStops,
+import {directFootpaths, reverseFootpaths, forwardRounds, latestDeparture, buildTripIndex, tripStops, buildStopPatterns,
   WALK_METERS_PER_SECOND, BOARDING_MARGIN_SECONDS, MIN_TRANSFER_SECONDS} from '../../experiments/bay-router/route.mjs';
 import {combineServiceDays} from '../../experiments/bay-router/combine-days.mjs';
 import {enrichWalks} from '../../experiments/bay-router/pedestrian.mjs';
@@ -12,6 +12,9 @@ import {rankItineraries, revisitsEarlierStations, paretoFilter, generalizedCost}
 
 const TZ = 'America/Los_Angeles';
 const MAX_ENDPOINT_METERS = 1100;
+// Walking transfers between nearby served stops of any agency (docs/ROUTING.md).
+const FOOTPATH_METERS = 260;
+const FOOTPATHS_PER_STOP = 12;
 // Honesty thresholds (see docs/ROUTING.md).
 export const PLANNING = Object.freeze({
   MAX_VEHICLES: 4,                    // at most 3 transfers
@@ -66,15 +69,39 @@ export function loadFor(instant, loader=loadDay) {
   const days=[context.previousDay,context.day].map(loader);
   return {context, timetable:combineServiceDays(days)};
 }
+function isoDayAfter(day) {
+  const d = new Date(day + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate()+1);
+  return d.toISOString().slice(0,10);
+}
+// Which two service days to search. Before LATE_WINDOW_SECONDS (local time) the previous service
+// day is needed for its 24:xx-28:xx trips. Later in the day those trips are over and what matters
+// is the NEXT morning: without it a 22:30 request could not see the first train and reported no
+// service at all instead of "the first train is at 5:xx". Falls back to the previous-day window
+// when the next day's timetable is not bundled.
+const LATE_WINDOW_SECONDS = 12 * 3600;
+export function serviceWindow(instant, loader=loadDay) {
+  const context = dateContext(instant);
+  const localSeconds = context.seconds - (pacificMidnight(context.day) - pacificMidnight(context.previousDay)) / 1000;
+  if (localSeconds >= LATE_WINDOW_SECONDS) {
+    const next = isoDayAfter(context.day);
+    let days = null;
+    try { days = [loader(context.day), loader(next)]; } catch { /* next day not bundled */ }
+    if (days) return {context: {...context, baseDay: context.day, seconds: localSeconds}, days, key: context.day + '|' + next};
+  }
+  return {context: {...context, baseDay: context.previousDay},
+    days: [context.previousDay, context.day].map(loader), key: context.previousDay + '|' + context.day};
+}
 // The combined two-day timetable and its derived indexes are immutable, so warm requests reuse
 // them instead of re-sorting 1.5 M connections and rebuilding footpaths on every call.
 function preparedFor(instant, loader) {
-  const context=dateContext(instant);
-  const key=context.previousDay+'|'+context.day;
+  const window=serviceWindow(instant, loader);
+  const {context, key}=window;
   if (loader===loadDay && prepared.has(key)) return {context, ...prepared.get(key)};
-  const {timetable}=loadFor(instant, loader);
-  const footpaths=directFootpaths(timetable.stops,260,12);
-  const entry={timetable, footpaths, incoming:reverseFootpaths(footpaths), tripIndex:buildTripIndex(timetable)};
+  const timetable=combineServiceDays(window.days);
+  const stopIndex=buildStopPatterns(timetable);
+  const footpaths=directFootpaths(timetable.stops,FOOTPATH_METERS,FOOTPATHS_PER_STOP,stopIndex.served);
+  const entry={timetable, footpaths, stopIndex, incoming:reverseFootpaths(footpaths), tripIndex:buildTripIndex(timetable)};
   if (loader===loadDay) {
     prepared.set(key,entry);
     if (prepared.size>2) prepared.delete(prepared.keys().next().value);
@@ -98,7 +125,9 @@ export function candidateStops(stops,point,maxMeters=MAX_ENDPOINT_METERS,maxCoun
 }
 // Nearby bus stops are dense and can crowd out a walkable rail station.
 // Preserve rail access independently of the closest bus stop ranking.
-export function diverseCandidateStops(stops,point,maxMeters=1800) {
+// With a stop index (the planner's path) selection is route-diverse instead: see accessCandidates.
+export function diverseCandidateStops(stops,point,maxMeters=1800,options={}) {
+  if (options.stopIndex) return accessCandidates(stops,point,maxMeters,options.stopIndex,options.side||'origin');
   const all=candidateStops(stops,point,maxMeters,120);
   const chosen=all.slice(0,12);
   const seen=new Set(chosen.map(s=>s.index));
@@ -108,6 +137,42 @@ export function diverseCandidateStops(stops,point,maxMeters=1800) {
       if(count>=4) break;
       if(!stops[s.index][0].startsWith(agency+':')) continue;
       if(!seen.has(s.index)) {chosen.push(s);seen.add(s.index);count++;}
+    }
+  }
+  return chosen;
+}
+export const ACCESS = Object.freeze({
+  NEAREST_STOPS: 6,     // always keep the closest served stops
+  MAX_STOPS: 48,        // cap on access (or egress) stops per end
+});
+/**
+ * Route-diverse access (side 'origin') or egress (side 'destination') stops within maxMeters.
+ * Only stops where a vehicle actually picks up (origin) or drops off (destination) count: GTFS
+ * station entrances, elevators and parent stations have no service and used to fill the slots
+ * (the Ferry Building lost Embarcadero BART to four entrance nodes). Beyond the NEAREST_STOPS
+ * closest, a stop is kept only when it serves a route pattern (route + headsign) that no closer
+ * kept stop serves, so a dozen stops along one hilltop bus line no longer hide the busy street
+ * 400 m away. Farther stops cost more walking in the ranking, so they win only when worth it.
+ */
+export function accessCandidates(stops,point,maxMeters,stopIndex,side='origin') {
+  const served=side==='origin'?stopIndex.boards:stopIndex.alights;
+  const patterns=side==='origin'?stopIndex.boardPatterns:stopIndex.alightPatterns;
+  const all=[];
+  for (let i=0;i<stops.length;i++){
+    if(!served[i]) continue;
+    const d=straightLineMeters(point,{lat:stops[i][2],lon:stops[i][3]});
+    if(d<=maxMeters) all.push({index:i,distance:d});
+  }
+  all.sort((a,b)=>a.distance-b.distance);
+  const chosen=[], covered=new Set();
+  for (const s of all) {
+    const own=patterns[s.index];
+    let adds=false;
+    for (const p of own) if(!covered.has(p)) {adds=true;break;}
+    if (chosen.length<ACCESS.NEAREST_STOPS || adds) {
+      chosen.push(s);
+      for (const p of own) covered.add(p);
+      if (chosen.length>=ACCESS.MAX_STOPS) break;
     }
   }
   return chosen;
@@ -253,13 +318,13 @@ export function planExperimental(query, now=new Date(), loader=loadDay) {
   let prep;
   try {prep=preparedFor(time,loader);}
   catch {return bad(503,'Scheduled timetable unavailable for this date; try another service date.');}
-  const {context:ctx,timetable:data}=prep;
-  const origins=diverseCandidateStops(data.stops,from,1800);
-  const destinations=diverseCandidateStops(data.stops,to,1500);
+  const {context:ctx,timetable:data,stopIndex}=prep;
+  const origins=accessCandidates(data.stops,from,1800,stopIndex,'origin');
+  const destinations=accessCandidates(data.stops,to,1500,stopIndex,'destination');
   if(!origins.length||!destinations.length)
     return bad(422,'No transit stops within walking reach of one or both places. Try a nearby station or a closer starting point.');
   const requestMs=time.getTime();
-  const serviceMidnight=pacificMidnight(ctx.previousDay);
+  const serviceMidnight=pacificMidnight(ctx.baseDay);
   const originBy=new Map(origins.map(o=>[o.index,o])), targetBy=new Map(destinations.map(d=>[d.index,d]));
   const all=[];
   for (const journey of searchJourneys(prep,origins,destinations,ctx.seconds)) {

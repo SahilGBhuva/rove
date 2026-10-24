@@ -2,12 +2,14 @@
 // Intentionally separate from Rove's working OTP production backend.
 // Timetable input: {stops, trips, connections} built by build.py for ONE GTFS service date.
 // Connections sorted by departure. Times are seconds since service-date midnight.
-export function directFootpaths(stops, radiusMeters = 220, maxPerStop = 12) {
+// `served` (optional Uint8Array): only stops with service get footpaths, so GTFS entrances,
+// elevators and parent stations cannot take the maxPerStop slots of real platforms.
+export function directFootpaths(stops, radiusMeters = 220, maxPerStop = 12, served = null) {
   const buckets = new Map(), footpaths = Array.from({ length: stops.length }, () => []);
-  const cell = 0.003;
+  const cell = Math.max(0.003, radiusMeters / 111_200 * 1.3);
   for (let i = 0; i < stops.length; i++) {
     const s = stops[i];
-    if (!s[2] || !s[3]) continue;
+    if (!s[2] || !s[3] || (served && !served[i])) continue;
     const y = Math.floor(s[2] / cell), x = Math.floor(s[3] / cell);
     const k = y + '/' + x;
     if (!buckets.has(k)) buckets.set(k, []);
@@ -15,7 +17,7 @@ export function directFootpaths(stops, radiusMeters = 220, maxPerStop = 12) {
   }
   for (let i = 0; i < stops.length; i++) {
     const s = stops[i];
-    if (!s[2] || !s[3]) continue;
+    if (!s[2] || !s[3] || (served && !served[i])) continue;
     const y = Math.floor(s[2] / cell), x = Math.floor(s[3] / cell);
     const candidates = [];
     for (let dy = -1; dy <= 1; dy++) {
@@ -142,6 +144,12 @@ export function findJourney(data, fromStop, toStop, departSeconds, options = {})
 //  - every transfer needs >= MIN_TRANSFER_SECONDS after alighting, plus the walking time when the
 //    next stop is a different stop (footpaths already include a 45 s fixed overhead).
 export const WALK_METERS_PER_SECOND = 1.2;
+// Streets are not straight lines. Access and egress walks are timed on an estimated path of
+// 1.25 x the straight-line distance (a common urban circuity figure), so a 1.4 km straight-line
+// walk costs about 24 minutes instead of an optimistic 19. Footpaths between stops (<= 260 m)
+// keep their 45 s fixed overhead instead.
+export const WALK_CIRCUITY = 1.25;
+export const walkSecondsForMeters = meters => Math.ceil(meters * WALK_CIRCUITY / WALK_METERS_PER_SECOND);
 export const BOARDING_MARGIN_SECONDS = 60;
 export const MIN_TRANSFER_SECONDS = 120;
 const NONE = 0, ORIGIN = 1, RIDE = 2, WALK = 3, INHERIT = 4, TARGET = 5, BOARD = 6;
@@ -324,6 +332,42 @@ export function latestDeparture(data, seeds, targets, deadline, earliestDoorDepa
     accessSeconds: best.seed.accessSeconds, targetIndex: target, egressSeconds,
     doorArrival: arrivalAtTarget + egressSeconds, legs,
     vehicles: legs.filter(l => l.type === 'transit').length };
+}
+
+/**
+ * Which stops have service, and which route patterns (agency + route + headsign) board or alight
+ * there. Used to pick access/egress stops (api/v2/experimental-plan.mjs accessCandidates) and to
+ * keep unserved GTFS nodes (entrances, elevators, parent stations) out of footpaths.
+ */
+export function buildStopPatterns(data) {
+  const { stops, trips, connections } = data;
+  const n = stops.length;
+  const patternOfTrip = new Int32Array(trips.length), ids = new Map();
+  for (let t = 0; t < trips.length; t++) {
+    const key = trips[t][0] + '\u0000' + trips[t][2] + '\u0000' + trips[t][4];
+    let id = ids.get(key);
+    if (id === undefined) { id = ids.size; ids.set(key, id); }
+    patternOfTrip[t] = id;
+  }
+  const boards = new Uint8Array(n), alights = new Uint8Array(n), served = new Uint8Array(n), rail = new Uint8Array(n);
+  const seenBoard = new Set(), seenAlight = new Set(), P = ids.size;
+  const boardPatterns = Array.from({ length: n }, () => []), alightPatterns = Array.from({ length: n }, () => []);
+  // GTFS route_type 0 light rail/streetcar, 1 subway (BART), 2 rail (Caltrain).
+  const railTrip = trips.map(t => ['0', '1', '2'].includes(String(t[5])));
+  for (const c of connections) {
+    const p = patternOfTrip[c[4]];
+    if (railTrip[c[4]]) { rail[c[0]] = 1; rail[c[1]] = 1; }
+    if (c[5] & 1) {
+      const k = c[0] * P + p;
+      if (!seenBoard.has(k)) { seenBoard.add(k); boards[c[0]] = 1; boardPatterns[c[0]].push(p); }
+    }
+    if (c[5] & 2) {
+      const k = c[1] * P + p;
+      if (!seenAlight.has(k)) { seenAlight.add(k); alights[c[1]] = 1; alightPatterns[c[1]].push(p); }
+    }
+  }
+  for (let i = 0; i < n; i++) served[i] = (boards[i] || alights[i]) && stops[i][2] && stops[i][3] ? 1 : 0;
+  return { boards, alights, served, rail, boardPatterns, alightPatterns, patternOfTrip, patternCount: P };
 }
 
 // Per-trip connection index, so a ride's intermediate stops can be listed cheaply.
