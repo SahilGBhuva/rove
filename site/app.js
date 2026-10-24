@@ -4067,6 +4067,24 @@ async function voiceAskMatch(heard, i = 0, retried = false) {
   } };
   voiceListen({});
 }
+/* Describe the tradeoff in audio before asking someone to select a route.
+ * Never call a longer route 'fastest' merely because it has fewer transfers. */
+function voiceRouteTradeoff(order, its) {
+  if (order.length < 2) return '';
+  const fastestIndex = sortedItineraryIndexes('fastest')[0];
+  const easiestIndex = sortedItineraryIndexes('easiest')[0];
+  if (fastestIndex === easiestIndex) return 'The fastest route is also the easiest by transfers and walking.';
+  const fastest = its[fastestIndex], easiest = its[easiestIndex];
+  if (!fastest || !easiest) return '';
+  const fastestPosition = order.indexOf(fastestIndex) + 1;
+  const easiestPosition = order.indexOf(easiestIndex) + 1;
+  if (!fastestPosition || !easiestPosition) return '';
+  const delay = Math.max(0, Math.round((Date.parse(easiest.endTime) - Date.parse(fastest.endTime)) / 60000));
+  const changes = Number.isFinite(easiest.transfers) ? easiest.transfers : Math.max(0, transitLineNames(easiest).length - 1);
+  const walking = Number.isFinite(easiest.walkMeters) ? ' and less walking where transfers are tied' : '';
+  return `Route ${fastestPosition} arrives earliest. Route ${easiestPosition} is easier, with ${changes ? plural(changes, 'transfer') : 'no transfers'}${walking}${delay ? `, but arrives about ${plural(delay, 'minute')} later` : ''}. Choose the journey you feel comfortable taking.`;
+}
+
 /* After routes are found by a voice flow: read one route at a time and act on start / next / repeat. */
 async function voiceOfferRoutes(k = 0, retried = false) {
   const order = sortedItineraryIndexes().slice(0, 3);
@@ -4075,7 +4093,7 @@ async function voiceOfferRoutes(k = 0, retried = false) {
   const n = ((k % order.length) + order.length) % order.length;
   const it = its[order[n]];
   await sayThenWait(retried ? 'Please say start, next, or repeat.'
-    : `${n === 0 && !retried ? `${plural(order.length, 'route')} found. ` : ''}${routeChoiceSpeech(it, n + 1)} Say start to begin this route${order.length > 1 ? ', next for another route' : ''}, or repeat.`);
+    : `${n === 0 && !retried ? `${plural(order.length, 'route')} found. ${voiceRouteTradeoff(order, its)} ` : ''}${routeChoiceSpeech(it, n + 1)} Say start to begin this route${order.length > 1 ? ', next for another route' : ''}, or repeat.`);
   if (currentView().name !== 'results') return;
   toast('Listening: say start, next, or repeat');
   voiceIntent = { handle: words => {
@@ -4329,7 +4347,7 @@ function handleAction(el) {
     case 'access-all-routes': {
       const order = sortedItineraryIndexes().slice(0, 3);
       const its = state.plan.results?.itineraries || [];
-      speakText(order.length ? `${plural(order.length, 'route')}. ${order.map((i, n) => routeChoiceSpeech(its[i], n + 1)).join(' ')} Choose Listen on a route for its stops.` : 'No routes are available.');
+      speakText(order.length ? `${plural(order.length, 'route')}. ${voiceRouteTradeoff(order, its)} ${order.map((i, n) => routeChoiceSpeech(its[i], n + 1)).join(' ')} Choose Listen on a route for its stops.` : 'No routes are available.');
       break;
     }
     case 'access-route': { const it = state.plan.results?.itineraries?.[Number(el.dataset.index)]; if (it) speakText(routeDetailSpeech(it)); break; }
