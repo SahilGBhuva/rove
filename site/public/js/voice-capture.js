@@ -31,6 +31,18 @@
     };
   }
 
+  /* Display envelope for the live level: rises quickly with the voice, falls back gently, and
+   * reads exactly 0 for a silent input so the waveform never moves without sound. */
+  function createLevelMeter({ attack = 0.6, release = 0.22, gate = 0.004 } = {}) {
+    let level = 0;
+    return function meter(rms) {
+      const input = Number.isFinite(rms) && rms > gate ? rms : 0;
+      level += (input - level) * (input > level ? attack : release);
+      if (level < gate / 4) level = 0;
+      return level;
+    };
+  }
+
   function beep(ctx, freq = 880, ms = 140) {
     try {
       const osc = ctx.createOscillator(), gain = ctx.createGain();
@@ -57,7 +69,7 @@
   /* Starts recording. Call directly from a tap (iOS needs the gesture for audio).
    * Returns { stop(), cancel(), done }; done resolves to { blob, mediaType, heard, reason } or
    * rejects with the browser's error (NotAllowedError, NotFoundError, ...) or an AbortError.
-   * onState('waiting' | 'listening') reports progress; onLevel(rms) reports the live input level. */
+   * onState('waiting' | 'listening') reports progress; onLevel(level, rms) reports the live input level (smoothed for display, then raw). */
   function record({ leadInMs = 700, onState, onLevel } = {}) {
     const Ctx = root.AudioContext || root.webkitAudioContext;
     let ctx = null;
@@ -97,11 +109,14 @@
             ctx.createMediaStreamSource(stream).connect(analyser);
             const data = new Float32Array(analyser.fftSize);
             const feed = createEndpointer();
+            const meter = createLevelMeter();
             timer = setInterval(() => {
               analyser.getFloatTimeDomainData(data);
               let sum = 0; for (const v of data) sum += v * v;
               const rms = Math.sqrt(sum / data.length);
-              onLevel?.(rms); // the listening waveform shows the real microphone level
+              // The listening waveform shows the real microphone level, smoothed for the eye only;
+              // the endpointer below always decides on the raw level.
+              onLevel?.(meter(rms), rms);
               const step = feed(rms);
               if (step.done && recorder.state === 'recording') { result = step; recorder.stop(); }
             }, 50);

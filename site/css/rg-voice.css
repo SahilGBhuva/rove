@@ -1,1 +1,207 @@
-/* Rove design: voice. Owned by one workstream; see docs/design/OWNERSHIP.md. */
+/* Rove design: voice. Owned by one workstream; see docs/design/OWNERSHIP.md.
+ *
+ * Honesty rule: every visual here mirrors real state.
+ *  - The listening waveform has no keyframes. Each bar's height is --l, written from the live
+ *    microphone level (voice-capture.js -> voiceViaServer). Silent input = still bars.
+ *  - The browser recognizer gives no level, so it gets a ring (it really is listening) but no bars.
+ *  - "Waiting for the tone" is amber and never pulses like a live mic.
+ *  - The speech bar's moving bars exist only in data-state="speaking" (engine reported start).
+ * Motion uses the shared tokens and is removed under prefers-reduced-motion. */
+
+/* ---- Layout: an active voice card takes the full row under the Speak button ---- */
+.rg-voice-row:has(> .rg-voice-slot:not(:empty)) { flex-wrap: wrap; }
+.rg-voice-row > .rg-voice-slot:not(:empty) { flex: 1 1 100%; }
+
+/* ---- The voice card (all states) ---- */
+.rg-vx {
+  position: relative;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 12px;
+  margin: 0;
+  min-height: 72px;
+  padding: 12px 14px 12px 12px;
+  border-radius: 18px;
+  background: var(--rg-surface);
+  border: 1.5px solid var(--rg-line);
+  color: var(--rg-ink);
+  font-size: 1rem;
+  line-height: 1.4;
+  box-shadow: 0 1px 2px rgba(23, 32, 26, .04), 0 6px 18px rgba(23, 32, 26, .05);
+}
+.rg-vx[data-vx="listening"] { border-color: color-mix(in srgb, var(--rg-green) 45%, var(--rg-line)); }
+.rg-vx[data-vx="waiting"] { border-color: color-mix(in srgb, var(--rg-warn) 30%, var(--rg-line)); }
+
+.rg-vx-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin: 0; }
+.rg-vx-title { font-size: 1.0625rem; font-weight: 720; letter-spacing: -.005em; color: var(--rg-ink); }
+.rg-vx-detail { font-size: .9375rem; font-weight: 520; color: var(--rg-ink-2); }
+/* Spoken punctuation between title and detail; read by screen readers, not shown. */
+.rg-vx-sep { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---- Buttons: 48px pills, primary filled ---- */
+.rg-vx-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; }
+.rg-vx .rg-vx-button {
+  flex: 1 1 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 48px; min-width: 48px; padding: 0 20px;
+  border-radius: 999px;
+  background: var(--rg-surface);
+  border: 1.5px solid var(--rg-line);
+  color: var(--rg-ink);
+  font: inherit; font-size: 1rem; font-weight: 700;
+  text-decoration: none;
+  transition: transform var(--m-press) var(--e-out), background-color var(--m-small) var(--e-std);
+}
+.rg-vx .rg-vx-button.is-primary { background: var(--rg-green); color: var(--rg-on-green); border-color: transparent; }
+.rg-vx .rg-vx-button:active { transform: scale(.97); }
+
+/* ---- Visual well (left column) ---- */
+.rg-vx-visual {
+  position: relative;
+  display: grid; place-items: center;
+  width: 48px; height: 48px;
+  border-radius: 14px;
+  background: var(--rg-tint);
+  color: var(--rg-green);
+}
+.rg-vx-glyph { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Waiting for the tone: amber, mic not yet recording. A slow dashed orbit says "about to start". */
+.rg-vx-visual.is-waiting { border-radius: 50%; background: var(--rg-warn-bg); color: var(--rg-warn); }
+.rg-vx-visual.is-waiting::before {
+  content: ""; position: absolute; inset: -4px; border-radius: 50%;
+  border: 1.5px dashed currentColor; opacity: .55;
+}
+.rg-vx-visual .rg-pulse.is-waiting {
+  position: absolute; top: 1px; right: 1px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: currentColor; box-shadow: 0 0 0 2px var(--rg-surface); animation: none;
+}
+
+/* Listening (server): live level bars + a steady "mic open" dot. */
+.rg-vx-visual.is-level { width: 48px; }
+.rg-vx-live {
+  position: absolute; top: 5px; right: 5px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #d6362a; box-shadow: 0 0 0 2px var(--rg-tint);
+}
+.rg-wave { display: flex; align-items: center; gap: 4px; height: 28px; }
+.rg-wave i {
+  display: block; width: 4px; height: 28px; border-radius: 2px;
+  background: var(--rg-green);
+  transform: scaleY(var(--l, .18));
+  transform-origin: center;
+  transition: transform 90ms linear; /* one level frame is 50ms; this only smooths between real samples */
+  will-change: transform;
+}
+
+/* Listening (browser recognizer): no level available, so a ring rather than bars. */
+.rg-vx-visual.is-ring { border-radius: 50%; background: var(--rg-green); color: var(--rg-on-green); }
+.rg-mic-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid var(--rg-green); opacity: .45; transform: scale(1.18);
+}
+
+/* Understanding / installing: the bars settle into three calm dots. */
+.rg-vx-dots { display: flex; align-items: center; gap: 5px; }
+.rg-vx-dots i { display: block; width: 6px; height: 6px; border-radius: 3px; background: var(--rg-green); }
+
+/* Heard: a filled check; no matches is amber. */
+.rg-vx-visual.is-heard { border-radius: 50%; background: var(--rg-green); color: var(--rg-on-green); }
+.rg-heard.rg-vx { color: var(--rg-ink-2); }
+.rg-heard.rg-vx .rg-vx-text { display: block; }
+.rg-heard.rg-vx q { color: var(--rg-ink); font-weight: 750; }
+.rg-heard.rg-vx[data-tone="none"] .rg-vx-visual { background: var(--rg-warn-bg); color: var(--rg-warn); }
+
+/* Error: same card in the alert palette. */
+.rg-voice-error.rg-vx { background: var(--rg-bad-bg); border-color: color-mix(in srgb, var(--rg-bad) 28%, transparent); color: var(--rg-bad); font-size: .9375rem; line-height: 1.45; }
+.rg-vx-visual.is-error { border-radius: 50%; background: var(--rg-bad); color: var(--rg-bad-bg); }
+.rg-voice-error.rg-vx .rg-vx-text { display: block; font-weight: 600; }
+
+/* ---- Rove's own speech: a calm, elevated bar, distinct from listening ---- */
+.speech-bar {
+  gap: 12px;
+  min-height: 60px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 20px;
+  background: #1d2a22;
+  color: #f4f1ea;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 12px 32px rgba(18, 28, 22, .3);
+}
+.speech-bar-icon {
+  flex: none; display: grid; place-items: center;
+  width: 44px; height: 44px; border-radius: 14px;
+  background: rgba(159, 216, 178, .16); color: #9fd8b2;
+}
+.speech-bar-glyph { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.85; stroke-linecap: round; stroke-linejoin: round; }
+.speech-bar[data-state="starting"] .speech-bar-icon { opacity: .7; }
+.speech-bar[data-state="starting"] .speech-bar-text { color: rgba(244, 241, 234, .82); }
+.speech-bar[data-state] .speech-bar-text { min-width: 0; }
+.speech-bar-wave { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 20px; }
+.speech-bar-wave i { width: 3px; height: 100%; border-radius: 2px; background: #9fd8b2; transform-origin: center; transform: scaleY(.5); animation: none; }
+.speech-bar-stop {
+  flex: none;
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 48px; min-width: 48px; padding: 0 16px 0 14px;
+  border-radius: 14px;
+  background: #f4f1ea; color: #1d2a22;
+  font: inherit; font-size: .9375rem; font-weight: 750;
+  transition: transform var(--m-press) var(--e-out);
+}
+.speech-bar-stop:active { transform: scale(.97); }
+.speech-bar-stop:focus-visible { outline: 3px solid #9fd8b2; outline-offset: 2px; }
+.speech-bar-stop-icon { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+.speech-bar[data-state="failed"] { background: #5a1f17; }
+.speech-bar[data-state="failed"] .speech-bar-icon { background: rgba(255, 180, 168, .16); color: #ffb4a8; }
+.speech-bar[data-state="failed"] .speech-bar-stop:focus-visible { outline-color: #ffb4a8; }
+
+/* Dark mode: lift the bar off the near-black page with a lighter surface, a hairline and depth. */
+@media (prefers-color-scheme: dark) {
+  body:not(.theme-light) .speech-bar {
+    background: #26362c;
+    box-shadow: inset 0 0 0 1px rgba(165, 226, 187, .3), inset 0 1px 0 rgba(255, 255, 255, .08), 0 16px 40px rgba(0, 0, 0, .65);
+  }
+  body:not(.theme-light) .speech-bar[data-state="failed"] { background: #4e1f18; box-shadow: inset 0 0 0 1px rgba(255, 180, 168, .35), 0 16px 40px rgba(0, 0, 0, .65); }
+  body:not(.theme-light) .rg-vx { box-shadow: none; }
+}
+body.theme-dark .speech-bar {
+  background: #26362c;
+  box-shadow: inset 0 0 0 1px rgba(165, 226, 187, .3), inset 0 1px 0 rgba(255, 255, 255, .08), 0 16px 40px rgba(0, 0, 0, .65);
+}
+body.theme-dark .speech-bar[data-state="failed"] { background: #4e1f18; box-shadow: inset 0 0 0 1px rgba(255, 180, 168, .35), 0 16px 40px rgba(0, 0, 0, .65); }
+
+/* ---- Motion (only when the rider has not asked for less) ---- */
+@media (prefers-reduced-motion: no-preference) {
+  /* State changes replace the card; a short settle makes listening -> understanding feel continuous. */
+  .rg-vx { animation: rg-vx-in var(--m-small) var(--e-out) both; }
+  .rg-vx-visual.is-waiting::before { animation: rg-vx-orbit 6s linear infinite; }
+  .rg-mic-ring { animation: rg-vx-ring 1.8s var(--e-out) infinite; }
+  .rg-vx-dots i {
+    animation: rg-vx-morph var(--m-card) var(--e-out) both, rg-vx-think 1.2s ease-in-out var(--m-card) infinite;
+  }
+  .rg-vx-dots i:nth-child(2) { animation-delay: 40ms, calc(var(--m-card) + 160ms); }
+  .rg-vx-dots i:nth-child(3) { animation-delay: 80ms, calc(var(--m-card) + 320ms); }
+  .rg-vx-visual.is-heard, .rg-vx-visual.is-error { animation: rg-vx-pop var(--m-card) var(--e-out) both; }
+  .speech-bar:not([hidden]) { animation: rg-vx-bar-in var(--m-card) var(--e-out) both; }
+  .speech-bar[data-state="speaking"] .speech-bar-wave i { animation: rg-vx-speak 1.6s ease-in-out infinite; }
+  .speech-bar[data-state="speaking"] .speech-bar-wave i:nth-child(2) { animation-delay: -1.2s; }
+  .speech-bar[data-state="speaking"] .speech-bar-wave i:nth-child(3) { animation-delay: -.4s; }
+  .speech-bar[data-state="speaking"] .speech-bar-wave i:nth-child(4) { animation-delay: -.8s; }
+}
+@keyframes rg-vx-in { from { opacity: .35; transform: translateY(3px) scale(.99); } to { opacity: 1; transform: none; } }
+@keyframes rg-vx-orbit { to { transform: rotate(360deg); } }
+@keyframes rg-vx-ring { 0% { opacity: .55; transform: scale(1); } 100% { opacity: 0; transform: scale(1.5); } }
+@keyframes rg-vx-morph { from { transform: scaleY(3.6); border-radius: 2px; } to { transform: none; } }
+@keyframes rg-vx-think { 0%, 100% { opacity: .35; } 40% { opacity: 1; } }
+@keyframes rg-vx-pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes rg-vx-bar-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes rg-vx-speak { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(.85); } }
+
+/* Reduced motion: nothing loops or pulses. The level bars still show the real level, instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .rg-vx, .rg-vx-dots i, .rg-mic-ring, .rg-vx-visual, .rg-vx-visual::before, .speech-bar, .speech-bar-wave i { animation: none !important; }
+  .rg-wave i, .rg-vx .rg-vx-button, .speech-bar-stop { transition: none; }
+  .speech-bar[data-state="speaking"] .speech-bar-wave i { transform: scaleY(.6); }
+}

@@ -1202,17 +1202,22 @@ function renderSpeechBar(status) {
   if (!bar) return;
   const { state, reason } = status;
   document.body.classList.toggle('has-speech-bar', ['starting', 'speaking', 'failed', 'unsupported'].includes(state));
+  const speakerIcon = '<svg class="speech-bar-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>';
+  const stopButton = '<button type="button" class="speech-bar-stop" data-speech-stop><span class="speech-bar-stop-icon" aria-hidden="true"></span>Stop speaking</button>';
   if (state === 'starting' || state === 'speaking') {
     bar.hidden = false;
-    bar.dataset.state = 'speaking';
-    bar.innerHTML = `<span class="speech-bar-wave" aria-hidden="true"><i></i><i></i><i></i></span><span class="speech-bar-text">Speaking</span><button type="button" class="speech-bar-stop" data-speech-stop>Stop speaking</button>`;
+    // "Speaking" (and its moving bars) only once the engine reports that audio actually started.
+    bar.dataset.state = state;
+    bar.innerHTML = state === 'speaking'
+      ? `<span class="speech-bar-icon" aria-hidden="true">${speakerIcon}</span><span class="speech-bar-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="speech-bar-text">Speaking</span>${stopButton}`
+      : `<span class="speech-bar-icon" aria-hidden="true">${speakerIcon}</span><span class="speech-bar-text">Starting audio…</span>${stopButton}`;
     return;
   }
   if (state === 'failed' || state === 'unsupported') {
     const message = state === 'unsupported' ? 'This browser cannot speak. Your screen reader can read the text on screen.' : (SPEECH_FAILURES[reason] || 'Rove could not play audio. The text is on screen for your screen reader.');
     bar.hidden = false;
     bar.dataset.state = 'failed';
-    bar.innerHTML = `<span class="speech-bar-text">${esc(message)}</span><button type="button" class="speech-bar-stop" data-speech-dismiss>Dismiss</button>`;
+    bar.innerHTML = `<span class="speech-bar-icon" aria-hidden="true"><svg class="speech-bar-glyph" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/></svg></span><span class="speech-bar-text">${esc(message)}</span><button type="button" class="speech-bar-stop" data-speech-dismiss>Dismiss</button>`;
     // The words that could not be spoken still reach screen-reader users.
     announceAccess(`${message} ${status.text || ''}`);
     return;
@@ -2874,12 +2879,20 @@ function voiceStatusHtml() {
   const v = state.plan.voice;
   if (!v) return '';
   const retry = currentView().name === 'demo' ? 'demo-speak' : 'voice-destination';
-  if (v.state === 'starting') return `<div class="rg-listening" role="status"><span class="rg-pulse is-waiting" aria-hidden="true"></span><span>Speak after the tone.</span><button type="button" class="rg-text-button" data-action="voice-stop">Cancel</button></div>`;
-  if (v.state === 'listening') return `<div class="rg-listening" role="status">${v.mode === 'server' ? '<span class="rg-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>' : '<span class="rg-mic-ring" aria-hidden="true"></span>'}<span>${v.mode === 'server' ? "Listening. I'll stop when you pause." : 'Listening. Say a place, address, or station.'}</span>${v.mode === 'server' ? '<button type="button" class="rg-text-button" data-action="voice-done">Done</button>' : ''}<button type="button" class="rg-text-button" data-action="voice-stop">Cancel</button></div>`;
-  if (v.state === 'understanding') return `<div class="rg-listening" role="status"><span class="spinner" aria-hidden="true"></span><span>Understanding…</span></div>`;
-  if (v.state === 'installing') return `<div class="rg-listening" role="status"><span class="spinner" aria-hidden="true"></span><span>Downloading on-device voice…</span></div>`;
-  if (v.state === 'heard') return `<p class="rg-heard">Heard <q>${esc(v.heard)}</q>${v.matches === 0 ? '. No matches; try again or type.' : '. Choose the right match below.'}</p>`;
-  if (v.state === 'error') return `<div class="rg-voice-error" role="alert"><p>${esc(VOICE_ERRORS[v.error] || "Voice input didn't work. Try again, or type your destination.")}</p>${v.error === 'voice-download' ? '<button type="button" class="rg-text-button" data-action="voice-install">Download on-device voice</button>' : ''}${PERMANENT_VOICE_ERRORS.includes(v.error) ? '' : `<button type="button" class="rg-text-button" data-action="${retry}">Try again</button>`}</div>`;
+  /* Every visual reflects real state: the bars move only from the live microphone level
+   * (server mode); the browser recognizer gives no level, so it gets a ring instead. */
+  const mic = '<svg class="rg-vx-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>';
+  const text = (title, detail = '') => `<span class="rg-vx-text"><strong class="rg-vx-title">${title}</strong>${detail ? `<span class="rg-vx-sep">. </span><span class="rg-vx-detail">${detail}</span>` : ''}</span>`;
+  const button = (action, label, primary = false) => `<button type="button" class="rg-text-button rg-vx-button${primary ? ' is-primary' : ''}" data-action="${action}">${label}</button>`;
+  const actions = (...buttons) => `<span class="rg-vx-actions">${buttons.join('')}</span>`;
+  const thinking = '<span class="rg-vx-visual is-thinking" aria-hidden="true"><span class="rg-vx-dots"><i></i><i></i><i></i></span></span>';
+  if (v.state === 'starting') return `<div class="rg-listening rg-vx" data-vx="waiting" role="status"><span class="rg-vx-visual is-waiting" aria-hidden="true">${mic}<span class="rg-pulse is-waiting"></span></span>${text('Speak after the tone.')}${actions(button('voice-stop', 'Cancel'))}</div>`;
+  if (v.state === 'listening' && v.mode === 'server') return `<div class="rg-listening rg-vx" data-vx="listening" data-mode="server" role="status"><span class="rg-vx-visual is-level" aria-hidden="true"><span class="rg-vx-live"></span><span class="rg-wave"><i></i><i></i><i></i><i></i><i></i></span></span>${text('Listening', "I'll stop when you pause.")}${actions(button('voice-done', 'Done', true), button('voice-stop', 'Cancel'))}</div>`;
+  if (v.state === 'listening') return `<div class="rg-listening rg-vx" data-vx="listening" data-mode="browser" role="status"><span class="rg-vx-visual is-ring" aria-hidden="true"><span class="rg-mic-ring"></span>${mic}</span>${text('Listening', 'Say a place, address, or station.')}${actions(button('voice-stop', 'Cancel'))}</div>`;
+  if (v.state === 'understanding') return `<div class="rg-listening rg-vx" data-vx="understanding" role="status">${thinking}${text('Understanding…')}</div>`;
+  if (v.state === 'installing') return `<div class="rg-listening rg-vx" data-vx="installing" role="status">${thinking}${text('Downloading on-device voice…')}</div>`;
+  if (v.state === 'heard') return `<p class="rg-heard rg-vx" data-vx="heard"${v.matches === 0 ? ' data-tone="none"' : ''}><span class="rg-vx-visual is-heard" aria-hidden="true"><svg class="rg-vx-glyph" viewBox="0 0 24 24">${v.matches === 0 ? '<path d="M12 7.5v5.5M12 16.5v.01"/>' : '<path d="m6.5 12.5 3.6 3.6 7.4-8.2"/>'}</svg></span><span class="rg-vx-text">Heard <q>${esc(v.heard)}</q>${v.matches === 0 ? '. No matches; try again or type.' : '. Choose the right match below.'}</span></p>`;
+  if (v.state === 'error') return `<div class="rg-voice-error rg-vx" data-vx="error" role="alert"><span class="rg-vx-visual is-error" aria-hidden="true"><svg class="rg-vx-glyph" viewBox="0 0 24 24"><path d="M12 7.5v5.5M12 16.5v.01"/></svg></span><p class="rg-vx-text">${esc(VOICE_ERRORS[v.error] || "Voice input didn't work. Try again, or type your destination.")}</p>${v.error === 'voice-download' || !PERMANENT_VOICE_ERRORS.includes(v.error) ? actions(v.error === 'voice-download' ? button('voice-install', 'Download on-device voice', true) : '', PERMANENT_VOICE_ERRORS.includes(v.error) ? '' : button(retry, 'Try again', true)) : ''}</div>`;
   return '';
 }
 /* Patch the voice status in place: re-rendering would move screen-reader focus (and make
