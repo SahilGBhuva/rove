@@ -1,0 +1,1292 @@
+{
+ "sf_ferry": {
+  "query": "San Francisco Ferry Building",
+  "lat": 37.795549,
+  "lon": -122.393475,
+  "name": "San Francisco Ferry Building",
+  "address": "1 The Embarcadero",
+  "city": "San Francisco",
+  "osm": "W558731934",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_union_sq": {
+  "query": "Union Square, San Francisco",
+  "lat": 37.787514,
+  "lon": -122.407159,
+  "name": "Union Square",
+  "address": null,
+  "city": "San Francisco",
+  "osm": "N4609282251",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_powell_st": {
+  "query": "Powell Street BART Station, San Francisco",
+  "lat": 37.78492,
+  "lon": -122.406933,
+  "name": "Powell Street Station",
+  "address": "899 Market Street",
+  "city": "San Francisco",
+  "osm": "W160331904",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_mission24": {
+  "query": "2400 Mission Street, San Francisco",
+  "lat": 37.758517,
+  "lon": -122.419244,
+  "name": null,
+  "address": "2400 Mission Street",
+  "city": "San Francisco",
+  "osm": "N2069129547",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_castro": {
+  "query": "Castro Theatre, San Francisco",
+  "lat": 37.761991,
+  "lon": -122.43475,
+  "name": "Castro Theatre",
+  "address": "429 Castro Street",
+  "city": "San Francisco",
+  "osm": "W1206216224",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_haight": {
+  "query": "1500 Haight Street, San Francisco",
+  "lat": 37.770093,
+  "lon": -122.447105,
+  "name": "Haight & Ashbury",
+  "address": "1500 Haight Street",
+  "city": "San Francisco",
+  "osm": "N4359135096",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_sunset": {
+  "query": "2000 Irving Street, San Francisco",
+  "lat": 37.763666,
+  "lon": -122.479577,
+  "name": "Citibank",
+  "address": "2000 Irving Street",
+  "city": "San Francisco",
+  "osm": "W276546374",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_cliff_house": {
+  "query": "1090 Point Lobos Avenue, San Francisco",
+  "lat": 37.778555,
+  "lon": -122.51408,
+  "name": "Cliff House",
+  "address": "1090 Point Lobos Avenue",
+  "city": "San Francisco",
+  "osm": "W168942988",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_richmond": {
+  "query": "5000 Geary Boulevard, San Francisco",
+  "lat": 37.780881,
+  "lon": -122.47302,
+  "name": "Computer 5000",
+  "address": "5000A Geary Boulevard",
+  "city": "San Francisco",
+  "osm": "N669137629",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_marina": {
+  "query": "Palace of Fine Arts, San Francisco",
+  "lat": 37.802919,
+  "lon": -122.448403,
+  "name": "Palace of Fine Arts",
+  "address": "3301 Lyon Street",
+  "city": "San Francisco",
+  "osm": "W288371295",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_wash_sq": {
+  "query": "Washington Square, San Francisco",
+  "lat": 37.800865,
+  "lon": -122.410101,
+  "name": "Washington Square Park",
+  "address": null,
+  "city": "San Francisco",
+  "osm": "W18583270",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_chinatown": {
+  "query": "Dragon Gate, Grant Avenue, San Francisco",
+  "lat": 37.790688,
+  "lon": -122.405594,
+  "name": "Dragon Gate",
+  "address": "401 Grant Avenue",
+  "city": "San Francisco",
+  "osm": "N65328703",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_moscone": {
+  "query": "Moscone Center, San Francisco",
+  "lat": 37.784399,
+  "lon": -122.400584,
+  "name": "George R Moscone Convention Center",
+  "address": "3rd Street",
+  "city": "San Francisco",
+  "osm": "W426708093",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_4th_king": {
+  "query": "San Francisco 4th and King Street station",
+  "lat": 37.776906,
+  "lon": -122.395149,
+  "name": "Taxi Stand at Caltrain Station at 4th and King St",
+  "address": "333 Townsend Street",
+  "city": "San Francisco",
+  "osm": "N389409962",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_chase": {
+  "query": "Chase Center, San Francisco",
+  "lat": 37.7679,
+  "lon": -122.387422,
+  "name": "Chase Center",
+  "address": "1 Warriors Way",
+  "city": "San Francisco",
+  "osm": "W579646390",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_ucsf_mb": {
+  "query": "1675 Owens Street, San Francisco",
+  "lat": 37.76796,
+  "lon": -122.393113,
+  "name": "UCSF Community Center",
+  "address": "1675 Owens Street",
+  "city": "San Francisco",
+  "osm": "W84812339",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_bayview": {
+  "query": "4705 3rd Street, San Francisco",
+  "lat": 37.735147,
+  "lon": -122.390167,
+  "name": "Bayview Opera House Ruth Williams Memorial Theatre",
+  "address": "4705 3rd Street",
+  "city": "San Francisco",
+  "osm": "W288836717",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_hunters_pt": {
+  "query": "Hunters Point Shipyard, San Francisco",
+  "lat": 37.728943,
+  "lon": -122.360064,
+  "name": "Hunters Point Naval Shipyard",
+  "address": null,
+  "city": "San Francisco",
+  "osm": "W1219279180",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_excelsior": {
+  "query": "4500 Mission Street 94112",
+  "lat": 37.732919,
+  "lon": -122.427159,
+  "name": "Mission Street",
+  "address": null,
+  "city": "San Francisco",
+  "osm": "W41380022",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_glen_park": {
+  "query": "2901 Diamond Street, San Francisco",
+  "lat": 37.733104,
+  "lon": -122.433805,
+  "name": "Glen Park",
+  "address": "2901 Diamond Street",
+  "city": "San Francisco",
+  "osm": "N6133371922",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_twin_peaks": {
+  "query": "Twin Peaks Boulevard, San Francisco",
+  "lat": 37.753299,
+  "lon": -122.446777,
+  "name": "Twin Peaks Boulevard",
+  "address": null,
+  "city": "San Francisco",
+  "osm": "W936556446",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_sfsu": {
+  "query": "San Francisco State University",
+  "lat": 37.724517,
+  "lon": -122.479996,
+  "name": "San Francisco State University",
+  "address": "1600 Holloway Avenue",
+  "city": "San Francisco",
+  "osm": "W28965902",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_stonestown": {
+  "query": "Stonestown Galleria, San Francisco",
+  "lat": 37.728243,
+  "lon": -122.477021,
+  "name": "Stonestown Galleria Mall",
+  "address": "Winston Drive",
+  "city": "San Francisco",
+  "osm": "W1154799336",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_presidio": {
+  "query": "Walt Disney Family Museum, San Francisco",
+  "lat": 37.801363,
+  "lon": -122.458721,
+  "name": "Walt Disney Family Museum",
+  "address": "104 Montgomery Street",
+  "city": "San Francisco",
+  "osm": "W288340246",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_gg_bridge": {
+  "query": "Golden Gate Bridge Welcome Center",
+  "lat": 37.80799,
+  "lon": -122.475572,
+  "name": "Welcome to the Golden Gate Bridge outdoor exhibition",
+  "address": "Presidio Parkway",
+  "city": "San Francisco",
+  "osm": "N12139978169",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_coit": {
+  "query": "Coit Tower, San Francisco",
+  "lat": 37.802379,
+  "lon": -122.405834,
+  "name": "Coit Tower",
+  "address": "Telegraph Hill Boulevard",
+  "city": "San Francisco",
+  "osm": "W28824850",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_city_hall": {
+  "query": "San Francisco City Hall",
+  "lat": 37.779293,
+  "lon": -122.41926,
+  "name": "San Francisco City Hall",
+  "address": "1 Dr. Carlton B. Goodlett Place",
+  "city": "San Francisco",
+  "osm": "R7261820",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_dogpatch": {
+  "query": "900 Minnesota Street, San Francisco",
+  "lat": 37.76259,
+  "lon": -122.390666,
+  "name": "Minnesota Street",
+  "address": null,
+  "city": "San Francisco",
+  "osm": "W681490613",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_potrero": {
+  "query": "1601 18th Street, San Francisco",
+  "lat": 37.76235,
+  "lon": -122.398644,
+  "name": null,
+  "address": "1601 18th Street",
+  "city": "San Francisco",
+  "osm": "N14071663522",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_zoo": {
+  "query": "San Francisco Zoo",
+  "lat": 37.732748,
+  "lon": -122.502392,
+  "name": "San Francisco Zoo",
+  "address": "Great Highway Extension",
+  "city": "San Francisco",
+  "osm": "W404847048",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_treasure": {
+  "query": "Treasure Island, San Francisco",
+  "lat": 37.823806,
+  "lon": -122.370411,
+  "name": "Treasure Island",
+  "address": null,
+  "city": "San Francisco",
+  "osm": "W26767313",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_cal_academy": {
+  "query": "California Academy of Sciences, San Francisco",
+  "lat": 37.769824,
+  "lon": -122.466097,
+  "name": "California Academy of Sciences",
+  "address": "55 Music Concourse Drive",
+  "city": "San Francisco",
+  "osm": "W28695389",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_noe": {
+  "query": "4000 24th Street, San Francisco",
+  "lat": 37.751508,
+  "lon": -122.432083,
+  "name": "Novy",
+  "address": "4000 24th Street",
+  "city": "San Francisco",
+  "osm": "N1713269583",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sf_sunnydale": {
+  "query": "1654 Sunnydale Avenue, San Francisco",
+  "lat": 37.711133,
+  "lon": -122.413225,
+  "name": "Sunnydale Avenue",
+  "address": null,
+  "city": "San Francisco",
+  "osm": "W224373760",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_city_hall": {
+  "query": "Oakland City Hall",
+  "lat": 37.805319,
+  "lon": -122.272581,
+  "name": "Oakland City Hall",
+  "address": "1 Frank H. Ogawa Plaza",
+  "city": "Oakland",
+  "osm": "W36977855",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_jack_london": {
+  "query": "Jack London Square, Oakland",
+  "lat": 37.795789,
+  "lon": -122.274685,
+  "name": "Jack London Square",
+  "address": null,
+  "city": "Oakland",
+  "osm": "N358768154",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_museum": {
+  "query": "Oakland Museum of California",
+  "lat": 37.798614,
+  "lon": -122.263604,
+  "name": "Oakland Museum of California",
+  "address": "1000 Oak Street",
+  "city": "Oakland",
+  "osm": "R6431998",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_fruitvale": {
+  "query": "Fruitvale Village, Oakland",
+  "lat": 37.775433,
+  "lon": -122.224176,
+  "name": "Fruitvale Village",
+  "address": null,
+  "city": "Oakland",
+  "osm": "W116567910",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_temescal": {
+  "query": "4900 Telegraph Avenue, Oakland",
+  "lat": 37.836077,
+  "lon": -122.26225,
+  "name": null,
+  "address": "4900 Telegraph Avenue",
+  "city": "Oakland",
+  "osm": "W395475805",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_rockridge": {
+  "query": "5500 College Avenue, Oakland",
+  "lat": 37.842835,
+  "lon": -122.251364,
+  "name": "Namaste Patio",
+  "address": "5500 College Avenue",
+  "city": "Oakland",
+  "osm": "W160262691",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_montclair": {
+  "query": "6200 La Salle Avenue, Oakland",
+  "lat": 37.823025,
+  "lon": -122.217116,
+  "name": "La Salle Avenue",
+  "address": null,
+  "city": "Oakland",
+  "osm": "W1157823415",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_eastmont": {
+  "query": "7200 Bancroft Avenue, Oakland",
+  "lat": 37.767956,
+  "lon": -122.177546,
+  "name": "MoneyGram",
+  "address": "7200 Bancroft Avenue",
+  "city": "Oakland",
+  "osm": "N12739951870",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_coliseum": {
+  "query": "Oakland Arena",
+  "lat": 37.750273,
+  "lon": -122.202932,
+  "name": "Oakland Arena",
+  "address": "7000 Coliseum Way",
+  "city": "Oakland",
+  "osm": "W23426633",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_mills": {
+  "query": "Mills College, Oakland",
+  "lat": 37.779911,
+  "lon": -122.183472,
+  "name": "Mills College at Northeastern University",
+  "address": "5000 MacArthur Boulevard",
+  "city": "Oakland",
+  "osm": "W23566622",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_chabot": {
+  "query": "Chabot Space and Science Center",
+  "lat": 37.818463,
+  "lon": -122.180687,
+  "name": "Chabot Space and Science Center",
+  "address": "10000 Skyline Boulevard",
+  "city": "Oakland",
+  "osm": "N10028418263",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_west": {
+  "query": "West Oakland BART",
+  "lat": 37.804861,
+  "lon": -122.294698,
+  "name": "West Oakland BART Plaza",
+  "address": null,
+  "city": "Oakland",
+  "osm": "R9459428",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_kaiser": {
+  "query": "3600 Broadway, Oakland",
+  "lat": 37.824351,
+  "lon": -122.256904,
+  "name": "Oakland Medical Center",
+  "address": "3600 Broadway",
+  "city": "Oakland",
+  "osm": "W104334210",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "brk_sather": {
+  "query": "Sather Gate, Berkeley",
+  "lat": 37.87024,
+  "lon": -122.259509,
+  "name": "Sather Gate",
+  "address": "Sproul Plaza",
+  "city": "Berkeley",
+  "osm": "N288992419",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "brk_downtown": {
+  "query": "2160 Shattuck Avenue, Berkeley",
+  "lat": 37.870101,
+  "lon": -122.268138,
+  "name": "Downtown Berkeley",
+  "address": "2160 Shattuck Avenue",
+  "city": "Berkeley",
+  "osm": "N6129383336",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "brk_4th": {
+  "query": "1800 4th Street, Berkeley",
+  "lat": 37.869868,
+  "lon": -122.3012,
+  "name": "Stained Glass Garden",
+  "address": "1800 4th Street",
+  "city": "Berkeley",
+  "osm": "N2475996470",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "brk_north": {
+  "query": "1750 Sacramento Street, Berkeley",
+  "lat": 37.873966,
+  "lon": -122.283439,
+  "name": "North Berkeley",
+  "address": "1750 Sacramento Street",
+  "city": "Berkeley",
+  "osm": "N6129383335",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "brk_lhs": {
+  "query": "Lawrence Hall of Science, Berkeley",
+  "lat": 37.880286,
+  "lon": -122.246463,
+  "name": "Lawrence Hall of Science",
+  "address": "Centennial Drive",
+  "city": "Berkeley",
+  "osm": "N5845187696",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "brk_elmwood": {
+  "query": "2900 College Avenue, Berkeley",
+  "lat": 37.858346,
+  "lon": -122.253335,
+  "name": "Baker & Commons",
+  "address": "2900 College Avenue",
+  "city": "Berkeley",
+  "osm": "N1698878187",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "albany_solano": {
+  "query": "1200 Solano Avenue, Albany",
+  "lat": 37.891023,
+  "lon": -122.285652,
+  "name": "Solano Avenue",
+  "address": null,
+  "city": "Albany",
+  "osm": "W21482914",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "emv_market": {
+  "query": "5959 Shellmound Street, Emeryville",
+  "lat": 37.841105,
+  "lon": -122.293536,
+  "name": "Super Duper Burgers",
+  "address": "5959 Shellmound Street",
+  "city": "Emeryville",
+  "osm": "N9318880039",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "rich_bart": {
+  "query": "1700 Nevin Avenue, Richmond",
+  "lat": 37.936868,
+  "lon": -122.35316,
+  "name": "Richmond",
+  "address": "Nevin Avenue",
+  "city": "Richmond",
+  "osm": "N6108521326",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "rich_hilltop": {
+  "query": "Hilltop Mall, Richmond",
+  "lat": 37.978206,
+  "lon": -122.3281,
+  "name": "Hilltop Mall Road",
+  "address": null,
+  "city": "Richmond",
+  "osm": "W1379676451",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "rich_point": {
+  "query": "101 Park Place, Richmond",
+  "lat": 37.926949,
+  "lon": -122.384661,
+  "name": null,
+  "address": "101 Park Place",
+  "city": "Richmond",
+  "osm": "W305323100",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "elc_plaza": {
+  "query": "El Cerrito Plaza",
+  "lat": 37.899719,
+  "lon": -122.299549,
+  "name": "El Cerrito Plaza",
+  "address": "Ohlone Greenway",
+  "city": "El Cerrito",
+  "osm": "W191369441",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "ala_south_shore": {
+  "query": "South Shore Center, Alameda",
+  "lat": 37.758058,
+  "lon": -122.253462,
+  "name": "South Shore Center",
+  "address": null,
+  "city": "Alameda",
+  "osm": "W6322285",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "ala_theatre": {
+  "query": "2317 Central Avenue, Alameda",
+  "lat": 37.764766,
+  "lon": -122.243423,
+  "name": "Alameda Theatre & Cineplex",
+  "address": "2317 Central Avenue",
+  "city": "Alameda",
+  "osm": "W1470132425",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "ala_point": {
+  "query": "950 West Mall Square, Alameda",
+  "lat": 37.786143,
+  "lon": -122.302886,
+  "name": "City Hall West",
+  "address": "950 West Mall Square",
+  "city": "alameda",
+  "osm": "W382527691",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sl_bart": {
+  "query": "San Leandro BART",
+  "lat": 37.721138,
+  "lon": -122.160114,
+  "name": "San Leandro BART",
+  "address": "San Leandro Boulevard",
+  "city": "San Leandro",
+  "osm": "N5845175417",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sl_bayfair": {
+  "query": "Bayfair Center, San Leandro",
+  "lat": 37.700664,
+  "lon": -122.125441,
+  "name": "Bayfair Center",
+  "address": null,
+  "city": "San Leandro",
+  "osm": "W50725531",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "hay_city_hall": {
+  "query": "Hayward City Hall",
+  "lat": 37.670899,
+  "lon": -122.085771,
+  "name": "Hayward City Hall",
+  "address": "B Street",
+  "city": "Hayward",
+  "osm": "W104589960",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "hay_csueb": {
+  "query": "California State University East Bay, Hayward",
+  "lat": 37.655524,
+  "lon": -122.055877,
+  "name": "California State University - East Bay",
+  "address": "25800 Carlos Bee Boulevard",
+  "city": "Hayward",
+  "osm": "R4009469",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "hay_southland": {
+  "query": "Southland Mall, Hayward",
+  "lat": 37.651834,
+  "lon": -122.101169,
+  "name": "Southland Mall",
+  "address": "La Playa Drive",
+  "city": "Hayward",
+  "osm": "W43985666",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "cv_bart": {
+  "query": "Castro Valley BART",
+  "lat": 37.69154,
+  "lon": -122.075019,
+  "name": "Castro Valley BART",
+  "address": "Arthur H. Breed Junior Freeway",
+  "city": "Castro Valley",
+  "osm": "N5845156157",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "uc_bart": {
+  "query": "Union City BART",
+  "lat": 37.591091,
+  "lon": -122.018459,
+  "name": "Union City BART",
+  "address": "Station Way",
+  "city": "Union City",
+  "osm": "N6410437733",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "fre_bart": {
+  "query": "Fremont BART station",
+  "lat": 37.55748,
+  "lon": -121.976632,
+  "name": "Fremont",
+  "address": "2000 Bart Way",
+  "city": "Fremont",
+  "osm": "N6131716481",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "fre_warm_springs": {
+  "query": "Warm Springs/South Fremont BART",
+  "lat": 37.501458,
+  "lon": -121.937037,
+  "name": "Warm Springs BART",
+  "address": null,
+  "city": "Fremont",
+  "osm": "W1069912962",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "fre_hub": {
+  "query": "Fremont Hub",
+  "lat": 37.545544,
+  "lon": -121.986796,
+  "name": "Fremont Hub Shopping Center",
+  "address": null,
+  "city": "Fremont",
+  "osm": "W43985913",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "fre_mission": {
+  "query": "43300 Mission Boulevard, Fremont",
+  "lat": 37.533372,
+  "lon": -121.919701,
+  "name": null,
+  "address": "43300 Mission Boulevard",
+  "city": "Fremont",
+  "osm": "W875669692",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "fre_ohlone": {
+  "query": "Ohlone College, Fremont",
+  "lat": 37.533546,
+  "lon": -121.906332,
+  "name": "Ohlone College",
+  "address": "YSC Trail",
+  "city": "Fremont",
+  "osm": "R317368",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "dub_bart": {
+  "query": "Dublin/Pleasanton BART",
+  "lat": 37.702788,
+  "lon": -121.899401,
+  "name": "Dublin/Pleasanton BART",
+  "address": "Iron Horse Trail",
+  "city": "Dublin",
+  "osm": "N6431743393",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "dub_city_hall": {
+  "query": "100 Civic Plaza, Dublin",
+  "lat": 37.704132,
+  "lon": -121.918088,
+  "name": "Dublin Police Services",
+  "address": "100 Civic Plaza",
+  "city": "Dublin",
+  "osm": "N9993864275",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "ple_stoneridge": {
+  "query": "Stoneridge Shopping Center, Pleasanton",
+  "lat": 37.69542,
+  "lon": -121.928885,
+  "name": "Stoneridge Shopping Center",
+  "address": "Stoneridge Mall Road",
+  "city": "Pleasanton",
+  "osm": "W101533244",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "wc_bart": {
+  "query": "Walnut Creek BART",
+  "lat": 37.905487,
+  "lon": -122.068455,
+  "name": "Walnut Creek BART",
+  "address": "Ygnacio Valley Road",
+  "city": "Walnut Creek",
+  "osm": "N848729932",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "wc_broadway": {
+  "query": "Broadway Plaza, Walnut Creek",
+  "lat": 37.895586,
+  "lon": -122.057995,
+  "name": "Broadway Plaza",
+  "address": "Broadway Lane",
+  "city": "Walnut Creek",
+  "osm": "W491770747",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "laf_bart": {
+  "query": "Lafayette BART",
+  "lat": 37.893557,
+  "lon": -122.125105,
+  "name": "Lafayette BART",
+  "address": "Bart Busway",
+  "city": "Lafayette",
+  "osm": "N6431891892",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "ph_bart": {
+  "query": "Pleasant Hill/Contra Costa Centre BART",
+  "lat": 37.928244,
+  "lon": -122.055684,
+  "name": "Pleasant Hill BART",
+  "address": "Harvey Drive",
+  "city": "Contra Costa Centre",
+  "osm": "N5882107086",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "con_bart": {
+  "query": "Concord BART",
+  "lat": 37.973269,
+  "lon": -122.029579,
+  "name": "Concord BART",
+  "address": "Grant Street",
+  "city": "Concord",
+  "osm": "N5885844888",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "ant_bart": {
+  "query": "Antioch BART",
+  "lat": 37.99596,
+  "lon": -121.780201,
+  "name": "Antioch BART",
+  "address": null,
+  "city": "Antioch",
+  "osm": "N5898766786",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "pit_bart": {
+  "query": "Pittsburg/Bay Point BART",
+  "lat": 38.017615,
+  "lon": -121.945324,
+  "name": "Pittsburg/Bay Point BART",
+  "address": null,
+  "city": "Bay Point",
+  "osm": "N1457366128",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "mil_great_mall": {
+  "query": "Great Mall, Milpitas",
+  "lat": 37.415723,
+  "lon": -121.897678,
+  "name": "Great Mall",
+  "address": "572 Great Mall Drive",
+  "city": "Milpitas",
+  "osm": "W158925764",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "mil_transit": {
+  "query": "Milpitas Transit Center",
+  "lat": 37.409787,
+  "lon": -121.892007,
+  "name": "Milpitas Transit Center",
+  "address": "East Capitol Avenue",
+  "city": "Milpitas",
+  "osm": "N6955808031",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_diridon": {
+  "query": "San Jose Diridon Station",
+  "lat": 37.329619,
+  "lon": -121.902607,
+  "name": "San Jose Diridon Station",
+  "address": "65 Cahill Street",
+  "city": "San Jose",
+  "osm": "W42478846",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_city_hall": {
+  "query": "San Jose City Hall",
+  "lat": 37.337414,
+  "lon": -121.887004,
+  "name": "San Jose City Hall",
+  "address": "San José Civic Plaza",
+  "city": "San Jose",
+  "osm": "N2671872263",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_sap": {
+  "query": "SAP Center, San Jose",
+  "lat": 37.331407,
+  "lon": -121.900721,
+  "name": "SAP Center Parking Lot D",
+  "address": "522 West Santa Clara Street",
+  "city": "San Jose",
+  "osm": "W221142313",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_sjsu": {
+  "query": "Martin Luther King Jr. Library San Jose",
+  "lat": 37.335507,
+  "lon": -121.885077,
+  "name": "Doctor Martin Luther King Junior Library",
+  "address": "150 East San Fernando Street",
+  "city": "San Jose",
+  "osm": "W25774796",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_santana_row": {
+  "query": "Santana Row, San Jose",
+  "lat": 37.32098,
+  "lon": -121.9486,
+  "name": "Santana Row",
+  "address": null,
+  "city": "San Jose",
+  "osm": "W142697822",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_oakridge": {
+  "query": "Westfield Oakridge, San Jose",
+  "lat": 37.252473,
+  "lon": -121.86297,
+  "name": "Westfield Oakridge",
+  "address": "925 Blossom Hill Road",
+  "city": "San Jose",
+  "osm": "W28435234",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_berryessa": {
+  "query": "Berryessa/North San Jose BART",
+  "lat": 37.36844,
+  "lon": -121.874677,
+  "name": "Berryessa/North San José",
+  "address": "1620 Berryessa Road",
+  "city": "San Jose",
+  "osm": "N6955370556",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_airport": {
+  "query": "San Jose Mineta International Airport Terminal B",
+  "lat": 37.36333,
+  "lon": -121.929337,
+  "name": "San José Mineta International Airport",
+  "address": "1701 Airport Boulevard",
+  "city": "San Jose",
+  "osm": "W648903263",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_eastridge": {
+  "query": "Eastridge Center, San Jose",
+  "lat": 37.326361,
+  "lon": -121.814675,
+  "name": "Eastridge Center",
+  "address": null,
+  "city": "San Jose",
+  "osm": "W38519376",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_evergreen": {
+  "query": "Evergreen Valley College, San Jose",
+  "lat": 37.301121,
+  "lon": -121.763734,
+  "name": "Evergreen Valley College",
+  "address": "3095 Yerba Buena Road",
+  "city": "San Jose",
+  "osm": "W38273588",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_almaden": {
+  "query": "Almaden Lake Park, San Jose",
+  "lat": 37.239892,
+  "lon": -121.87158,
+  "name": "Almaden Lake Park",
+  "address": "1661 Almaden Expressway",
+  "city": "San Jose",
+  "osm": "W28740133",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sj_japantown": {
+  "query": "Japanese American Museum of San Jose",
+  "lat": 37.347503,
+  "lon": -121.893711,
+  "name": "Japanese American Museum of San Jose",
+  "address": "535 North 5th Street",
+  "city": "San Jose",
+  "osm": "W350497048",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sc_levis": {
+  "query": "Levi's Stadium, Santa Clara",
+  "lat": 37.402987,
+  "lon": -121.969649,
+  "name": "Levi’s Stadium",
+  "address": "4900 Marie P. DeBartolo Way",
+  "city": "Santa Clara",
+  "osm": "W296503400",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sc_scu": {
+  "query": "Santa Clara University",
+  "lat": 37.348624,
+  "lon": -121.936544,
+  "name": "Santa Clara University",
+  "address": "500 El Camino Real",
+  "city": "Santa Clara",
+  "osm": "R4648353",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sc_caltrain": {
+  "query": "Santa Clara Caltrain station",
+  "lat": 37.353103,
+  "lon": -121.936229,
+  "name": "Santa Clara",
+  "address": "Railroad Avenue",
+  "city": "Santa Clara",
+  "osm": "N2160213359",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sc_mission_college": {
+  "query": "Mission College, Santa Clara",
+  "lat": 37.392369,
+  "lon": -121.982906,
+  "name": "Mission College",
+  "address": "3000 Mission College Boulevard",
+  "city": "Santa Clara",
+  "osm": "W28502539",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sv_caltrain": {
+  "query": "Sunnyvale Caltrain station",
+  "lat": 37.378412,
+  "lon": -122.03079,
+  "name": "Sunnyvale Caltrain Station",
+  "address": "West Evelyn Avenue",
+  "city": "Sunnyvale",
+  "osm": "W367153646",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sv_moffett": {
+  "query": "1100 Enterprise Way, Sunnyvale",
+  "lat": 37.408432,
+  "lon": -122.036328,
+  "name": "Amazon SJC11",
+  "address": "1100 Enterprise Way",
+  "city": "Sunnyvale",
+  "osm": "W310940541",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "mv_station": {
+  "query": "Mountain View Transit Center",
+  "lat": 37.394612,
+  "lon": -122.077106,
+  "name": "Downtown Mountain View Transit Center",
+  "address": "West Evelyn Avenue",
+  "city": "Mountain View",
+  "osm": "N761885172",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "mv_google": {
+  "query": "1600 Amphitheatre Parkway, Mountain View",
+  "lat": 37.422486,
+  "lon": -122.085585,
+  "name": "Google Building 41",
+  "address": "1600 Amphitheatre Parkway",
+  "city": "Mountain View",
+  "osm": "W23733659",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "mv_chm": {
+  "query": "Computer History Museum, Mountain View",
+  "lat": 37.414293,
+  "lon": -122.077449,
+  "name": "Computer History Museum",
+  "address": "1401 North Shoreline Boulevard",
+  "city": "Mountain View",
+  "osm": "W31012132",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "mv_hospital": {
+  "query": "El Camino Hospital, Mountain View",
+  "lat": 37.368227,
+  "lon": -122.079836,
+  "name": "El Camino Hospital",
+  "address": "2500 Grant Road",
+  "city": "Mountain View",
+  "osm": "W40719759",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "la_downtown": {
+  "query": "1 North San Antonio Road, Los Altos",
+  "lat": 37.381704,
+  "lon": -122.112201,
+  "name": "Los Altos Police Department",
+  "address": "1 North San Antonio Road",
+  "city": "Los Altos",
+  "osm": "R12652800",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "cup_apple": {
+  "query": "Apple Park Visitor Center, Cupertino",
+  "lat": 37.332843,
+  "lon": -122.005374,
+  "name": "Apple Park Visitor Center",
+  "address": "10600 North Tantau Avenue",
+  "city": "Cupertino",
+  "osm": "W518295584",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "pa_stanford": {
+  "query": "Stanford Main Quad",
+  "lat": 37.427489,
+  "lon": -122.171786,
+  "name": "Main Quad",
+  "address": "450 Jane Stanford Way",
+  "city": "Stanford",
+  "osm": "R35820",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "pa_caltrain": {
+  "query": "Palo Alto Caltrain station",
+  "lat": 37.442391,
+  "lon": -122.164365,
+  "name": "Palo Alto Caltrain Platform South",
+  "address": "Urban Lane",
+  "city": "Palo Alto",
+  "osm": "N5677268816",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "pa_shopping": {
+  "query": "Stanford Shopping Center",
+  "lat": 37.443192,
+  "lon": -122.170916,
+  "name": "Stanford Shopping Center",
+  "address": "660 Stanford Shopping Center",
+  "city": "Palo Alto",
+  "osm": "W110163462",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "pa_baylands": {
+  "query": "Lucy Evans Baylands Nature Interpretive Center",
+  "lat": 37.459623,
+  "lon": -122.106335,
+  "name": "Lucy Evans Baylands Nature Interpretive Center",
+  "address": "2775 Embarcadero Road",
+  "city": "Palo Alto",
+  "osm": "W28745328",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "mp_caltrain": {
+  "query": "Menlo Park Caltrain station",
+  "lat": 37.454796,
+  "lon": -122.182711,
+  "name": "Menlo Park Caltrain",
+  "address": "Merrill Street",
+  "city": "Menlo Park",
+  "osm": "N6632053366",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "rwc_caltrain": {
+  "query": "Redwood City Caltrain station",
+  "lat": 37.486951,
+  "lon": -122.233626,
+  "name": "Redwood City Caltrain Parking",
+  "address": "Perry Street",
+  "city": "Redwood City",
+  "osm": "W25371972",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sm_caltrain": {
+  "query": "San Mateo Caltrain station",
+  "lat": 37.567693,
+  "lon": -122.323781,
+  "name": "San Mateo Caltrain Station",
+  "address": "1st Avenue",
+  "city": "San Mateo",
+  "osm": "N12791839645",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sm_hillsdale": {
+  "query": "Hillsdale Shopping Center, San Mateo",
+  "lat": 37.537254,
+  "lon": -122.300507,
+  "name": "Hillsdale Shopping Center",
+  "address": "31st Avenue",
+  "city": "San Mateo",
+  "osm": "W158621310",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "bur_caltrain": {
+  "query": "Burlingame Caltrain station",
+  "lat": 37.579956,
+  "lon": -122.344775,
+  "name": "Burlingame Caltrain Bike Lockers",
+  "address": "South Lane",
+  "city": "Burlingame",
+  "osm": "N4386636528",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "mil_station": {
+  "query": "Millbrae station",
+  "lat": 37.600244,
+  "lon": -122.386782,
+  "name": "Millbrae",
+  "address": "Harriet Tubman Way",
+  "city": "Millbrae",
+  "osm": "N5317898423",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sfo_intl": {
+  "query": "San Francisco International Airport International Terminal",
+  "lat": 37.616605,
+  "lon": -122.389441,
+  "name": "International Terminal G",
+  "address": "780 South Airport Boulevard",
+  "city": "San Francisco",
+  "osm": "N6580620901",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "dc_bart": {
+  "query": "Daly City BART",
+  "lat": 37.706064,
+  "lon": -122.469098,
+  "name": "Daly City BART",
+  "address": "John Daly Boulevard",
+  "city": "Daly City",
+  "osm": "N6424477594",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "dc_serramonte": {
+  "query": "Serramonte Center, Daly City",
+  "lat": 37.672262,
+  "lon": -122.470875,
+  "name": "Serramonte Center",
+  "address": null,
+  "city": "Daly City",
+  "osm": "W24513431",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "ssf_bart": {
+  "query": "South San Francisco BART",
+  "lat": 37.66412,
+  "lon": -122.444031,
+  "name": "South San Francisco BART",
+  "address": "BART",
+  "city": "South San Francisco",
+  "osm": "N6427045367",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sb_tanforan": {
+  "query": "Tanforan, San Bruno",
+  "lat": 37.63656,
+  "lon": -122.418057,
+  "name": "The Shops at Tanforan",
+  "address": "Sneath Lane",
+  "city": "San Bruno",
+  "osm": "W76836282",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "hmb_main": {
+  "query": "Main Street, Half Moon Bay",
+  "lat": 37.469393,
+  "lon": -122.430071,
+  "name": "Main Street",
+  "address": null,
+  "city": "Half Moon Bay",
+  "osm": "W35763589",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "sausalito": {
+  "query": "Sausalito Ferry Terminal",
+  "lat": 37.856183,
+  "lon": -122.477671,
+  "name": "Sausalito Ferry Terminal",
+  "address": "Tracy Way",
+  "city": "Sausalito",
+  "osm": "W780291065",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "pacifica": {
+  "query": "Linda Mar Shopping Center, Pacifica",
+  "lat": 37.593896,
+  "lon": -122.503597,
+  "name": "Linda Mar Shopping Center",
+  "address": null,
+  "city": "Pacifica",
+  "osm": "W32549166",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ },
+ "oak_airport": {
+  "query": "Oakland International Airport station",
+  "lat": 37.713109,
+  "lon": -122.212399,
+  "name": "Oakland International Airport",
+  "address": "Airport Drive",
+  "city": "Oakland",
+  "osm": "N6131716476",
+  "source": "photon.komoot.io (OpenStreetMap)"
+ }
+}

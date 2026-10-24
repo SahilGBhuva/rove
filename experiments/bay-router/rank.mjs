@@ -4,11 +4,15 @@
 export const RANKING = Object.freeze({
   TRANSFER_PENALTY_SECONDS: 300,  // each extra vehicle costs 5 minutes (transfers are hard without sight)
   WALK_RELUCTANCE: 2,             // a walking second costs 2 seconds (it is already in the duration once)
+  COMFORTABLE_WALK_LEG_SECONDS: 8 * 60, // one walk longer than this (about 450 m straight line)...
+  LONG_WALK_LEG_RELUCTANCE: 1,    // ...costs one more second per second beyond it (long unfamiliar walks are hard without sight)
   STOP_WAIT_RELUCTANCE: 1.5,      // a second spent waiting at a stop between vehicles costs 1.5 s
   LONG_WAIT_SECONDS: 15 * 60,     // waits at a stop beyond this cost one extra second per second
   DETOUR_PENALTY_SECONDS: 3600,   // riding away and coming back through the same stations
   BACKTRACK_SECONDS_PER_METER: 1, // net movement away from the destination, beyond a 2 km allowance
   REASONABLE_EXTRA_COST_SECONDS: 45 * 60, // alternatives costing more than best + this are not shown
+  HOP_MAX_WALK_SAVED_METERS: 600, // an extra vehicle that only saves this much walking is not an alternative
+  HOP_MIN_TIME_SAVED_SECONDS: 120,
 });
 
 const num = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
@@ -22,6 +26,10 @@ const longestWait = it => num(it.longestWaitSeconds);
 const signature = it => it.legs.filter(l => l.transit)
   .map(l => `${l.agency?.id}:${l.route?.id}:${l.trip?.id}`).join('|');
 
+// Walking seconds beyond the comfortable length, summed over walking legs.
+const longWalkLegSeconds = it => (it.legs || []).reduce((sum, l) => l.transit ? sum
+  : sum + Math.max(0, num(l.durationSeconds) - RANKING.COMFORTABLE_WALK_LEG_SECONDS), 0);
+
 /**
  * Generalized cost in seconds. `referenceMs` is the requested departure time, so waiting at home
  * before a later departure counts like travel time (it delays arrival), while waiting at a stop
@@ -33,6 +41,7 @@ export function generalizedCost(it, referenceMs) {
   return (end(it) - reference) / 1000
     + RANKING.TRANSFER_PENALTY_SECONDS * transfers(it)
     + (RANKING.WALK_RELUCTANCE - 1) * walkSeconds
+    + RANKING.LONG_WALK_LEG_RELUCTANCE * longWalkLegSeconds(it)
     + (RANKING.STOP_WAIT_RELUCTANCE - 1) * transferWait(it)
     + Math.max(0, longestWait(it) - RANKING.LONG_WAIT_SECONDS)
     + (it.detour ? RANKING.DETOUR_PENALTY_SECONDS : 0)
@@ -78,11 +87,29 @@ export function revisitsEarlierStations(legVisits, meters = 250) {
   return false;
 }
 
+const vehicles = it => it.legs.filter(l => l.transit).map(l => `${l.agency?.id}:${l.route?.id}:${l.trip?.id}`);
+/**
+ * True when B rides every vehicle of A, in order, plus extra vehicles that neither get the rider
+ * there meaningfully sooner nor save much walking: e.g. a one-stop bus hop to the BART station
+ * instead of a 300 m walk. That is one more boarding to find without sight, not a real alternative.
+ */
+export function onlyAddsShortHop(a, b) {
+  const va = vehicles(a), vb = vehicles(b);
+  if (!va.length || vb.length <= va.length) return false;
+  let start = -1;
+  for (let i = 0; i + va.length <= vb.length && start < 0; i++)
+    if (va.every((v, j) => vb[i + j] === v)) start = i;
+  if (start < 0) return false;
+  return end(b) >= end(a) - RANKING.HOP_MIN_TIME_SAVED_SECONDS * 1000
+    && walk(a) - walk(b) <= RANKING.HOP_MAX_WALK_SAVED_METERS;
+}
+
 /**
  * Rank complete itineraries:
  *  1. keep the cheapest copy of each identical vehicle sequence;
  *  2. drop detours when any non-detour option exists;
  *  3. Pareto filter on arrival, transfers, walking, initial wait, transfer wait, longest wait;
+ *     then drop options that only add a short extra vehicle to another option (onlyAddsShortHop);
  *  4. order by generalized cost and drop options far more expensive than the best one.
  */
 export function rankItineraries(itineraries, limit = 3, options = {}) {
@@ -98,6 +125,7 @@ export function rankItineraries(itineraries, limit = 3, options = {}) {
   let pool = [...unique.values()];
   if (pool.some(it => !it.detour)) pool = pool.filter(it => !it.detour);
   pool = paretoFilter(pool);
+  pool = pool.filter(b => !pool.some(a => a !== b && onlyAddsShortHop(a, b)));
   pool.sort((a, b) => cost.get(a) - cost.get(b) || end(a) - end(b) || transfers(a) - transfers(b));
   const best = cost.get(pool[0]);
   return pool.filter(it => cost.get(it) <= best + RANKING.REASONABLE_EXTRA_COST_SECONDS).slice(0, limit);

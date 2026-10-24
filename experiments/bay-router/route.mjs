@@ -2,12 +2,14 @@
 // Intentionally separate from Rove's working OTP production backend.
 // Timetable input: {stops, trips, connections} built by build.py for ONE GTFS service date.
 // Connections sorted by departure. Times are seconds since service-date midnight.
-export function directFootpaths(stops, radiusMeters = 220, maxPerStop = 12) {
+// `served` (optional Uint8Array): only stops with service get footpaths, so GTFS entrances,
+// elevators and parent stations cannot take the maxPerStop slots of real platforms.
+export function directFootpaths(stops, radiusMeters = 220, maxPerStop = 12, served = null) {
   const buckets = new Map(), footpaths = Array.from({ length: stops.length }, () => []);
-  const cell = 0.003;
+  const cell = Math.max(0.003, radiusMeters / 111_200 * 1.3);
   for (let i = 0; i < stops.length; i++) {
     const s = stops[i];
-    if (!s[2] || !s[3]) continue;
+    if (!s[2] || !s[3] || (served && !served[i])) continue;
     const y = Math.floor(s[2] / cell), x = Math.floor(s[3] / cell);
     const k = y + '/' + x;
     if (!buckets.has(k)) buckets.set(k, []);
@@ -15,7 +17,7 @@ export function directFootpaths(stops, radiusMeters = 220, maxPerStop = 12) {
   }
   for (let i = 0; i < stops.length; i++) {
     const s = stops[i];
-    if (!s[2] || !s[3]) continue;
+    if (!s[2] || !s[3] || (served && !served[i])) continue;
     const y = Math.floor(s[2] / cell), x = Math.floor(s[3] / cell);
     const candidates = [];
     for (let dy = -1; dy <= 1; dy++) {
@@ -35,6 +37,32 @@ export function directFootpaths(stops, radiusMeters = 220, maxPerStop = 12) {
       [j, Math.ceil(distance / 1.2 + 45)]);
   }
   return footpaths;
+}
+
+// Struct-of-arrays copy of the connection list, built once per (immutable) timetable. Scanning
+// typed arrays is several times more cache-friendly than 1.5 M small JS arrays.
+const packCache = new WeakMap();
+export function packedConnections(connections) {
+  let p = packCache.get(connections);
+  if (p) return p;
+  const n = connections.length;
+  p = { from: new Int32Array(n), to: new Int32Array(n), dep: new Float64Array(n), arr: new Float64Array(n),
+    trip: new Int32Array(n), flags: new Uint8Array(n) };
+  for (let i = 0; i < n; i++) {
+    const c = connections[i];
+    p.from[i] = c[0]; p.to[i] = c[1]; p.dep[i] = c[2]; p.arr[i] = c[3]; p.trip[i] = c[4]; p.flags[i] = c[5];
+  }
+  packCache.set(connections, p);
+  return p;
+}
+function lowerBoundPacked(dep, time) {
+  let low = 0, high = dep.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (dep[mid] < time) low = mid + 1;
+    else high = mid;
+  }
+  return low;
 }
 
 function lowerBoundConnection(connections, time) {
@@ -142,6 +170,12 @@ export function findJourney(data, fromStop, toStop, departSeconds, options = {})
 //  - every transfer needs >= MIN_TRANSFER_SECONDS after alighting, plus the walking time when the
 //    next stop is a different stop (footpaths already include a 45 s fixed overhead).
 export const WALK_METERS_PER_SECOND = 1.2;
+// Streets are not straight lines. Access and egress walks are timed on an estimated path of
+// 1.25 x the straight-line distance (a common urban circuity figure), so a 1.4 km straight-line
+// walk costs about 24 minutes instead of an optimistic 19. Footpaths between stops (<= 260 m)
+// keep their 45 s fixed overhead instead.
+export const WALK_CIRCUITY = 1.25;
+export const walkSecondsForMeters = meters => Math.ceil(meters * WALK_CIRCUITY / WALK_METERS_PER_SECOND);
 export const BOARDING_MARGIN_SECONDS = 60;
 export const MIN_TRANSFER_SECONDS = 120;
 const NONE = 0, ORIGIN = 1, RIDE = 2, WALK = 3, INHERIT = 4, TARGET = 5, BOARD = 6;
@@ -183,35 +217,38 @@ export function forwardRounds(data, seeds, targets, departSeconds, options = {})
   }
   const front = [];
   let bestDoor = Infinity;
-  const first = lowerBoundConnection(connections, departSeconds);
+  const C = packedConnections(connections), cFrom = C.from, cTo = C.to, cDep = C.dep, cArr = C.arr, cTrip = C.trip, cFlags = C.flags;
+  const N = cDep.length, first = lowerBoundPacked(cDep, departSeconds);
   const boardStop = new Int32Array(trips.length), boardDep = new Float64Array(trips.length);
   for (let r = 1; r <= maxRides; r++) {
     const cur = inherit(prev);
     boardStop.fill(-1);
     let roundBest = bestDoor, improved = false;
-    for (let ci = first; ci < connections.length; ci++) {
-      const c = connections[ci], dep = c[2];
+    const prevTime = prev.time, prevRides = prev.rides, curTime = cur.time;
+    for (let ci = first; ci < N; ci++) {
+      const dep = cDep[ci];
       if (dep > limit || dep >= roundBest) break;
-      const trip = c[4];
+      const trip = cTrip[ci], flags = cFlags[ci];
       if (boardStop[trip] < 0) {
-        if (!(c[5] & 1)) continue;
-        const ready = prev.time[c[0]];
+        if (!(flags & 1)) continue;
+        const from = cFrom[ci], ready = prevTime[from];
         if (ready === Infinity) continue;
-        const buffer = prev.rides[c[0]] === 0 ? BOARDING_MARGIN_SECONDS : MIN_TRANSFER_SECONDS;
+        const buffer = prevRides[from] === 0 ? BOARDING_MARGIN_SECONDS : MIN_TRANSFER_SECONDS;
         if (ready + buffer > dep) continue;
-        boardStop[trip] = c[0]; boardDep[trip] = dep;
+        boardStop[trip] = from; boardDep[trip] = dep;
       }
-      if (!(c[5] & 2)) continue;
-      const to = c[1], arr = c[3];
-      if (arr > limit || arr >= cur.time[to]) continue;
-      cur.time[to] = arr; cur.kind[to] = RIDE; cur.rides[to] = r;
+      if (!(flags & 2)) continue;
+      const to = cTo[ci], arr = cArr[ci];
+      if (arr > limit || arr >= curTime[to]) continue;
+      curTime[to] = arr; cur.kind[to] = RIDE; cur.rides[to] = r;
       cur.a[to] = trip; cur.b[to] = boardStop[trip]; cur.t[to] = boardDep[trip];
       improved = true;
       if (arr + egress[to] < roundBest) roundBest = arr + egress[to];
-      for (const [nb, seconds] of footpaths[to] || []) {
-        const walkArr = arr + seconds;
-        if (walkArr <= limit && walkArr < cur.time[nb]) {
-          cur.time[nb] = walkArr; cur.kind[nb] = WALK; cur.rides[nb] = r; cur.a[nb] = to; cur.w[nb] = seconds;
+      const fp = footpaths[to];
+      if (fp) for (let k = 0; k < fp.length; k++) {
+        const nb = fp[k][0], seconds = fp[k][1], walkArr = arr + seconds;
+        if (walkArr <= limit && walkArr < curTime[nb]) {
+          curTime[nb] = walkArr; cur.kind[nb] = WALK; cur.rides[nb] = r; cur.a[nb] = to; cur.w[nb] = seconds;
           if (walkArr + egress[nb] < roundBest) roundBest = walkArr + egress[nb];
         }
       }
@@ -248,7 +285,8 @@ export function latestDeparture(data, seeds, targets, deadline, earliestDoorDepa
   let prevBoard = newLabels(n, -Infinity);
   let best = null;
   const tripAlight = new Int32Array(trips.length), tripAlightArr = new Float64Array(trips.length);
-  const hi = lowerBoundConnection(connections, deadline + 1) - 1;
+  const C = packedConnections(connections), cFrom = C.from, cTo = C.to, cDep = C.dep, cArr = C.arr, cTrip = C.trip, cFlags = C.flags;
+  const hi = lowerBoundPacked(cDep, deadline + 1) - 1;
   const roundsL = [prev], roundsB = [prevBoard];
   for (let k = 1; k <= maxRides; k++) {
     const cur = inherit(prev), board = inherit(prevBoard);
@@ -256,14 +294,15 @@ export function latestDeparture(data, seeds, targets, deadline, earliestDoorDepa
     // No useful first boarding can happen before this (later rounds only need strictly later).
     const floor = Math.max(earliestDoorDeparture, best ? best.doorDeparture + 1 : -Infinity) + BOARDING_MARGIN_SECONDS + minAccess;
     let changed = false;
+    const prevTime = prev.time;
     for (let ci = hi; ci >= 0; ci--) {
-      const c = connections[ci], dep = c[2];
+      const dep = cDep[ci];
       if (dep < floor) break;
-      const trip = c[4];
+      const trip = cTrip[ci], flags = cFlags[ci];
       // Alight as early along the trip as still works (connections are visited latest first).
-      if ((c[5] & 2) && c[3] <= prev.time[c[1]]) { tripAlight[trip] = c[1]; tripAlightArr[trip] = c[3]; }
-      if (tripAlight[trip] < 0 || !(c[5] & 1)) continue;
-      const s = c[0];
+      if ((flags & 2) && cArr[ci] <= prevTime[cTo[ci]]) { tripAlight[trip] = cTo[ci]; tripAlightArr[trip] = cArr[ci]; }
+      if (tripAlight[trip] < 0 || !(flags & 1)) continue;
+      const s = cFrom[ci];
       if (dep > board.time[s]) {
         board.time[s] = dep; board.kind[s] = BOARD; board.a[s] = trip; board.b[s] = tripAlight[trip]; board.t[s] = tripAlightArr[trip];
         changed = true;
@@ -324,6 +363,43 @@ export function latestDeparture(data, seeds, targets, deadline, earliestDoorDepa
     accessSeconds: best.seed.accessSeconds, targetIndex: target, egressSeconds,
     doorArrival: arrivalAtTarget + egressSeconds, legs,
     vehicles: legs.filter(l => l.type === 'transit').length };
+}
+
+/**
+ * Which stops have service, and which route patterns (agency + route + headsign) board or alight
+ * there. Used to pick access/egress stops (api/v2/experimental-plan.mjs accessCandidates) and to
+ * keep unserved GTFS nodes (entrances, elevators, parent stations) out of footpaths.
+ */
+export function buildStopPatterns(data) {
+  const { stops, trips, connections } = data;
+  const n = stops.length;
+  const patternOfTrip = new Int32Array(trips.length), ids = new Map();
+  for (let t = 0; t < trips.length; t++) {
+    const key = trips[t][0] + '\u0000' + trips[t][2] + '\u0000' + trips[t][4];
+    let id = ids.get(key);
+    if (id === undefined) { id = ids.size; ids.set(key, id); }
+    patternOfTrip[t] = id;
+  }
+  const boards = new Uint8Array(n), alights = new Uint8Array(n), served = new Uint8Array(n), rail = new Uint8Array(n);
+  const P = ids.size;
+  const boardPatterns = Array.from({ length: n }, () => []), alightPatterns = Array.from({ length: n }, () => []);
+  // GTFS route_type 0 light rail/streetcar, 1 subway (BART), 2 rail (Caltrain).
+  const railTrip = trips.map(t => ['0', '1', '2'].includes(String(t[5])));
+  // Visit trips grouped by pattern, so "already recorded for this pattern" is one array compare.
+  const C = packedConnections(connections), index = buildTripIndex(data);
+  const order = Array.from({ length: trips.length }, (_, t) => t).sort((a, b) => patternOfTrip[a] - patternOfTrip[b]);
+  const markBoard = new Int32Array(n), markAlight = new Int32Array(n);
+  for (const t of order) {
+    const p = patternOfTrip[t], tag = p + 1;
+    for (let q = index.offsets[t]; q < index.offsets[t + 1]; q++) {
+      const ci = index.order[q], from = C.from[ci], to = C.to[ci], flags = C.flags[ci];
+      if (railTrip[t]) { rail[from] = 1; rail[to] = 1; }
+      if ((flags & 1) && markBoard[from] !== tag) { markBoard[from] = tag; boards[from] = 1; boardPatterns[from].push(p); }
+      if ((flags & 2) && markAlight[to] !== tag) { markAlight[to] = tag; alights[to] = 1; alightPatterns[to].push(p); }
+    }
+  }
+  for (let i = 0; i < n; i++) served[i] = (boards[i] || alights[i]) && stops[i][2] && stops[i][3] ? 1 : 0;
+  return { boards, alights, served, rail, boardPatterns, alightPatterns, patternOfTrip, patternCount: P };
 }
 
 // Per-trip connection index, so a ride's intermediate stops can be listed cheaply.

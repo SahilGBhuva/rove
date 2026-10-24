@@ -22,28 +22,47 @@ Date handling was **not** the cause: overnight requests correctly load the previ
 
 ### The search now
 
-1. **Forward, transfer-bounded scan (`forwardRounds`).** A round-based Connection Scan runs from all candidate origin stops at once: the 12 nearest stops plus up to 4 Caltrain and 4 BART stations, within 1.8 km. Each stop is seeded with its walking time. Round *r* allows at most *r* vehicles (up to 4, so 3 transfers). The output is the Pareto front of door-to-door arrival time against number of vehicles.
-2. **Reverse, latest-departure scan (`latestDeparture`).** For each Pareto point, a reverse scan with the same vehicle limit finds the journey that leaves the door as late as possible and still arrives by that time. Ties go to fewer vehicles. This removes early departures, detours and waits that do not improve arrival. For the P0 request it boards the same 4:37 AM train at Sunnyvale at 4:58 AM.
-3. **Alternatives (`searchJourneys`).** Two profiles run: a normal one, and a walk-averse one where walking counts 2.5 times. Each does up to 3 "next departure" passes. Those passes stay within 4 hours of the request.
-4. **Transfer feasibility, identical in both directions:**
+0. **Service window (`serviceWindow`).** Two service days are combined. Before 12:00 local time they are yesterday and today (yesterday's 24:xx–28:xx trips still run after midnight). From 12:00 they are today and tomorrow, so a 22:30 request can see the next morning and report "the first train is at 5:xx" instead of no service at all. If tomorrow's file is not bundled, the planner falls back to yesterday and today.
+1. **Access and egress stops (`accessCandidates`, stress-tested 2026-10-24).**
+   - Only stops where a vehicle actually picks up (origin side) or drops off (destination side) count. The timetables contain 369 GTFS station entrances, elevators and parent stations with no service. They used to take the candidate slots: from the Ferry Building, four Embarcadero entrance nodes hid the Embarcadero BART platforms, and the planner rode Muni one stop to reach BART.
+   - Route-diverse selection: the 6 nearest served stops are always kept. After that, a stop is kept only when it serves a route pattern (agency + route + headsign) that no closer kept stop serves. At most 48 stops per end. Before, the 12 nearest stops at Coit Tower were all on the 39, so when the 39 stopped there was no route.
+   - Adaptive radius: every served stop within 800 m may be used. Beyond 800 m (up to 1.8 km for the origin, 1.5 km for the destination) rail stations (BART, Caltrain, light rail) are always eligible. Bus stops out there are eligible only while fewer than 6 route patterns *that run around the requested time* (request to request + 2.5 h) are covered closer in. Hills, suburbs and the edges of service get a wider radius, and so does the night, when it is needed to reach the all-night lines. A dense downtown at midday does not.
+   - Footpaths between stops (within 260 m, at most 12 per stop) also skip unserved nodes.
+2. **Forward, transfer-bounded scan (`forwardRounds`).** A round-based Connection Scan runs from all candidate origin stops at once. Each stop is seeded with its walking time. Round *r* allows at most *r* vehicles (up to 4, so 3 transfers). The output is the Pareto front of door-to-door arrival time against number of vehicles.
+3. **Reverse, latest-departure scan (`latestDeparture`).** For each Pareto point, a reverse scan with the same vehicle limit finds the journey that leaves the door as late as possible and still arrives by that time. Ties go to fewer vehicles. This removes early departures, detours and waits that do not improve arrival. For the P0 request it boards the same 4:37 AM train at Sunnyvale at 4:58 AM.
+4. **Alternatives (`searchJourneys`).** Two profiles run: a normal one, and a walk-averse one where walking counts 2.5 times. Each does up to 3 "next departure" passes. Those passes stay within 4 hours of the request.
+5. **Walk-instead variants (`walkInsteadVariants`).** For every journey with two or more vehicles, the planner also builds the same journey that walks straight to the second vehicle, or straight from the second-to-last one, when that walk fits the access or egress limits and the timing still works. The search optimises arrival per number of vehicles, and the walk-averse profile inflates access walks. So "ride Muni one stop to BART" could be found without the plain "walk 440 m to BART" version of the same BART and bus trips.
+6. **Transfer feasibility, identical in both directions:**
    - The first vehicle departs no earlier than the request time plus the walk to the stop plus 60 s (`BOARDING_MARGIN_SECONDS`).
    - Every transfer needs at least 120 s after alighting (`MIN_TRANSFER_SECONDS`).
    - A transfer to a different stop also needs the walking time: straight line at 1.2 m/s plus 45 s fixed overhead, for stops within 260 m.
    - Zero-second and cross-stop "teleport" transfers are impossible.
 
-Performance: the combined two-day timetable, footpaths, reverse footpaths and per-trip index are built once per service day and cached (they are immutable). `node scripts/bench-routing.mjs` benchmarks 15 representative queries. On 2026-10-23 on Sahil's Mac:
+**Walking time.** Access and egress walks are timed on an estimated path of 1.25 × the straight-line distance at 1.2 m/s (`WALK_CIRCUITY`, `walkSecondsForMeters` in `route.mjs`). Streets are not straight lines: the old straight-line timing made a 1.4 km walk look like 19 minutes instead of about 24, which favoured long walks and could plan boardings the rider cannot make. Distances shown (`distanceMeters`, `walkMeters`) are still the straight-line figures, marked `approximate`. Footpaths between stops keep their 45 s fixed overhead instead of the factor. The timetables have no elevation, so hills are not modelled.
+
+Performance: the combined two-day timetable, footpaths, reverse footpaths, per-trip index, stop/pattern index and a struct-of-arrays (typed array) copy of the connections are built once per service window and cached (they are immutable). The scans read the typed arrays, which is much more cache-friendly than 1.5 M small JS arrays. `node scripts/bench-routing.mjs` benchmarks 15 representative queries. On 2026-10-23 on Sahil's Mac:
 
 | | Before p50 / p95 | After p50 / p95 |
 |---|---|---|
 | Cold (fresh process, includes loading two days) | 1249 / 4471 ms | 680 / 1114 ms |
 | Warm (day already loaded) | 735 / 2361 ms | 25 / 122 ms |
 
+After the stress fixes, on 2026-10-24 on the same Mac. Both builds were measured back to back once the load average had dropped to about 15; earlier runs at load 60 to 180 were not usable:
+
+| | Before (e2adcf9) p50 / p95 | After p50 / p95 |
+|---|---|---|
+| Cold | 487 / 595 ms | 546 / 688 ms (adds the stop/pattern index and the typed-array copy) |
+| Warm | 25 / 142 ms | 33 / 131 ms |
+
+The planner now seeds more stops and also evaluates walk-instead variants, and the typed-array scans pay for that. In the stress suite (655 requests, CPU time) warm p50 went from 169 to 150 ms and p95 from 753 to 571 ms, both measured under heavy machine load.
+
 ### Ranking (`rankItineraries`)
 
 1. Keep the cheapest copy of each identical vehicle sequence.
 2. Drop detours whenever any option without a detour exists.
 3. Apply Pareto dominance. A dominates B when A arrives no later, with no more transfers, walking, initial wait, total transfer wait or longest single wait, and is strictly better on at least one.
-4. Sort by generalized cost (seconds). Drop options that cost more than the best one plus 45 minutes. Default limit 3, maximum 5.
+4. Drop short hops (`onlyAddsShortHop`). An option is dropped when it rides every vehicle of another option, in order, plus extra vehicles, and it neither arrives more than 2 minutes sooner nor saves more than 600 m of walking. A one-stop bus ride to the BART station instead of a 300 m walk is one more boarding to find without sight, not a real alternative.
+5. Sort by generalized cost (seconds). Drop options that cost more than the best one plus 45 minutes. Default limit 3, maximum 5.
 
 Generalized cost (`RANKING` in `rank.mjs`):
 
@@ -51,11 +70,14 @@ Generalized cost (`RANKING` in `rank.mjs`):
 cost = (arrival − requested time)                      # includes waiting at home before a later start
      + 300 × transfers                                  # 5 min per transfer
      + 1.0 × walking seconds                            # walking counts double
+     + 1.0 × walking seconds beyond 8 min in one leg    # long unfamiliar walks count triple
      + 0.5 × seconds waiting at stops between vehicles  # waiting at a stop counts 1.5×
      + max(0, longest single wait − 15 min)             # long waits at a stop cost extra
      + 3600 if detour
      + 1 × max(0, metres ridden away from destination − 2000)
 ```
+
+The long-walk term was added after the stress run. Once far stops of other routes became reachable, the planner often chose a 1.4 km walk over a transfer, and 71 to 134 of 655 requests earned `LONG_WALK`.
 
 **Detour:** a later vehicle passes within 250 m of a station that an earlier vehicle already served. Board, intermediate and alight stops all count. The area around the transfer point itself is ignored.
 
@@ -83,12 +105,16 @@ Each itinerary gets these additive fields:
 | `LONG_WALK` | A walking leg over 800 m, or more than 1.5 km of walking in total (straight-line estimate) |
 | `DETOUR` | Passes back through stations an earlier vehicle served |
 | `BACKTRACKS` | Rides substantially away from the destination |
+| `WALKING_MAY_BE_FASTER` | The places are under 3 km apart, and walking the straight line × 1.25 at 1.2 m/s is estimated to arrive no later than this option |
 
 An itinerary is **practical** when all of these hold:
 
 - It leaves within 90 minutes of the requested time.
 - No single wait at a stop reaches 60 minutes.
 - It is not a detour.
+- It does not ride away from the destination for more than the larger of 3 km and the whole trip distance. For example, Mountain View Transit Center to El Camino Hospital (2.9 km) at 22:30 went by Caltrain to Sunnyvale and a bus back: 96 minutes with 8.3 km of backtracking.
+
+**Short trips.** When the two places are under 3 km apart in a straight line, `routing.directWalk` is `{ straightLineMeters, estimatedSeconds, approximate: true }`. When every itinerary arrives no earlier than that walk would, `routing.notes` says so in plain words. This is a straight-line estimate, not a checked pedestrian route, so it is a note and a warning and never a walking itinerary.
 
 Only practical itineraries appear in `itineraries`. When none exists:
 
@@ -97,14 +123,22 @@ Only practical itineraries appear in `itineraries`. When none exists:
 - `laterItineraries` lists up to 2 real later trips from the timetable, flagged `DEPARTS_MUCH_LATER`, for a "first train is at …" display.
 - `routing.notes` gains a plain sentence that says the same thing.
 
-Times always come from the timetable, and no departure is invented. If no later trip exists within the search window (8 hours per pass), `serviceGap` is omitted. Searches late in the evening cannot see the next morning, because only the previous and current service days are loaded.
+Times always come from the timetable, and no departure is invented. If no later trip exists within the search window (8 hours per pass), `serviceGap` is omitted. From 12:00 the window holds today and tomorrow, so evening requests can report the first morning departure. A request after 20:30 whose first trip leaves after about 04:30 and arrives after the 8-hour horizon still gets no `serviceGap`.
 
 `routing.search` describes the algorithm and its limits for debugging.
 
 ### Tests
 
 - `test/routing-quality.test.mjs`: the P0 regression (two Sunnyvale origins) and synthetic networks that pin the root cause and the transfer rules. It also holds a regression matrix: Caltrain, BART, Muni, VTA and AC Transit single-agency trips; Caltrain+Muni and BART+AC Transit; cross-midnight; an all-night bus; 400 for invalid coordinates; 503 for missing days; `LONG_WALK`. Invariants are checked on every itinerary returned: monotonic times, transfer buffers, no stop boarded or alighted twice, sane duration.
+- `test/routing-stress.test.mjs`: a deterministic subset of the stress suite. 28 real pairs run at 08:15, and 8 of them also at 22:30 and 00:30, with no network. It checks the invariants on every option. Every covered pair must route in the daytime, and the no-coverage places must not. The top option must never arrive more than 10 minutes after the direct one-seat ride when it has transfers. It also bounds the p50 duration ratio, walking, transfer waits and backtracking, checks honest service gaps at night, and holds regressions for the bugs the stress run found (Ferry Building to Berkeley, Coit Tower to Millbrae at 22:30, short-trip walking note).
+- `scripts/stress-routing.mjs` is the full stress suite: 131 real origin/destination pairs (Photon/OpenStreetMap geocodes cached in `scripts/stress-geocodes.json`) at 5 weekday times. It writes [ROUTING_STRESS.md](ROUTING_STRESS.md). `--walking N` also sends N requests through `planWithWalking` (public Valhalla). Re-run it after any planner change: `node scripts/stress-routing.mjs --summary before.json`, change the code, then `node scripts/stress-routing.mjs --compare before.json`.
 - Every scenario depends on the bundled timetables and uses fixed dates in 2026-10-19..27. Move the dates when the data is rebuilt.
+
+### Known limits (data, not code)
+
+- Only BART, Muni, Caltrain, VTA and AC Transit are bundled. SamTrans (most of San Mateo County, Daly City and Serramonte buses, SFO buses), Golden Gate Transit, ferries, County Connection (Walnut Creek), Wheels (Dublin and Pleasanton), Union City Transit and the Stanford Marguerite and other shuttles are missing. Trips that need them fail honestly (`NO_STOPS_NEARBY` or no connection) or are planned with long walks to a bundled agency.
+- No elevation: walks up Twin Peaks, Telegraph Hill, the Berkeley and Oakland hills or CSU East Bay are timed as if flat.
+- Walks are straight-line estimates × 1.25, with no knowledge of crossings, barriers or station entrances.
 
 # Journey planning with OpenTripPlanner
 
