@@ -48,13 +48,13 @@ test('transit without geometry remains explicitly approximate and dashed', () =>
   const result = journeyFeatures({ legs: [leg('TRANSIT', null)] });
   assert.equal(result.features.length, 1);
   assert.equal(result.features[0].properties.approx, 1);
-  assert.match(app, /id: 'journey-approx'[\\s\\S]*?'line-dasharray'/);
-  assert.match(app, /id: 'journey-glow'[\\s\\S]*?'approx'], 0/);
+  assert.match(app, /id: 'journey-approx'[\s\S]*?'line-dasharray'/);
+  assert.match(app, /id: 'journey-glow'[\s\S]*?'approx'], 0/);
 });
 
 test('selected route and real transit paths receive subtle GPU glow', () => {
   assert.match(app, /id: 'tr-selected-halo'/);
-  assert.match(app, /setFilter\\('tr-selected-halo', selFilter\\)/);
+  assert.match(app, /setFilter\('tr-selected-halo', selFilter\)/);
   assert.match(app, /id: 'journey-glow'/);
   assert.match(app, /'line-blur': 6/);
   assert.match(app, /id: 'journey-stop-halo'/);
@@ -65,9 +65,9 @@ test('map key exposes uncertainty without replacing text directions', () => {
     assert.match(html, new RegExp('id="' + id + '"'));
   }
   assert.match(html, /Walking path not mapped/);
-  assert.match(html, /css\\/rg-map-graphics\\.css/);
+  assert.match(html, /css\/rg-map-graphics\.css/);
   assert.match(css, /rg-map-legend-warning/);
-  assert.doesNotMatch(css, /animation\\s*:/);
+  assert.doesNotMatch(css, /animation\s*:/);
 });
 
 test('map legend is shown only when route information exists', () => {
