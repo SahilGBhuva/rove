@@ -14,7 +14,13 @@
  * Writes <out>.json and <out>.md. Exit code is always 0 unless the run itself fails: this is a report, not a gate.
  *
  * Layout/a11y audits run with prefers-reduced-motion: reduce so nothing is captured mid-animation. Motion and
- * performance measurements (CLS, long tasks, rAF frame times) run with normal motion. */
+ * performance measurements (CLS, long tasks, rAF frame times) run with normal motion.
+ *
+ * v2 (redesign, workstream E) adds: 1440 / 1920 desktop widths; classic- and audio-first-mode passes
+ * (localStorage 'rove-mode' set before load); per-scene text clipping and overlapping-panel checks; a touch-
+ * emulated sheet drag + grabber keyboard check (when a grabber is visible); keyboard-only reachability of every
+ * interactive element on home / plan / results / trip (390, 1440, 390 classic); and an autocomplete check that
+ * typing in To still produces #planSuggest .result rows. Use --only 1440,390-classic etc. to run a subset. */
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -44,12 +50,28 @@ async function loadPuppeteer() {
 }
 
 /* ---------------- Configurations ---------------- */
+/* v2 additions: desktop 1440 / 1920, and classic- and audio-first-mode passes (localStorage 'rove-mode' is set
+ * before any page script runs; on a build without modes the pass simply audits the default UI and the report
+ * says the mode was not applied). */
 const CONFIGS = [
   ...[320, 375, 390, 430, 768, 1024].map(w => ({ id: `${w}`, width: w, height: 844, scheme: 'light' })),
+  { id: '1440', width: 1440, height: 900, scheme: 'light' },
+  { id: '1920', width: 1920, height: 1080, scheme: 'light' },
   { id: '390-dark', width: 390, height: 844, scheme: 'dark' },
+  { id: '1440-dark', width: 1440, height: 900, scheme: 'dark' },
   { id: 'landscape-844x390', width: 844, height: 390, scheme: 'light' },
   { id: 'short-390x500', width: 390, height: 500, scheme: 'light' },
-  { id: '390-text200', width: 390, height: 844, scheme: 'light', textScale: 200 }
+  { id: '390-text200', width: 390, height: 844, scheme: 'light', textScale: 200 },
+  { id: '390-classic', width: 390, height: 844, scheme: 'light', mode: 'classic' },
+  { id: '390-classic-dark', width: 390, height: 844, scheme: 'dark', mode: 'classic' },
+  { id: '1440-classic', width: 1440, height: 900, scheme: 'light', mode: 'classic' },
+  { id: '390-audio', width: 390, height: 844, scheme: 'light', mode: 'audio' },
+  { id: '390-audio-dark', width: 390, height: 844, scheme: 'dark', mode: 'audio' }
+].filter(c => !ONLY || ONLY.includes(c.id));
+const KEYBOARD_CONFIGS = [
+  { id: '390', width: 390, height: 844, scheme: 'light' },
+  { id: '1440', width: 1440, height: 900, scheme: 'light' },
+  { id: '390-classic', width: 390, height: 844, scheme: 'light', mode: 'classic' }
 ].filter(c => !ONLY || ONLY.includes(c.id));
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -222,7 +244,62 @@ function installQA() {
     }
     return res;
   };
-  qa.audit = () => ({ view: (typeof currentView === 'function' && currentView()?.name) || null, overflow: qa.overflow(), targets: qa.targets(), contrast: qa.contrast(), dock: qa.dockOverlap() });
+  // Text clipping: an element that hides overflow (or ellipsizes) and whose own text content is wider/taller
+  // than its box. Sub-pixel rounding (<= 1px) is ignored; icon-only and visually-hidden elements are skipped.
+  qa.clipping = () => {
+    const out = [];
+    for (const el of document.body.querySelectorAll('*')) {
+      if (el.closest('.maplibregl-map, #map, svg, canvas, .visually-hidden, .sr-only') || hidden(el) || visuallyHidden(el)) continue;
+      const own = [...el.childNodes].some(n => n.nodeType === 3 && n.nodeValue.trim());
+      if (!own) continue;
+      const cs = getComputedStyle(el);
+      const hidesX = cs.overflowX !== 'visible' || cs.textOverflow === 'ellipsis';
+      const hidesY = cs.overflowY !== 'visible' || (cs.webkitLineClamp && cs.webkitLineClamp !== 'none');
+      if (!hidesX && !hidesY) continue;
+      if (/^(auto|scroll)$/.test(cs.overflowX) && /^(auto|scroll)$/.test(cs.overflowY)) continue; // scrollable, not clipped
+      const dx = el.scrollWidth - el.clientWidth, dy = el.scrollHeight - el.clientHeight;
+      const clippedX = hidesX && !/^(auto|scroll)$/.test(cs.overflowX) && dx > 1;
+      const clippedY = hidesY && !/^(auto|scroll)$/.test(cs.overflowY) && dy > 1;
+      if (clippedX || clippedY) out.push({ selector: qa.sel(el), text: el.textContent.trim().replace(/\s+/g, ' ').slice(0, 50), axis: clippedX && clippedY ? 'xy' : clippedX ? 'x' : 'y', overBy: Math.max(clippedX ? dx : 0, clippedY ? dy : 0), ellipsis: cs.textOverflow === 'ellipsis' });
+    }
+    return out.slice(0, 40);
+  };
+  // Overlapping panels: the sheet/panel, map controls, layers popover, trip dock, live card and speech bar must
+  // not cover one another (a panel inside another is fine; e.g. the dock lives inside the panel).
+  qa.panels = () => {
+    const pick = {
+      panel: '#panel', mapControls: '#mapControls, .map-controls', layers: '#layersPopover:not([hidden])', dock: '.rg-dock',
+      live: '#rgLive:not([hidden])', speechBar: '#speechBar:not([hidden])', grabber: '#sheetGrabber, .sheet-grabber'
+    };
+    const boxes = {};
+    for (const [k, s] of Object.entries(pick)) {
+      const el = document.querySelector(s);
+      if (!el || hidden(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2 || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) continue;
+      boxes[k] = { el, r };
+    }
+    const overlaps = [];
+    const keys = Object.keys(boxes);
+    for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) {
+      const a = boxes[keys[i]], b = boxes[keys[j]];
+      if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+      const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left), h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+      if (w > 2 && h > 2) {
+        // Which one is on top at the centre of the overlap (does the overlap actually hide anything?)
+        const x = Math.max(a.r.left, b.r.left) + w / 2, y = Math.max(a.r.top, b.r.top) + h / 2;
+        const top = document.elementFromPoint(x, y);
+        const onTop = top ? (a.el.contains(top) ? keys[i] : b.el.contains(top) ? keys[j] : qa.sel(top)) : null;
+        overlaps.push({ a: keys[i], b: keys[j], w: Math.round(w), h: Math.round(h), onTop });
+      }
+    }
+    return { present: keys, overlaps };
+  };
+  // Stable identity for keyboard reachability (survives re-renders, which replace DOM nodes on focus).
+  qa.kbKey = el => `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}[${el.getAttribute('data-action') || el.getAttribute('role') || ''}]|${(el.getAttribute('aria-label') || el.textContent || el.getAttribute('placeholder') || '').trim().replace(/\s+/g, ' ').slice(0, 40)}`;
+  qa.kbList = () => qa.interactive().filter(el => !el.closest('.maplibregl-canvas-container') && !visuallyHidden(el)).map(el => ({ key: qa.kbKey(el), selector: qa.sel(el), name: (el.getAttribute('aria-label') || el.textContent || el.getAttribute('placeholder') || '').trim().replace(/\s+/g, ' ').slice(0, 40), tabindex: el.getAttribute('tabindex'), disabled: el.disabled === true }));
+  qa.mode = () => ({ body: [...document.body.classList].filter(c => /^(mode-|rove-accessible|theme-)/.test(c)), roveMode: (() => { try { const m = window.RoveMode; return m ? (typeof m.get === 'function' ? m.get() : (m.mode || m.current || 'present')) : null; } catch { return 'error'; } })(), stored: (() => { try { return localStorage.getItem('rove-mode'); } catch { return null; } })() });
+  qa.audit = () => ({ view: (typeof currentView === 'function' && currentView()?.name) || null, overflow: qa.overflow(), targets: qa.targets(), contrast: qa.contrast(), dock: qa.dockOverlap(), clipping: qa.clipping(), panels: qa.panels(), mode: qa.mode() });
   // Record requestAnimationFrame intervals for `ms`, optionally running scheduled actions meanwhile.
   qa.frames = (ms, actions = []) => new Promise(resolve => {
     const ts = []; const start = performance.now();
@@ -243,13 +320,18 @@ function installQA() {
 }
 
 /* ---------------- Page helpers ---------------- */
-async function newPage(browser, log) {
+async function newPage(browser, log, cfg = {}) {
   const page = await browser.newPage();
   await page.bringToFront();
   page.on('pageerror', e => log.push({ type: 'pageerror', text: String(e.message || e).slice(0, 300) }));
   page.on('console', m => { if (m.type() === 'error') log.push({ type: 'console', text: m.text().slice(0, 300), url: m.location()?.url || '' }); });
   await page.evaluateOnNewDocument(installQA);
-  await page.evaluateOnNewDocument(() => { try { localStorage.setItem('rove-access-speak', 'no'); localStorage.removeItem('rove-active-trip-v1'); } catch { /* storage blocked */ } });
+  await page.evaluateOnNewDocument(mode => {
+    try {
+      localStorage.setItem('rove-access-speak', 'no'); localStorage.removeItem('rove-active-trip-v1');
+      if (mode) localStorage.setItem('rove-mode', mode); else localStorage.removeItem('rove-mode');
+    } catch { /* storage blocked */ }
+  }, cfg.mode || null);
   return page;
 }
 async function fresh(page, cfg, { motion = 'reduce' } = {}) {
@@ -271,18 +353,28 @@ const audit = page => page.evaluate(() => window.__designQA.audit());
 
 /* Scenes for one configuration. Returns { scenes: {name: audit}, focus: [...], help: {...} } */
 async function runConfig(browser, cfg) {
-  const log = []; const page = await newPage(browser, log);
+  const log = []; const page = await newPage(browser, log, cfg);
   const scenes = {}; const focus = []; let help = null; const errorsByScene = {};
+  let autocomplete = null, sheetDrag = null;
   const mark = name => { errorsByScene[name] = log.splice(0); };
   const scene = async (name, fn) => {
     try { await fn(); scenes[name] = await audit(page); } catch (e) { scenes[name] = { error: e.message }; }
     mark(name);
   };
   await scene('home', async () => { await fresh(page, cfg); });
+  if (cfg.width < 800) {
+    try { sheetDrag = await dragSheet(page); } catch (e) { sheetDrag = { error: e.message }; }
+  }
   await scene('plan-search', async () => {
+    await fresh(page, cfg);
     await page.evaluate(() => openPlan({})); await sleep(250);
-    if (await page.$('#planTo')) { await page.click('#planTo'); await page.type('#planTo', 'Lake Mer'); }
-    await sleep(900);
+    if (await page.$('#planTo')) {
+      await page.click('#planTo'); await page.type('#planTo', 'Lake Mer');
+      // Autocomplete must still produce .result rows (local stop matches appear even when the geocoder is slow).
+      const rows = await page.waitForFunction(() => document.querySelectorAll('#planSuggest .result').length > 0, { timeout: 5000 }).then(() => true, () => false);
+      autocomplete = await page.evaluate(ok => ({ ok, rows: document.querySelectorAll('#planSuggest .result').length, first: document.querySelector('#planSuggest .result')?.textContent.trim().replace(/\s+/g, ' ').slice(0, 60) || null, expanded: document.getElementById('planTo')?.getAttribute('aria-expanded') }), rows);
+    } else autocomplete = { ok: false, rows: 0, error: '#planTo missing' };
+    await sleep(400);
   });
   await scene('results-demo', async () => { await fresh(page, cfg); await page.evaluate(() => startDemo()); await sleep(500); });
   // Demo journey: every step, checking focus lands on the new instruction after each Confirm.
@@ -315,7 +407,45 @@ async function runConfig(browser, cfg) {
     await sleep(900);
   });
   await page.close();
-  return { scenes, focus, help, errorsByScene };
+  return { scenes, focus, help, errorsByScene, autocomplete, sheetDrag, mode: cfg.mode || null };
+}
+
+/* Sheet drag with real touch events (CDP Input.dispatchTouchEvent) when a grabber exists: drag up, then down,
+ * and record the panel height after each. Also checks the grabber's keyboard path (ArrowUp / ArrowDown). */
+async function dragSheet(page) {
+  const g = await page.evaluate(() => {
+    const el = document.querySelector('#sheetGrabber, .sheet-grabber, [class*="grabber"]');
+    if (!el || window.__designQA.hidden(el)) return null;
+    const r = el.getBoundingClientRect();
+    const panel = document.getElementById('panel');
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, h: Math.round(panel?.getBoundingClientRect().height || 0), role: el.getAttribute('role'), label: el.getAttribute('aria-label'), w: Math.round(r.width), hh: Math.round(r.height) };
+  });
+  if (!g) return { grabber: false };
+  const cdp = await page.createCDPSession();
+  const touch = async (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: Math.round(x), y: Math.round(y) }] });
+  const drag = async (fromY, toY) => {
+    await touch('touchStart', g.x, fromY);
+    const steps = 12;
+    for (let i = 1; i <= steps; i++) { await touch('touchMove', g.x, fromY + (toY - fromY) * i / steps); await sleep(16); }
+    await touch('touchEnd', g.x, toY);
+    await sleep(700);
+    return page.evaluate(() => ({ h: Math.round(document.getElementById('panel')?.getBoundingClientRect().height || 0), detent: (typeof state !== 'undefined' && state.detent) || null }));
+  };
+  const before = { h: g.h, detent: await page.evaluate(() => (typeof state !== 'undefined' && state.detent) || null) };
+  const up = await drag(g.y, Math.max(40, g.y - 320));
+  const gy = await page.evaluate(() => { const el = document.querySelector('#sheetGrabber, .sheet-grabber, [class*="grabber"]'); const r = el.getBoundingClientRect(); return r.top + r.height / 2; });
+  const down = await drag(gy, Math.min(page.viewport().height - 20, gy + 320));
+  // Keyboard: focus the grabber and press ArrowUp; the sheet should change detent without a pointer.
+  const keyboard = await page.evaluate(() => {
+    const el = document.querySelector('#sheetGrabber, .sheet-grabber, [class*="grabber"]');
+    el.focus(); const a = document.activeElement === el;
+    const d0 = typeof state !== 'undefined' ? state.detent : null;
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));
+    const d1 = typeof state !== 'undefined' ? state.detent : null;
+    return { focusable: a, before: d0, afterArrowUp: d1 };
+  });
+  await cdp.detach();
+  return { grabber: true, role: g.role, label: g.label, size: `${g.w}x${g.hh}`, before, up, down, movedUp: up.h > before.h + 20, movedDown: down.h < up.h - 20, keyboard };
 }
 
 /* Reduced motion: after every action, no running animation or transition may have a non-zero duration. */
@@ -408,56 +538,72 @@ async function performanceRun(browser) {
   return out;
 }
 
-/* Keyboard-only pass: Tab order by accessible name on home, results and the trip screen. */
-async function keyboardPass(browser) {
-  const log = []; const page = await newPage(browser, log);
-  const cfg = { width: 390, height: 844, scheme: 'light' };
-  const out = {};
-  const walk = async () => {
+/* Keyboard-only pass: Tab order by accessible name, and reachability of every interactive element, on home, plan, results and the trip screen. */
+async function keyboardPass(browser, cfg = { id: '390', width: 390, height: 844, scheme: 'light' }) {
+  const log = []; const page = await newPage(browser, log, cfg);
+  const out = {}; const reach = {};
+  // List every visible interactive element (by a stable selector+name key), Tab through the page, and report
+  // the ones focus never reached. Elements that only appear after focusing something (e.g. suggestions)
+  // are added to the list as they appear.
+  const walk = async (screen) => {
+    const listed = new Map((await page.evaluate(() => window.__designQA.kbList())).map(x => [x.key, x]));
+    const tagged = listed.size;
+    const seen = [];
     // Move the sequential-focus starting point to the very top of the document, then Tab forward.
     await page.evaluate(() => { window.scrollTo(0, 0); const p = document.getElementById('panelBody'); if (p) p.scrollTop = 0; const a = document.createElement('span'); a.id = '__qaStart'; a.tabIndex = -1; document.body.prepend(a); a.focus({ preventScroll: true }); });
-    const order = []; let first = null;
-    for (let i = 0; i < 60; i++) {
+    const order = []; let first = null; let nulls = 0;
+    for (let i = 0; i < 150; i++) {
       await page.keyboard.press('Tab');
       const handle = await page.evaluateHandle(() => document.activeElement);
       const info = await page.evaluate(el => {
         if (!el || el === document.body) return null;
         const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
         const ring = (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0) || (cs.boxShadow && cs.boxShadow !== 'none');
-        return { key: window.__designQA.sel(el) + '@' + Math.round(r.top) + ',' + Math.round(r.left), selector: window.__designQA.sel(el), inViewport: r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth, focusIndicator: Boolean(ring), underDock: (() => { const d = document.querySelector('.rg-dock'); if (!d || d.contains(el)) return false; const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return Boolean(h && d.contains(h)); })() };
+        return { kb: window.__designQA.kbKey(el), key: window.__designQA.sel(el) + '@' + Math.round(r.top) + ',' + Math.round(r.left), selector: window.__designQA.sel(el), inViewport: r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth, focusIndicator: Boolean(ring), underDock: (() => { const d = document.querySelector('.rg-dock'); if (!d || d.contains(el)) return false; const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return Boolean(h && d.contains(h)); })() };
       }, handle);
-      if (!info) { if (order.length) break; continue; }
+      // A re-render on focus can briefly leave focus on <body>; tolerate a few before calling the walk done.
+      if (!info) { if (order.length && ++nulls >= 3) break; continue; }
+      nulls = 0;
       if (first && info.key === first) break;
       if (!first) first = info.key;
+      if (info.kb) seen.push(info.kb);
+      for (const x of await page.evaluate(() => window.__designQA.kbList())) if (!listed.has(x.key)) listed.set(x.key, x);
       let name = '', role = '';
       try { const ax = await page.accessibility.snapshot({ root: handle, interestingOnly: false }); name = ax?.name || ''; role = ax?.role || ''; } catch { /* no AX node */ }
       order.push({ i: order.length + 1, role, name: name.slice(0, 60), selector: info.selector, inViewport: info.inViewport, focusIndicator: info.focusIndicator, underDock: info.underDock });
       await handle.dispose();
     }
     await page.evaluate(() => document.getElementById('__qaStart')?.remove());
+    const reachedKeys = new Set(seen);
+    const atEnd = new Set((await page.evaluate(() => window.__designQA.kbList())).map(x => x.key));
+    // visibleAtEnd=false: the control was on screen at first but hid itself once focus moved (e.g. a field's
+    // suggestion mode); still unreachable for a keyboard user who tabs forward.
+    const missed = [...listed.values()].filter(x => !reachedKeys.has(x.key)).map(({ key, ...rest }) => ({ ...rest, visibleAtEnd: atEnd.has(key) }));
+    reach[screen] = { interactive: tagged, listedIncludingRevealed: listed.size, reached: [...reachedKeys].filter(k => listed.has(k)).length, unreachable: missed };
     return order;
   };
-  await fresh(page, cfg); out.home = await walk();
-  await page.evaluate(() => startDemo()); await sleep(400); out.results = await walk();
-  await page.evaluate(() => document.querySelector('[data-action="nav-start"]').click()); await sleep(400); out.trip = await walk();
+  await fresh(page, cfg); out.home = await walk('home');
+  await page.evaluate(() => openPlan({})); await sleep(400); out.plan = await walk('plan');
+  await page.evaluate(() => startDemo()); await sleep(400); out.results = await walk('results');
+  await page.evaluate(() => document.querySelector('[data-action="nav-start"]').click()); await sleep(400); out.trip = await walk('trip');
   await page.close();
-  return { orders: out, errors: log };
+  return { config: cfg.id, orders: out, reach, errors: log };
 }
 
 /* ---------------- Markdown ---------------- */
 function markdown(r) {
   const L = [];
   const n = x => (x == null ? '—' : x);
-  L.push(`# Rove design QA report`, '', `Base URL: ${r.base}  `, `Run: ${r.startedAt} (${Math.round(r.durationMs / 1000)} s)  `, `Chrome: ${r.chrome}`, '', 'Rerun: `node scripts/preview-site.mjs 4348` then `node docs/design/qa/design-qa.mjs --base http://localhost:4348 --puppeteer <dir with node_modules/puppeteer-core> --out docs/design/qa/<name>`. Configs: widths 320/375/390/430/768/1024 at 844 high, 390 dark, landscape 844x390, short 390x500, 390 with 200% root font size.', '');
+  L.push(`# Rove design QA report`, '', `Base URL: ${r.base}  `, `Run: ${r.startedAt} (${Math.round(r.durationMs / 1000)} s)  `, `Chrome: ${r.chrome}`, '', 'Rerun: `node scripts/preview-site.mjs 4348` then `node docs/design/qa/design-qa.mjs --base http://localhost:4348 --puppeteer <dir with node_modules/puppeteer-core> --out docs/design/qa/<name>`. Configs: widths 320/375/390/430/768/1024 at 844 high, 1440x900, 1920x1080, 390 and 1440 dark, landscape 844x390, short 390x500, 390 with 200% root font size, classic mode (390, 390 dark, 1440) and audio-first mode (390, 390 dark) via localStorage rove-mode.', '');
   L.push('Audits run with `prefers-reduced-motion: reduce`; motion/performance sections use normal motion. Contrast counts are unique element+colour pairs with ratio < 4.5:1 (WCAG fail column applies the 3:1 large-text threshold). Dock overlap counts interactive elements whose centre hits `.rg-dock` after `scrollIntoView({block:"nearest"})`.', '');
   L.push('## Summary by viewport and scene', '');
-  L.push('| Config | Scene | View | H-overflow | Targets | <44px | <48px | Contrast <4.5 | WCAG fail | Dock overlap (now / after scroll) | Console errors |');
-  L.push('|---|---|---|---|---|---|---|---|---|---|---|');
+  L.push('| Config | Scene | View | H-overflow | Targets | <44px | <48px | Contrast <4.5 | WCAG fail | Dock overlap (now / after scroll) | Text clipped | Panel overlaps | Console errors |');
+  L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const [cid, c] of Object.entries(r.configs)) {
     for (const [sname, s] of Object.entries(c.scenes)) {
       const errs = (c.errorsByScene[sname] || []).length;
-      if (s.error) { L.push(`| ${cid} | ${sname} | — | ERROR: ${s.error.replace(/\|/g, '/')} | | | | | | | ${errs} |`); continue; }
-      L.push(`| ${cid} | ${sname} | ${n(s.view)} | ${s.overflow.horizontal ? `**yes** (${s.overflow.doc.scrollWidth}/${s.overflow.doc.clientWidth}, panel +${s.overflow.panelOverflow})` : 'no'} | ${s.targets.count} | ${s.targets.small44.length} | ${s.targets.small48.length} | ${s.contrast.issues.length} | ${s.contrast.issues.filter(i => i.wcagFail).length} | ${s.dock.hasDock ? `${s.dock.overlapAtCurrentScroll.length} / ${s.dock.overlapAfterScrollIntoView.length}` : '—'} | ${errs} |`);
+      if (s.error) { L.push(`| ${cid} | ${sname} | — | ERROR: ${s.error.replace(/\|/g, '/')} | | | | | | | | | ${errs} |`); continue; }
+      L.push(`| ${cid} | ${sname} | ${n(s.view)} | ${s.overflow.horizontal ? `**yes** (${s.overflow.doc.scrollWidth}/${s.overflow.doc.clientWidth}, panel +${s.overflow.panelOverflow})` : 'no'} | ${s.targets.count} | ${s.targets.small44.length} | ${s.targets.small48.length} | ${s.contrast.issues.length} | ${s.contrast.issues.filter(i => i.wcagFail).length} | ${s.dock.hasDock ? `${s.dock.overlapAtCurrentScroll.length} / ${s.dock.overlapAfterScrollIntoView.length}` : '—'} | ${s.clipping ? s.clipping.length : '—'} | ${s.panels ? s.panels.overlaps.length : '—'} | ${errs} |`);
     }
   }
   L.push('', '## Focus after Confirm (must be #rgHeading)', '', '| Config | Results |', '|---|---|');
@@ -490,12 +636,58 @@ function markdown(r) {
     const shifts = Object.entries(P.journey).flatMap(([k, j]) => j.shifts.map(s => `${k}: ${s.value}${s.hadRecentInput ? ' (after input)' : ''} ${s.sources.join(', ')}`));
     if (shifts.length) L.push('', 'Largest layout shifts:', '', ...shifts.slice(0, 10).map(s => `- ${s}`));
   }
-  if (r.keyboard) {
-    L.push('', '## Keyboard-only Tab order (390x844)', '');
-    for (const [screen, order] of Object.entries(r.keyboard.orders)) {
-      L.push(`### ${screen}`, '', '| # | Role | Accessible name | Selector | In view | Focus ring | Under dock |', '|---|---|---|---|---|---|---|');
-      for (const o of order) L.push(`| ${o.i} | ${o.role} | ${o.name.replace(/\|/g, '/')} | \`${o.selector}\` | ${o.inViewport ? 'yes' : 'no'} | ${o.focusIndicator ? 'yes' : '**no**'} | ${o.underDock ? '**yes**' : 'no'} |`);
-      L.push('');
+  // v2: mode passes, autocomplete, sheet drag, panel overlap, text clipping, keyboard reachability.
+  const pipe = v => String(v).replace(/\|/g, '/');
+  L.push('', '## Mode passes (classic / audio-first)', '', '| Config | Requested | body classes | window.RoveMode | Applied |', '|---|---|---|---|---|');
+  for (const [cid, c] of Object.entries(r.configs)) {
+    if (!c.mode) continue;
+    const m = c.scenes.home?.mode;
+    const applied = m && (m.body.includes(`mode-${c.mode}`) || String(m.roveMode).includes(c.mode));
+    L.push(`| ${cid} | ${c.mode} | ${m ? m.body.join(' ') : '—'} | ${m ? n(m.roveMode) : '—'} | ${applied ? 'yes' : '**no** (mode not implemented on this build, or not applied)'} |`);
+  }
+  L.push('', '## Autocomplete (type "Lake Mer" in To; .result rows must appear)', '', '| Config | Rows | First row | aria-expanded |', '|---|---|---|---|');
+  for (const [cid, c] of Object.entries(r.configs)) {
+    const a = c.autocomplete;
+    L.push(`| ${cid} | ${a ? (a.ok ? a.rows : `**${a.rows}**${a.error ? ` (${a.error})` : ''}`) : '—'} | ${a?.first ? pipe(a.first) : '—'} | ${a?.expanded ?? '—'} |`);
+  }
+  L.push('', '## Sheet drag (touch emulation) and grabber keyboard', '', '| Config | Grabber | Name / role | Size | Height before → up → down | Moved up / down | Keyboard ArrowUp |', '|---|---|---|---|---|---|---|');
+  for (const [cid, c] of Object.entries(r.configs)) {
+    const d = c.sheetDrag; if (!d) continue;
+    if (d.error) { L.push(`| ${cid} | ERROR ${pipe(d.error)} | | | | | |`); continue; }
+    if (!d.grabber) { L.push(`| ${cid} | none | | | | | |`); continue; }
+    L.push(`| ${cid} | yes | ${n(d.label)} / ${n(d.role)} | ${d.size} | ${d.before.h} (${d.before.detent}) → ${d.up.h} (${d.up.detent}) → ${d.down.h} (${d.down.detent}) | ${d.movedUp ? 'yes' : '**no**'} / ${d.movedDown ? 'yes' : '**no**'} | ${d.keyboard.focusable ? 'focusable' : '**not focusable**'}, ${d.keyboard.before} → ${d.keyboard.afterArrowUp}${d.keyboard.before === d.keyboard.afterArrowUp ? ' **(no change)**' : ''} |`);
+  }
+  const panelAgg = new Map();
+  for (const [cid, c] of Object.entries(r.configs)) for (const [sname, s] of Object.entries(c.scenes)) if (s.panels) for (const o of s.panels.overlaps) {
+    const k = `${o.a} × ${o.b}`; const v = panelAgg.get(k) || { ...o, where: [] }; v.where.push(`${cid}/${sname} (${o.w}x${o.h}, top: ${o.onTop})`); panelAgg.set(k, v);
+  }
+  L.push('', '## Overlapping panels (sheet / map controls / layers / dock / live / speech bar)', '');
+  if (!panelAgg.size) L.push('None.');
+  else { L.push('| Pair | Count | Where (overlap size, which is on top) |', '|---|---|---|'); for (const [k, v] of panelAgg) L.push(`| ${k} | ${v.where.length} | ${v.where.slice(0, 6).join('; ')}${v.where.length > 6 ? '…' : ''} |`); }
+  const clipAgg = new Map();
+  for (const [cid, c] of Object.entries(r.configs)) for (const [sname, s] of Object.entries(c.scenes)) if (s.clipping) for (const t of s.clipping) {
+    const v = clipAgg.get(t.selector) || { ...t, where: new Set() }; v.where.add(`${cid}/${sname}`); clipAgg.set(t.selector, v);
+  }
+  L.push('', '## Text clipping (overflow hidden / ellipsis and content larger than the box)', '');
+  if (!clipAgg.size) L.push('None.');
+  else {
+    L.push('| Selector | Text | Axis | Over by (px) | Ellipsis | Seen in |', '|---|---|---|---|---|---|');
+    for (const t of [...clipAgg.values()].sort((x, y) => y.where.size - x.where.size).slice(0, 40)) L.push(`| \`${t.selector}\` | ${pipe(t.text)} | ${t.axis} | ${t.overBy} | ${t.ellipsis ? 'yes' : 'no'} | ${t.where.size}: ${[...t.where].slice(0, 4).join(', ')}${t.where.size > 4 ? '…' : ''} |`);
+  }
+  const kbSets = r.keyboardByConfig || (r.keyboard ? { '390': r.keyboard } : {});
+  if (Object.keys(kbSets).length) {
+    L.push('', '## Keyboard-only reachability', '', 'Every visible interactive element on the screen is tagged, then Tab is pressed until focus wraps. Unreachable = never received focus.', '', '| Config | Screen | Interactive | Reached by Tab | Unreachable |', '|---|---|---|---|---|');
+    for (const [kid, kb] of Object.entries(kbSets)) for (const [screen, rr] of Object.entries(kb.reach || {})) {
+      const list = rr.unreachable.slice(0, 8).map(u => `\`${u.selector}\` "${pipe(u.name)}"${u.tabindex != null ? ` tabindex=${u.tabindex}` : ''}${u.visibleAtEnd === false ? ' (hid after focus moved)' : ''}`).join('; ');
+      L.push(`| ${kid} | ${screen} | ${rr.interactive} | ${rr.reached} | ${rr.unreachable.length ? `${rr.unreachable.length}: ${list}${rr.unreachable.length > 8 ? ' …' : ''}` : '0'} |`);
+    }
+    for (const [kid, kb] of Object.entries(kbSets)) {
+      L.push('', `## Keyboard-only Tab order (${kid})`, '');
+      for (const [screen, order] of Object.entries(kb.orders)) {
+        L.push(`### ${screen}`, '', '| # | Role | Accessible name | Selector | In view | Focus ring | Under dock |', '|---|---|---|---|---|---|---|');
+        for (const o of order) L.push(`| ${o.i} | ${o.role} | ${pipe(o.name)} | \`${o.selector}\` | ${o.inViewport ? 'yes' : 'no'} | ${o.focusIndicator ? 'yes' : '**no**'} | ${o.underDock ? '**yes**' : 'no'} |`);
+        L.push('');
+      }
     }
   }
   // Detail: worst offenders aggregated across configs.
@@ -538,7 +730,9 @@ const report = { base: BASE, startedAt, chrome: await browser.version(), configs
 try {
   for (const cfg of CONFIGS) { process.stderr.write(`config ${cfg.id}\n`); report.configs[cfg.id] = await runConfig(browser, cfg); }
   process.stderr.write('reduced motion\n'); report.reducedMotion = await reducedMotion(browser);
-  process.stderr.write('keyboard\n'); report.keyboard = await keyboardPass(browser);
+  report.keyboardByConfig = {};
+  for (const kc of KEYBOARD_CONFIGS) { process.stderr.write(`keyboard ${kc.id}\n`); report.keyboardByConfig[kc.id] = await keyboardPass(browser, kc); }
+  report.keyboard = report.keyboardByConfig['390'] || Object.values(report.keyboardByConfig)[0] || null;
   if (!SKIP_PERF) { process.stderr.write('performance\n'); report.performance = await performanceRun(browser); }
 } finally { await browser.close(); }
 report.durationMs = Date.now() - t0;
