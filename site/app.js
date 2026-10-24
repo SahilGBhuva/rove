@@ -2531,20 +2531,25 @@ function factIcon(text) {
   return 'info';
 }
 
-/* The whole trip as one transit line: dotted walks, rides in their line colour, stops as nodes.
+/* The whole trip as one transit line: dotted walks, rides in their line colour, stops as nodes
+ * carrying the line badge, and a "you are here" marker on the current step. Segments are weighted
+ * by duration so a long ride reads longer than a short walk.
  * Decorative (aria-hidden); "Step n of m" and the spoken instruction carry the meaning. */
 function journeyLineHtml(nav) {
   const phases = nav.guide.phases;
   const current = nav.gs.index;
   const state = i => (i < current ? 'done' : i === current ? 'now' : 'next');
-  const parts = [`<span class="rg-jl-node is-start ${current > 0 ? 'done' : 'now-adjacent'}"></span>`];
+  const weight = (p, lo, hi) => Math.min(hi, Math.max(lo, (p.leg ? legMinutes(p.leg) : 4) / 4)).toFixed(2);
+  const here = '<i class="rg-jl-here"></i>';
+  const parts = ['<span class="rg-jl-node is-start done"></span>'];
   phases.forEach((p, i) => {
-    const color = p.leg?.mode === 'TRANSIT' ? legInfo(p.leg).color : '';
-    const style = color ? ` style="--c:${esc(color)}"` : '';
-    if (p.kind === 'ride') parts.push(`<span class="rg-jl-seg is-ride ${state(i)}"${style}></span>`);
-    else if (p.kind === 'board') parts.push(`<span class="rg-jl-node is-stop ${state(i)}"${style}></span>`);
-    else if (p.kind === 'arrive') parts.push(`<span class="rg-jl-node is-end ${state(i)}"></span>`);
-    else parts.push(`<span class="rg-jl-seg is-walk ${state(i)}"></span>`);
+    const info = p.leg?.mode === 'TRANSIT' ? legInfo(p.leg) : null;
+    const line = info ? `--c:${esc(info.color)};--ct:${esc(info.text)};` : '';
+    const s = state(i);
+    if (p.kind === 'ride') parts.push(`<span class="rg-jl-seg is-ride ${s}" style="${line}--w:${weight(p, 2, 6)}">${s === 'now' ? here : ''}</span>`);
+    else if (p.kind === 'board') parts.push(`<span class="rg-jl-node is-stop ${s}"${line ? ` style="${line}"` : ''}>${info?.badge ? `<b>${esc(info.badge)}</b>` : ''}</span>`);
+    else if (p.kind === 'arrive') parts.push(`<span class="rg-jl-node is-end ${s}"></span>`);
+    else parts.push(`<span class="rg-jl-seg is-walk ${s}" style="--w:${weight(p, 1, 3)}">${s === 'now' ? here : ''}</span>`);
   });
   return `<div class="rg-jl" aria-hidden="true">${parts.join('')}</div>`;
 }
@@ -2780,7 +2785,12 @@ function viewNavigate() {
   const status = guideStatus(nav);
   const arrive = phase.kind === 'arrive';
   const flash = nav.flash && nav.flash.index === i ? `<p class="rg-flash">${rgIcon('check')}<span>${esc(nav.flash.text)}</span></p>` : '';
-  return `<div class="rg-nav${nav.demo ? ' is-demo' : ''}${arrive ? ' is-arrived' : ''}" data-kind="${esc(phase.kind)}">
+  // The step transition plays only on the first render after the rider confirmed (a new flash);
+  // Help, Repeat, reminders and reloads never animate the step. It is transform-only, so focus and taps are never delayed.
+  const entering = Boolean(flash) && !nav.flash.entered && Date.now() - nav.flash.at < 1500;
+  if (flash) nav.flash.entered = true;
+  const accent = li ? ` style="--c:${esc(li.color)}"` : '';
+  return `<div class="rg-nav${nav.demo ? ' is-demo' : ''}${arrive ? ' is-arrived' : ''}${entering ? ' is-entering' : ''}" data-kind="${esc(phase.kind)}"${accent}>
     <div class="rg-top">
       ${arrive ? '<span></span>' : '<button type="button" class="rg-end" data-action="rg-end">End trip</button>'}
       ${nav.demo ? `<span class="rg-demo-chip">Demo<span class="visually-hidden">. Simulated times from a published timetable. Not live.</span><span aria-hidden="true"> · not live</span></span>` : ''}
@@ -2798,7 +2808,7 @@ function viewNavigate() {
     </section>
     ${arrive ? '' : `<p id="rgCertainty" class="rg-certainty">${esc(guideCertainty(nav))}</p>`}
     ${nav.demo && ['ride', 'board'].includes(phase.kind) ? '<button type="button" class="rg-demo-skip" data-action="rg-demo-skip">Demo: skip ahead to the next reminder</button>' : ''}
-    ${next && !arrive ? `<p class="rg-next"><span>Next</span>${esc(next.heading)}</p>` : ''}
+    ${next && !arrive ? `<p class="rg-next"><span class="rg-next-label">Next</span><span class="rg-next-text">${esc(next.heading)}</span></p>` : ''}
     ${nav.showHelp && !arrive ? guideHelpHtml(nav, phase) : ''}
     <div class="rg-dock" role="group" aria-label="Trip controls">
       ${nav.showHelp && !arrive
