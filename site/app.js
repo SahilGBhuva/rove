@@ -2654,7 +2654,7 @@ async function submitPlan() {
       const said = plan.error || (error?.offline ? 'Trip planning is offline right now. Please try again in a few minutes.' : '');
       const target = $('#planError') || $('#planTo');
       if (target) { if (target.id === 'planError') target.tabIndex = -1; target.focus({ preventScroll: true }); }
-      if (said) guideSay(said);
+      if (said) guideSay(`${said} Next, change your trip or departure time and press Find routes again. You can also press Speak to choose a different place.`);
     }
   }
 }
@@ -2779,12 +2779,13 @@ function viewResults() {
       <span class="rg-empty-mark" aria-hidden="true">${rgIcon('route')}</span>
       <h2 class="rg-empty-title">No routes found</h2>
       <p class="rg-empty-body">${plan.results?.notes?.length ? esc(plan.results.notes[0]) : 'Rove could not find a transit route for this trip at this time. Try another time, or a nearby start or destination.'}</p>
+      <p class="rg-next-action">Next: press Change trip, then choose another departure time or a nearby station.</p>
       <button type="button" class="rg-primary rg-empty-action" data-action="back">Change trip</button>
     </div>`;
   }
   return `${header}
     ${plan.results?.demo ? '<p class="rg-note rg-results-demo"><strong>Demo.</strong> Times are copied from published Muni and BART timetables and shifted to start now. Nothing is live.</p>' : ''}
-    <p class="rg-next-action">Next: press Read route choices aloud, or choose a route below to review and start it.</p>
+    <p class="rg-next-action">${plan.expanded == null || !shown.includes(plan.expanded) ? 'Next: press Read route choices aloud, or choose a route below to review it.' : `Next: press Start route ${order.indexOf(plan.expanded) + 1} to begin, or press Read route choices aloud to compare.`}</p>
     <div class="rg-results-head"><h2 class="rg-label">${plural(shown.length, 'route')}</h2><button type="button" class="rg-read" data-action="access-all-routes">${MIC_ICON}<span>Read route choices aloud</span></button></div>
     <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
     ${plan.results?.notes?.length ? `<ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
