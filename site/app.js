@@ -2646,7 +2646,13 @@ async function submitPlan() {
     // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
     if (error instanceof PlanError) { plan.error = error.offline ? null : error.message; plan.errorField = error.field || null; plan.noServiceWindow = error.code === 'NO_TRANSIT_CONNECTION_IN_SEARCH_WINDOW'; }
     else plan.error = error?.name === 'TimeoutError' ? 'The trip planner took too long to respond. Please try again.' : 'Rove could not reach the trip planner. Check your connection and try again.';
-    if (currentView().name === 'plan') render();
+    if (currentView().name === 'plan') {
+      render();
+      if (plan.error) {
+        announceAccess(plan.error);
+        if (plan.voiceFlow) guideSay(plan.error + ' You can change your route options or ask for help.', { force: true });
+      }
+    }
   }
 }
 
@@ -5077,6 +5083,14 @@ function planErrorMessage(status, body) {
     if (which === 'to') return { which, text: /outside/i.test(message) ? 'This destination is outside the Bay Area. Rove plans trips within the San Francisco Bay Area.' : 'Choose the destination again.' };
     if (which === 'time') return { which, text: 'Choose a time within the next 60 days.' };
     return { which: null, text: 'Rove could not plan this trip. Check the places and time, then try again.' };
+  }
+  if (status === 422) {
+    const message = String(body?.error || '');
+    if (/arrive.by/i.test(message)) return { which: 'time', text: 'Arrive by is not available in this preview. Select Leave now or Depart at, then try Find routes again.' };
+    if (/driving|access/i.test(message)) return { which: null, text: 'Driving to transit is not available in this preview. Choose walking access and try again.' };
+    if (/timetable|dates|date/i.test(message)) return { which: 'time', text: 'This preview supports dates within the next 14 days. Choose an earlier departure date and try again.' };
+    if (/no transit stops/i.test(message)) return { which: null, text: 'No transit stops were found close enough to the start or destination. Try a nearby station or another starting point.' };
+    return { which: null, text: 'Rove could not plan this journey with the selected options. Try Leave now and check both locations.' };
   }
   if (status === 503) return { which: null, text: 'Trip planning is offline right now. Please try again in a few minutes.', offline: true };
   if (status === 404) return { which: null, text: 'Trip planning is not available right now.', offline: true };
