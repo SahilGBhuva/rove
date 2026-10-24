@@ -42,3 +42,9 @@ test('walking with adequate time and real geometry enables navigation',async()=>
  assert.ok(it.walkSeconds>0);
  assert.equal(it.walkingVerified,true);
 });
+
+test('walking instructions never show raw floating-point levels', async () => {
+  const { cleanInstruction } = await import('../experiments/bay-router/pedestrian.mjs');
+  assert.equal(cleanInstruction('Take the stairs to Level -1.5000000000.'), 'Take the stairs to Level -1.5.');
+  assert.equal(cleanInstruction('Turn left onto Jessie Street.'), 'Turn left onto Jessie Street.');
+});

@@ -39,3 +39,18 @@ test('demo journeys never show or poll live data', () => {
   assert.match(app, /if \(!p \|\| nav\.demo \|\| !\['board', 'ride'\]\.includes\(p\.kind\)\) return null;/);
   assert.match(app, /if \(!window\.RoveLive \|\| nav\.demo\) return;/);
 });
+
+test('walking: turn-by-turn from planner steps, a step list, and a Maps handoff', () => {
+  assert.match(app, /RoveNavigation\.nextManeuver\(nav\.fix\.point, phase\.leg\.geometry\.coordinates, steps\)/);
+  assert.match(app, /RoveLive\.maneuverNotices\(/);
+  assert.match(app, /You may be off the walking route\. Stop somewhere safe/);
+  assert.match(app, /https:\/\/maps\.apple\.com\/\?daddr=\$\{ll\}&dirflg=w/);
+  assert.match(app, /<details class="rg-walk-steps">/);
+});
+
+test('route cards show the first vehicle live, updated in place without re-rendering', () => {
+  const patch = app.slice(app.indexOf('function patchResultsLive()'), app.indexOf('\nlet resultsLiveTimer'));
+  assert.doesNotMatch(patch, /render\(\)/);
+  assert.match(patch, /setAttribute\('aria-label', routeChoiceSpeech/);
+  assert.match(app, /if \(!plan\.results \|\| plan\.results\.demo \|\| !navigator\.onLine\) return;/, 'demo never shows live data');
+});
