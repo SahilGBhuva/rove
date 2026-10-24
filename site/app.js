@@ -2524,6 +2524,7 @@ function viewPlan() {
   const modeButton = (key, icon, label) => `<button type="button" class="seg-option mode-option" data-action="first-mile" data-first-mile="${key}" aria-pressed="${access === key}" ${key === 'CAR_PARKING' && !driveOk ? 'aria-disabled="true" aria-describedby="driveNote"' : ''}>${icon}<span>${label}</span></button>`;
   return `${backHeader()}
     <div class="hero plan-hero"><h1 class="title-2">Directions</h1><div class="rg-voice-row"><button type="button" class="rg-mic" data-action="voice-destination" aria-label="Speak destination">${MIC_ICON}<span>Speak</span></button><div class="rg-voice-slot">${voiceStatusHtml()}</div></div></div>
+    <p class="rg-next-action" id="planNextAction">${plan.loading ? 'Next: wait while Rove finds connections.' : !hasFrom ? 'Next: enter your starting point, or press Speak to say it.' : !hasTo ? 'Next: enter your destination, or press Speak to say it.' : 'Next: press Find routes to compare journeys.'}</p>
     <div id="planNotice">${planNoticeHtml()}</div>
     <form class="plan-form${plan.focus ? ' suggesting' : ''}" data-plan-form novalidate>
       <div class="plan-fields${swapped ? ' is-swapped' : ''}">
@@ -2783,6 +2784,7 @@ function viewResults() {
   }
   return `${header}
     ${plan.results?.demo ? '<p class="rg-note rg-results-demo"><strong>Demo.</strong> Times are copied from published Muni and BART timetables and shifted to start now. Nothing is live.</p>' : ''}
+    <p class="rg-next-action">Next: press Read route choices aloud, or choose a route below to review and start it.</p>
     <div class="rg-results-head"><h2 class="rg-label">${plural(shown.length, 'route')}</h2><button type="button" class="rg-read" data-action="access-all-routes">${MIC_ICON}<span>Read route choices aloud</span></button></div>
     <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
     ${plan.results?.notes?.length ? `<ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
@@ -3871,6 +3873,7 @@ function voiceStatusHtml() {
   const v = state.plan.voice;
   if (!v) return '';
   const retry = currentView().name === 'demo' ? 'demo-speak' : 'voice-destination';
+  const subject = state.plan.voiceField === 'from' ? 'starting point' : 'destination';
   /* Every visual reflects real state: the bars move only from the live microphone level
    * (server mode); the browser recognizer gives no level, so it gets a ring instead. */
   const mic = '<svg class="rg-vx-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>';
@@ -3878,12 +3881,12 @@ function voiceStatusHtml() {
   const button = (action, label, primary = false) => `<button type="button" class="rg-text-button rg-vx-button${primary ? ' is-primary' : ''}" data-action="${action}">${label}</button>`;
   const actions = (...buttons) => `<span class="rg-vx-actions">${buttons.join('')}</span>`;
   const thinking = '<span class="rg-vx-visual is-thinking" aria-hidden="true"><span class="rg-vx-dots"><i></i><i></i><i></i></span></span>';
-  if (v.state === 'starting') return `<div class="rg-listening rg-vx" data-vx="waiting" role="status"><span class="rg-vx-visual is-waiting" aria-hidden="true">${mic}<span class="rg-pulse is-waiting"></span></span>${text('Speak after the tone.')}${actions(button('voice-stop', 'Cancel'))}</div>`;
-  if (v.state === 'listening' && v.mode === 'server') return `<div class="rg-listening rg-vx" data-vx="listening" data-mode="server" role="status"><span class="rg-vx-visual is-level" aria-hidden="true"><span class="rg-vx-live"></span><span class="rg-wave"><i></i><i></i><i></i><i></i><i></i></span></span>${text('Listening', "I'll stop when you pause.")}${actions(button('voice-done', 'Done', true), button('voice-stop', 'Cancel'))}</div>`;
-  if (v.state === 'listening') return `<div class="rg-listening rg-vx" data-vx="listening" data-mode="browser" role="status"><span class="rg-vx-visual is-ring" aria-hidden="true"><span class="rg-mic-ring"></span>${mic}</span>${text('Listening', 'Say a place, address, or station.')}${actions(button('voice-stop', 'Cancel'))}</div>`;
-  if (v.state === 'understanding') return `<div class="rg-listening rg-vx" data-vx="understanding" role="status">${thinking}${text('Understanding…')}</div>`;
+  if (v.state === 'starting') return `<div class="rg-listening rg-vx" data-vx="waiting" role="status"><span class="rg-vx-visual is-waiting" aria-hidden="true">${mic}<span class="rg-pulse is-waiting"></span></span>${text('Speak after the tone.', `Next: say your ${subject}, or press Cancel to type instead.`)}${actions(button('voice-stop', 'Cancel'))}</div>`;
+  if (v.state === 'listening' && v.mode === 'server') return `<div class="rg-listening rg-vx" data-vx="listening" data-mode="server" role="status"><span class="rg-vx-visual is-level" aria-hidden="true"><span class="rg-vx-live"></span><span class="rg-wave"><i></i><i></i><i></i><i></i><i></i></span></span>${text('Listening', `Say your ${subject}. Press Done when finished, or Cancel to type.`)}${actions(button('voice-done', 'Done', true), button('voice-stop', 'Cancel'))}</div>`;
+  if (v.state === 'listening') return `<div class="rg-listening rg-vx" data-vx="listening" data-mode="browser" role="status"><span class="rg-vx-visual is-ring" aria-hidden="true"><span class="rg-mic-ring"></span>${mic}</span>${text('Listening', `Say your ${subject}: a place, address, or station.`)}${actions(button('voice-stop', 'Cancel'))}</div>`;
+  if (v.state === 'understanding') return `<div class="rg-listening rg-vx" data-vx="understanding" role="status">${thinking}${text('Understanding…', 'Next: confirm the matching place below.')}</div>`;
   if (v.state === 'installing') return `<div class="rg-listening rg-vx" data-vx="installing" role="status">${thinking}${text('Downloading on-device voice…')}</div>`;
-  if (v.state === 'heard') return `<p class="rg-heard rg-vx" data-vx="heard"${v.matches === 0 ? ' data-tone="none"' : ''}><span class="rg-vx-visual is-heard" aria-hidden="true"><svg class="rg-vx-glyph" viewBox="0 0 24 24">${v.matches === 0 ? '<path d="M12 7.5v5.5M12 16.5v.01"/>' : '<path d="m6.5 12.5 3.6 3.6 7.4-8.2"/>'}</svg></span><span class="rg-vx-text">Heard <q>${esc(v.heard)}</q>${v.matches === 0 ? '. No matches; try again or type.' : '. Choose the right match below.'}</span></p>`;
+  if (v.state === 'heard') return `<p class="rg-heard rg-vx" data-vx="heard"${v.matches === 0 ? ' data-tone="none"' : ''}><span class="rg-vx-visual is-heard" aria-hidden="true"><svg class="rg-vx-glyph" viewBox="0 0 24 24">${v.matches === 0 ? '<path d="M12 7.5v5.5M12 16.5v.01"/>' : '<path d="m6.5 12.5 3.6 3.6 7.4-8.2"/>'}</svg></span><span class="rg-vx-text">Heard <q>${esc(v.heard)}</q>${v.matches === 0 ? '. No matches; try again or type.' : '. Next: tap the correct match below, or say yes or no when prompted.'}</span></p>`;
   if (v.state === 'error') {
     /* Compact inline status: one small icon, the cause, and what to do. It never covers the form:
      * Retry only when retrying can help, and "Type instead" moves focus to the destination field
@@ -3897,7 +3900,7 @@ function voiceStatusHtml() {
     const title = cut > 0 ? message.slice(0, cut + 1) : message;
     const detail = cut > 0 ? message.slice(cut + 2) : '';
     const canRetry = !['insecure', 'offline', 'unsupported', 'service-not-allowed'].includes(cause);
-    const typeInstead = currentView().name === 'plan' ? '<a class="rg-text-button rg-vx-button rg-vx-type" href="#planTo">Type instead</a>' : '';
+    const typeInstead = currentView().name === 'plan' ? `<a class="rg-text-button rg-vx-button rg-vx-type" href="#${subject === 'starting point' ? 'planFrom' : 'planTo'}">Type instead</a>` : '';
     const warn = '<svg class="rg-vx-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg>';
     return `<div class="rg-voice-error rg-vx rg-vx-inline" data-vx="error" data-cause="${esc(cause)}" role="alert"><span class="rg-vx-visual is-error" aria-hidden="true">${warn}</span><p class="rg-vx-text"><strong class="rg-vx-title">${esc(title)}</strong>${detail ? ` <span class="rg-vx-detail">${esc(detail)}</span>` : ''}</p>${canRetry || typeInstead ? actions(canRetry ? button(retry, 'Try again', true) : '', typeInstead) : ''}</div>`;
   }
