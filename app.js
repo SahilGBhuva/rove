@@ -120,7 +120,7 @@ const state = {
   stack: [{ name: 'home' }],
   searchQuery: '',
   detent: 'half',
-  plan: { from: null, to: null, draft: { from: '', to: '' }, access: ['CAR_PARKING', 'CAR_DROP_OFF'].includes(store.get('rove-first-mile-v1', 'WALK')) ? store.get('rove-first-mile-v1', 'WALK') : 'WALK', driveNote: false, timeMode: 'now', dateTime: '', results: null, error: null, loading: false, expanded: 0, focus: null, query: '', sort: 'fastest' },
+  plan: { from: null, to: null, draft: { from: '', to: '' }, access: ['CAR_PARKING', 'CAR_DROP_OFF'].includes(store.get('rove-first-mile-v1', 'WALK')) ? store.get('rove-first-mile-v1', 'WALK') : 'WALK', driveNote: false, timeMode: 'now', dateTime: '', results: null, error: null, loading: false, expanded: 0, focus: null, query: '', sort: 'recommended' },
   focusLeg: null,
   nav: null,
   wakeLock: null,
@@ -1949,7 +1949,7 @@ async function submitPlan() {
     // Driving notes only apply when an option actually includes a drive (a short trip may be walk-only).
     const hasDrive = itineraries.some(it => it.legs.some(l => l.mode === 'CAR'));
     plan.results = { itineraries, notes: Array.isArray(body.routing?.notes) ? body.routing.notes.filter(n => typeof n === 'string' && (hasDrive || !/driv|parking|drop-off/i.test(n))) : [], request: { time: body.request?.time || requestTime.toISOString(), arriveBy: plan.timeMode === 'arrive', access }, scheduledOnly: body.routing?.realtime !== 'partial' };
-    plan.sort = 'fastest';
+    plan.sort = 'recommended';
     plan.expanded = sortedItineraryIndexes()[0];
     plan.loading = false;
     state.focusLeg = null;
@@ -2057,7 +2057,7 @@ function viewResults() {
   const when = plan.results?.request?.time ? clock(new Date(plan.results.request.time)) : '';
   const order = sortedItineraryIndexes();
   const fastestIndex = sortedItineraryIndexes('fastest')[0];
-  const sortButton = (key, label) => `<button type="button" class="seg-option" data-action="it-sort" data-sort="${key}" aria-pressed="${(plan.sort || 'fastest') === key}">${label}</button>`;
+  const sortButton = (key, label) => `<button type="button" class="seg-option" data-action="it-sort" data-sort="${key}" aria-pressed="${(plan.sort || 'recommended') === key}">${label}</button>`;
   const firstMile = { CAR_PARKING: 'Drive to transit', CAR_DROP_OFF: 'Drop-off at transit' }[plan.results?.request?.access] || 'Walk to transit';
   return `${backHeader()}
     <h1 class="visually-hidden">Routes from ${esc(plan.from?.name)} to ${esc(plan.to?.name)}</h1>
@@ -2069,12 +2069,12 @@ function viewResults() {
     <p class="caption results-when">${esc(firstMile)} · ${plan.timeMode === 'arrive' ? 'Arrive by' : plan.timeMode === 'depart' ? 'Depart at' : 'Leaving'} ${esc(when)}${plan.results?.scheduledOnly ? ' · Scheduled times' : ''}</p>
     ${plan.results?.notes?.length ? `<ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${areaNoteHtml()}
-    ${its.length > 1 ? `<div class="segmented sort-switch" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
+    ${its.length > 1 ? `<div class="segmented sort-switch" role="group" aria-label="Sort routes">${sortButton('recommended', 'Best')}${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
     <ul class="itineraries">${order.map(i => {
       const it = its[i];
       const open = plan.expanded === i;
       return `<li><button class="itinerary" data-action="it-toggle" data-index="${i}" aria-expanded="${open}">
-        <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
+        <div class="it-top"><span class="it-duration">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}${its.length > 1 && i === fastestIndex ? '<span class="tag">Fastest</span>' : ''}${its.length > 1 && i === 0 && plan.sort === 'recommended' ? '<span class="tag">Recommended</span>' : ''}</span><span class="it-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></div>
         ${journeyBar(it)}
         <div class="it-meta">${itinerarySummary(it)}</div></button>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Read full spoken itinerary for option ${order.indexOf(i)+1}">Listen to route ${order.indexOf(i)+1}</button>` : ''}
         ${carbonComparison(it)}
@@ -3924,10 +3924,13 @@ function sortedItineraryIndexes(sort = state.plan.sort) {
   const fastest = (a, b) => (arriveBy ? ms(b.startTime) - ms(a.startTime) : ms(a.endTime) - ms(b.endTime)) || (a.durationSeconds - b.durationSeconds);
   const transfersOf = it => (Number.isFinite(it.transfers) ? it.transfers : 99);
   const by = {
+    // The planner's first result is its balanced recommendation, not always
+    // the earliest arrival. Preserve that order unless the rider picks a sort.
+    recommended: () => 0,
     fastest,
     transfers: (a, b) => transfersOf(a) - transfersOf(b) || fastest(a, b),
     walking: (a, b) => (a.walkMeters ?? 1e9) - (b.walkMeters ?? 1e9) || fastest(a, b)
-  }[sort || 'fastest'];
+  }[sort || 'recommended'];
   return its.map((it, i) => [it, i]).sort((x, y) => by(x[0], y[0]) || x[1] - y[1]).map(([, i]) => i);
 }
 
