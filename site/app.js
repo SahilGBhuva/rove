@@ -4035,7 +4035,10 @@ function showWake() {
   wrap.querySelector('#rgWakeGo').focus({ preventScroll: true });
   // Some desktop browsers permit this on load; iOS/Safari often requires the first tap.
   // The focused, labelled start control is the reliable screen-reader fallback.
-  if (accessPreference('speak', true) && !speakOut('Tap to start Rove.')) {
+  // On iPhone Safari, pre-tap speech can remain blocked and queued. Avoid
+  // delaying the first real utterance outside the Start button's gesture.
+  const iosSafari = /iP(hone|ad|od)/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+  if (iosSafari || !accessPreference('speak', true) || !speakOut('Tap to start Rove.')) {
     announceAccess('Tap to start Rove.');
   }
 }
