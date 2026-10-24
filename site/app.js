@@ -1398,20 +1398,36 @@ function alertsHtml(alerts, max = 2) {
 function viewHome() {
   const saved = !state.nav && loadTrip();
   const places = savedPlaces().slice(0, 4);
+  const savedKeys = new Set(places.map(placeKey));
+  const recents = recentPlaces().filter(p => !savedKeys.has(placeKey(p))).slice(0, 3);
   const resume = state.nav ? `<section class="rg-resume" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle"><span class="rg-resume-dot" aria-hidden="true"></span>Trip in progress</h2><p>${esc(guidePhase()?.heading || '')}</p><button type="button" class="rg-primary small" data-action="access-my-journey"><span>Return to trip</span>${rgIcon('arrow')}</button></section>`
     : saved ? `<section class="rg-resume is-paused" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle"><span class="rg-resume-dot" aria-hidden="true"></span>Unfinished trip${saved.demo ? ' (demo)' : ''}</h2><p>To ${esc(saved.destination?.name || 'your destination')} · step ${saved.gs.index + 1}</p><div class="rg-resume-actions"><button type="button" class="rg-primary small" data-action="trip-resume"><span>Resume trip</span>${rgIcon('arrow')}</button><button type="button" class="rg-text-button" data-action="trip-discard">Discard</button></div></section>` : '';
   const link = (action, icon, title, sub) => `<button type="button" class="rg-link" data-action="${action}"><span class="rg-link-icon">${rgIcon(icon)}</span><span class="rg-link-text"><span>${title}</span><span class="visually-hidden">. </span><small>${sub}</small></span><svg class="rg-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>`;
-  return `<div class="rg-home">
+  // Recent stops open Directions to them; recent addresses open their place screen (which offers Directions).
+  const recentRow = p => {
+    const meta = p.detail || (p.kind === 'stop' ? AGENCY_SHORT[p.agency] || 'Stop' : '');
+    const attrs = p.kind === 'stop' && p.agency && p.stop
+      ? `data-action="plan-to" data-agency="${esc(p.agency)}" data-stop="${esc(p.stop)}"`
+      : `data-action="search-place" ${Object.entries({ lat: p.lat, lon: p.lon, name: p.name, detail: p.detail || '', kind: p.kind || 'place', agency: p.agency || '', stop: p.stop || '', layer: p.layer || '' }).map(([k, v]) => `data-p-${k}="${esc(v)}"`).join(' ')}`;
+    return `<li><button type="button" class="rg-place-row" ${attrs}><span class="rg-place-icon">${rgIcon(p.kind === 'stop' ? 'clock' : 'pin')}</span><span class="rg-link-text"><span>${esc(p.name)}</span>${meta ? `<span class="visually-hidden">. </span><small>${esc(meta)}</small>` : ''}</span><svg class="rg-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></li>`;
+  };
+  // Placeholder only: agent C owns setMode and wires data-action="mode-toggle".
+  const classic = document.body.classList.contains('mode-classic');
+  const modeToggle = `<button type="button" class="rg-mode-toggle" data-action="mode-toggle">${rgIcon(classic ? 'speaker' : 'map')}<span>${classic ? 'Switch to audio-first view' : 'Switch to map view'}</span></button>`;
+  return `<div class="rg-home${places.length || recents.length ? ' has-places' : ''}">
     <div class="rg-brand" aria-hidden="true">${ROVE_MARK}<span class="rg-wordmark">rove</span><span class="rg-brand-sub">Bay Area<br>transit</span></div>
     ${resume}
-    <h1 id="roveHomeTitle" class="rg-home-title" tabindex="-1">Where to?</h1>
-    <p class="rg-home-sub">Speak or type a place. Rove guides you one confirmed step at a time.</p>
+    <header class="rg-home-head">
+      <h1 id="roveHomeTitle" class="rg-home-title" tabindex="-1">Where to?</h1>
+      <p class="rg-home-sub">Speak or type a place. Rove guides you one confirmed step at a time.</p>
+    </header>
     <div class="rg-stack rg-hero">
       <button type="button" class="rg-primary rg-speak" data-action="voice-destination"><span class="rg-speak-icon">${MIC_ICON}</span><span class="rg-speak-label">Speak destination</span></button>
       <button type="button" class="rg-field" data-action="plan">${SEARCH_ICON}<span>Type a destination</span></button>
     </div>
-    ${places.length ? `<section class="rg-saved" aria-labelledby="rgSavedTitle"><h2 id="rgSavedTitle" class="rg-label">Saved places</h2><div class="rg-chips">${places.map(p => `<button type="button" class="rg-chip" data-action="go-saved" data-label="${esc(p.label)}">${esc(p.label)}</button>`).join('')}</div></section>` : ''}
-    <div class="rg-motif-wrap">${HOME_MOTIF}</div>
+    <div class="rg-home-mode">${modeToggle}</div>
+    ${places.length ? `<section class="rg-saved" aria-labelledby="rgSavedTitle"><h2 id="rgSavedTitle" class="rg-label">Saved places</h2><div class="rg-chips">${places.map(p => `<button type="button" class="rg-chip" data-action="go-saved" data-label="${esc(p.label)}">${rgIcon(p.label === 'Home' ? 'home' : p.label === 'Work' ? 'work' : 'star')}<span>${esc(p.label)}</span></button>`).join('')}</div></section>` : ''}
+    ${recents.length ? `<section class="rg-recent" aria-labelledby="rgRecentTitle"><h2 id="rgRecentTitle" class="rg-label">Recent</h2><ul class="rg-place-list">${recents.map(recentRow).join('')}</ul></section>` : `<div class="rg-motif-wrap">${HOME_MOTIF}</div>`}
     <nav class="rg-links" aria-label="More">
       ${link('demo', 'route', 'Try the demo journey', 'A simulated trip with a transfer')}
       ${link('access-nearby', 'pin', 'Nearby stops', 'Uses your location')}
@@ -1816,22 +1832,25 @@ function viewAccessNearby() {
  <section class="section"><h2>Closest stops</h2>${items.length?`<ol class="access-nearby-list">${items.map(({place,d})=>`<li><h3>${esc(place.s.n)}</h3><p>${esc(AGENCY_SHORT[place.a.id]||place.a.name)} · Approximately ${Math.round(d/10)*10} metres straight-line distance${uncertain?' (low confidence)':''}</p><p>Routes: ${esc(place.routes.slice(0,7).map(r=>r.title).join(', ')||'Not listed')}</p><button class="button primary" data-action="access-select-stop" data-agency="${esc(place.a.id)}" data-stop="${esc(place.s.id)}">Select this stop and check departures</button></li>`).join('')}</ol>`:'<p class="empty">No nearby stops available yet. Refresh location, or search for a stop by name.</p>'}</section>`;
 }
 function viewAccess() {
-  return `${backHeader()}<div class="rg-page">
+  const setting = (key, title, detail, on) => `<label class="access-setting rg-switch-row"><span class="rg-switch-text"><strong id="rgSet-${key}">${title}</strong><span class="rg-switch-detail" id="rgSet-${key}-detail">${detail}</span></span><input type="checkbox" role="switch" class="rg-switch" data-access-setting="${key}" aria-labelledby="rgSet-${key}" aria-describedby="rgSet-${key}-detail" ${on ? 'checked' : ''}/></label>`;
+  return `${backHeader()}<div class="rg-page rg-settings-page">
     <h1 class="rg-title">Voice and accessibility</h1>
     <section class="rg-settings" aria-labelledby="rgSettingsTitle">
       <h2 id="rgSettingsTitle" class="rg-label">Settings</h2>
-      <label class="access-setting"><input type="checkbox" data-access-setting="speak" ${accessPreference('speak', true) ? 'checked' : ''}/> <span><strong>Rove voice</strong><br>Rove reads each step and reminder aloud. If you use VoiceOver or TalkBack, you can turn this off; your screen reader will announce updates instead.</span></label>
-      <label class="access-setting"><input type="checkbox" data-access-setting="haptics" ${accessPreference('haptics', true) ? 'checked' : ''}/> <span><strong>Vibration</strong><br>For reminders and confirmations, on phones that support it. iPhone Safari does not.</span></label>
-      <button type="button" class="rg-quiet" data-action="access-demo">Test Rove voice</button>
-      <p class="rg-body">When you speak a destination, the recording is sent to a speech-to-text service (through Vercel AI Gateway) to turn it into text. Rove does not store recordings. If that service is unavailable, Rove uses your browser's own voice input.</p>
+      <div class="rg-group">
+        ${setting('speak', 'Rove voice', 'Rove reads each step and reminder aloud. If you use VoiceOver or TalkBack, you can turn this off; your screen reader will announce updates instead.', accessPreference('speak', true))}
+        ${setting('haptics', 'Vibration', 'For reminders and confirmations, on phones that support it. iPhone Safari does not.', accessPreference('haptics', true))}
+      </div>
+      <button type="button" class="rg-quiet" data-action="access-demo">${rgIcon('speaker')}<span>Test Rove voice</span></button>
+      <p class="rg-body rg-fine">When you speak a destination, the recording is sent to a speech-to-text service (through Vercel AI Gateway) to turn it into text. Rove does not store recordings. If that service is unavailable, Rove uses your browser's own voice input.</p>
     </section>
     <section class="rg-settings" aria-labelledby="rgHowTitle">
       <h2 id="rgHowTitle" class="rg-label">How a trip works</h2>
-      <ol class="access-guide"><li>Speak or type where you want to go, then choose the right match.</li><li>Listen to the route choices and start one.</li><li>Rove gives one step at a time. Confirm each step yourself: I'm at the stop, I've boarded, I've got off.</li><li>Rove reminds you before your stop, by live time when available, otherwise by the schedule.</li><li>Help is always one tap away: find another route, where am I, undo.</li></ol>
+      <ol class="access-guide rg-steps"><li>Speak or type where you want to go, then choose the right match.</li><li>Listen to the route choices and start one.</li><li>Rove gives one step at a time. Confirm each step yourself: I'm at the stop, I've boarded, I've got off.</li><li>Rove reminds you before your stop, by live time when available, otherwise by the schedule.</li><li>Help is always one tap away: find another route, where am I, undo.</li></ol>
     </section>
     <section class="rg-settings" aria-labelledby="rgCantTitle">
       <h2 id="rgCantTitle" class="rg-label">What Rove cannot do</h2>
-      <p class="rg-body">Rove cannot detect obstacles, safe crossings, platform edges, accessible entrances or elevators, or which vehicle you are on. GPS can be off by a block or more. Use your usual mobility aids, and ask transit staff when unsure.</p>
+      <div class="rg-callout">${rgIcon('warning')}<p class="rg-body">Rove cannot detect obstacles, safe crossings, platform edges, accessible entrances or elevators, or which vehicle you are on. GPS can be off by a block or more. Use your usual mobility aids, and ask transit staff when unsure.</p></div>
     </section>
   </div>`;
 }
@@ -1842,15 +1861,16 @@ function readNavInstruction() {
  speakText(`${step.title}. ${step.meta || ''}. Confirm boarding and safe paths independently.`);
 }
 function viewSources() {
-  const rows = state.network.agencies.map(a => `<li><div class="row"><span class="dot" style="background:${esc(a.color)}"></span><span class="row-main"><span class="row-title">${esc(a.name)}</span><span class="row-meta">${plural(a.routes.length, 'line')} · Schedule valid ${esc(formatGtfsDate(a.feed?.start))} to ${esc(formatGtfsDate(a.feed?.end))}</span></span></div></li>`).join('');
+  const rows = state.network.agencies.map(a => `<li class="rg-source-row"><span class="rg-source-dot" style="background:${esc(a.color)}" aria-hidden="true"></span><span class="rg-source-main"><span class="rg-source-name">${esc(a.name)}</span><span class="rg-source-meta">${plural(a.routes.length, 'line')} · Schedule valid ${esc(formatGtfsDate(a.feed?.start))} to ${esc(formatGtfsDate(a.feed?.end))}</span></span></li>`).join('');
   const rt = state.realtime;
   const budget = rt?.meta?.requestBudget || rt?.requestBudget;
-  return `${backHeader()}
-    <div class="hero"><h1 class="title-1">Data sources</h1><p class="caption">Schedules updated ${esc(dateFormat.format(new Date(state.network.generatedAt)))}</p></div>
-    <section class="section"><h2 class="label">Schedules</h2><ul class="rows">${rows}</ul></section>
-    <section class="section"><h2 class="label">Live data</h2><p class="empty">${esc(liveStatusLine())}${budget ? ` The server has used ${budget.used} of its ${budget.limit} hourly requests to 511.` : ''}</p>${liveCoverageHtml()}</section>
-    <section class="section"><h2 class="label">Credits</h2>
-      <div class="empty" style="line-height:22px">
+  return `${backHeader()}<div class="rg-page rg-sources-page">
+    <h1 class="rg-title">Transit data</h1>
+    <p class="rg-lede">Schedules updated ${esc(dateFormat.format(new Date(state.network.generatedAt)))}</p>
+    <section class="rg-settings" aria-labelledby="rgSchedTitle"><h2 id="rgSchedTitle" class="rg-label">Schedules</h2><ul class="rg-group rg-source-list">${rows}</ul></section>
+    <section class="rg-settings" aria-labelledby="rgLiveTitle"><h2 id="rgLiveTitle" class="rg-label">Live data</h2><p class="rg-body">${esc(liveStatusLine())}${budget ? ` The server has used ${budget.used} of its ${budget.limit} hourly requests to 511.` : ''}</p>${liveCoverageHtml()}</section>
+    <section class="rg-settings" aria-labelledby="rgCreditsTitle"><h2 id="rgCreditsTitle" class="rg-label">Credits</h2>
+      <div class="rg-credits">
         <p>Transit data provided by 511.org, BART, AC Transit, VTA, Caltrain, and SFMTA.</p>
         <p>Reproduced with permission granted by the City and County of San Francisco.</p>
         <p>AC Transit data is licensed under a Creative Commons Attribution 3.0 Unported License.</p>
@@ -1861,7 +1881,8 @@ function viewSources() {
         <p>Rove is not affiliated with or endorsed by BART, SFMTA, VTA, AC Transit, Caltrain, or MTC.</p>
         <p>Typeface: Atkinson Hyperlegible Next, licensed under the SIL Open Font License 1.1.</p>
       </div>
-    </section>`;
+    </section>
+  </div>`;
 }
 
 
@@ -1912,6 +1933,29 @@ function openPlan({ from, to } = {}) {
 function viewPlan() {
   const plan = state.plan;
   const status = state.planStatus;
+  // The segmented "When" control is a radio group; it drives the existing #planTimeMode select so the
+  // panel's change handler stays the single place that updates state.plan.timeMode.
+  if (!viewPlan.bound) {
+    viewPlan.bound = true;
+    document.addEventListener('change', e => {
+      if (e.target?.name !== 'planWhen') return;
+      const select = document.getElementById('planTimeMode');
+      if (!select || select.value === e.target.value) return;
+      select.value = e.target.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+  // Detect a swap (the two ends trade places) so the fields can animate and focus can return to the swap control.
+  const endKey = which => (plan[which] ? placeKey(plan[which]) : `draft:${plan.draft[which] || ''}`);
+  const keys = { from: endKey('from'), to: endKey('to') };
+  const swapped = Boolean(viewPlan.last && keys.from !== keys.to && viewPlan.last.from === keys.to && viewPlan.last.to === keys.from);
+  viewPlan.last = keys;
+  if (swapped) requestAnimationFrame(() => {
+    if (document.activeElement && document.activeElement !== document.body) return;
+    document.querySelector('.plan-fields .swap-button')?.focus({ preventScroll: true });
+    const name = which => plan[which]?.name || plan.draft[which] || 'not set';
+    announceAccess(`Swapped. From ${name('from')}. To ${name('to')}.`);
+  });
   const field = (id, which, label, tag) => {
     const value = plan[which]?.name || plan.draft[which] || '';
     return `<label class="plan-field plan-field-${which}${plan.errorField === which ? ' invalid' : ''}"><span class="marker" aria-hidden="true"><i></i></span><span class="plan-field-tag">${tag}<span class="visually-hidden">, ${label.toLowerCase()}</span></span>
@@ -1930,25 +1974,28 @@ function viewPlan() {
   else submit = `<p class="caption plan-hint">${hasFrom ? 'Enter a destination address, place, or stop to see routes.' : hasTo ? 'Enter a starting address, place, or stop to see routes.' : 'Enter a starting point and a destination. Any Bay Area address, place, or stop works.'}</p>`;
   const modeButton = (key, icon, label) => `<button type="button" class="seg-option mode-option" data-action="first-mile" data-first-mile="${key}" aria-pressed="${access === key}" ${key === 'CAR_PARKING' && !driveOk ? 'aria-disabled="true" aria-describedby="driveNote"' : ''}>${icon}<span>${label}</span></button>`;
   return `${backHeader()}
-    <div class="hero plan-hero"><h1 class="title-2">Directions</h1></div>
+    <div class="hero plan-hero"><h1 class="title-2">Directions</h1><div class="rg-voice-row"><button type="button" class="rg-mic" data-action="voice-destination" aria-label="Speak destination">${MIC_ICON}<span>Speak</span></button><div class="rg-voice-slot">${voiceStatusHtml()}</div></div></div>
     <div id="planNotice">${planNoticeHtml()}</div>
-    <div class="rg-voice-row"><button type="button" class="rg-mic" data-action="voice-destination" aria-label="Speak destination">${MIC_ICON}<span>Speak</span></button><div class="rg-voice-slot">${voiceStatusHtml()}</div></div>
     <form class="plan-form${plan.focus ? ' suggesting' : ''}" data-plan-form novalidate>
-      <div class="plan-fields">
+      <div class="plan-fields${swapped ? ' is-swapped' : ''}">
         ${field('planFrom', 'from', 'Starting point', 'From')}
         ${field('planTo', 'to', 'Destination', 'To')}
-        <button type="button" class="swap-button" data-action="plan-swap" aria-label="Swap starting point and destination">${ICONS.swap}</button>
+        <button type="button" class="swap-button" data-action="plan-swap" aria-label="Swap starting point and destination">${rgIcon('swap', 'rg-swap-icon')}</button>
       </div>
       <div id="planSuggest" class="plan-suggest" role="listbox" aria-label="Suggestions"></div>
       <div class="plan-body">
         ${coverage ? '' : `<div class="plan-options">
           ${driveOk || dropOk ? `<div class="segmented mode-switch${dropOk ? ' three' : ''}" role="group" aria-label="Getting to transit">${modeButton('WALK', MODE_ICONS.walk, 'Walk')}${driveOk ? modeButton('CAR_PARKING', MODE_ICONS.car, 'Drive') : ''}${dropOk ? modeButton('CAR_DROP_OFF', MODE_ICONS.car, 'Drop-off') : ''}</div>` : ''}
-          <label class="time-select">${rgIcon('clock')}<span class="visually-hidden">When</span><select id="planTimeMode">
+          <fieldset class="rg-when">
+            <legend class="visually-hidden">When</legend>
+            <div class="rg-when-seg">${[['now', 'Leave now'], ['depart', 'Depart at'], ['arrive', 'Arrive by']].map(([value, label]) => `<label class="rg-when-opt"><input type="radio" name="planWhen" id="planWhen-${value}" value="${value}" ${(plan.timeMode || 'now') === value ? 'checked' : ''} /><span>${label}</span></label>`).join('')}</div>
+          </fieldset>
+          <select id="planTimeMode" hidden aria-hidden="true" tabindex="-1">
             <option value="now" ${plan.timeMode === 'now' ? 'selected' : ''}>Leave now</option>
             <option value="depart" ${plan.timeMode === 'depart' ? 'selected' : ''}>Depart at</option>
             <option value="arrive" ${plan.timeMode === 'arrive' ? 'selected' : ''}>Arrive by</option>
-          </select></label>
-          ${plan.timeMode !== 'now' ? `<input type="datetime-local" id="planDateTime" aria-label="Date and time" class="${plan.errorField === 'time' ? 'invalid' : ''}" value="${esc(plan.dateTime || localInputValue(new Date()))}" />` : ''}
+          </select>
+          ${plan.timeMode !== 'now' ? `<label class="rg-when-time${plan.errorField === 'time' ? ' invalid' : ''}">${rgIcon('clock')}<span class="rg-when-time-label">${plan.timeMode === 'arrive' ? 'Arrive by' : 'Depart at'}</span><input type="datetime-local" id="planDateTime" aria-label="${plan.timeMode === 'arrive' ? 'Arrive by' : 'Depart at'}, date and time" class="${plan.errorField === 'time' ? 'invalid' : ''}" value="${esc(plan.dateTime || localInputValue(new Date()))}" /></label>` : ''}
         </div>
         ${plan.driveNote && !driveOk ? '<p class="caption plan-hint" id="driveNote" role="status">Driving to a station is not available yet. Rove plans walking connections to transit today.</p>' : ''}
         ${access === 'CAR_PARKING' ? `<p class="caption plan-hint">Rove plans a drive to a park-and-ride lot, then transit from there. ${driveLimitText()}Parking availability is not known.</p>` : ''}
@@ -2570,7 +2617,12 @@ const RG_ICON = {
   chevronLeft: '<path d="m14.5 6-6 6 6 6"/>',
   chevronDown: '<path d="m6 9.5 6 6 6-6"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
-  close: '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>'
+  close: '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>',
+  home: '<path d="M4.5 10.75 12 4.5l7.5 6.25V19a1 1 0 0 1-1 1h-4.25v-5.25h-4.5V20H5.5a1 1 0 0 1-1-1Z"/>',
+  work: '<rect x="4" y="7.5" width="16" height="11.5" rx="2.25"/><path d="M9 7.5V6a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 6v1.5M4 12.5h16"/>',
+  star: '<path d="m12 4.5 2.3 4.7 5.2.75-3.75 3.65.9 5.15L12 16.3l-4.65 2.45.9-5.15L4.5 9.95l5.2-.75Z"/>',
+  map: '<path d="M9 4.75 3.75 6.5v12.75L9 17.5l6 1.75 5.25-1.75V4.75L15 6.5Z"/><path d="M9 4.75V17.5M15 6.5v12.75"/>',
+  swap: '<path d="M8 19.5v-15M4.5 8 8 4.5 11.5 8M16 4.5v15M12.5 16l3.5 3.5 3.5-3.5"/>'
 };
 const rgIcon = (name, cls = '') => `<svg class="rg-icon${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${RG_ICON[name] || ''}</svg>`;
 function factIcon(text) {

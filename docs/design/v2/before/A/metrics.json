@@ -1,0 +1,626 @@
+[
+ {
+  "tag": "320",
+  "name": "home",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "320",
+  "name": "home-saved",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "320",
+  "name": "plan",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "BART"
+  },
+  "fails": []
+ },
+ {
+  "tag": "320",
+  "name": "plan-suggest",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 5.75,
+   "text": "Green"
+  },
+  "fails": []
+ },
+ {
+  "tag": "320",
+  "name": "plan-filled",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.32,
+   "text": "Back"
+  },
+  "fails": []
+ },
+ {
+  "tag": "320",
+  "name": "plan-error",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Address search by Stadia Maps,"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390",
+  "name": "home",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390",
+  "name": "home-saved",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390",
+  "name": "plan",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "BART"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390",
+  "name": "plan-suggest",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 5.75,
+   "text": "Green"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390",
+  "name": "plan-filled",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.32,
+   "text": "Back"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390",
+  "name": "plan-error",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Address search by Stadia Maps,"
+  },
+  "fails": []
+ },
+ {
+  "tag": "430",
+  "name": "home",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "430",
+  "name": "home-saved",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "430",
+  "name": "plan",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "BART"
+  },
+  "fails": []
+ },
+ {
+  "tag": "430",
+  "name": "plan-suggest",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 5.75,
+   "text": "Green"
+  },
+  "fails": []
+ },
+ {
+  "tag": "430",
+  "name": "plan-filled",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.32,
+   "text": "Back"
+  },
+  "fails": []
+ },
+ {
+  "tag": "430",
+  "name": "plan-error",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Address search by Stadia Maps,"
+  },
+  "fails": []
+ },
+ {
+  "tag": "768",
+  "name": "home",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "768",
+  "name": "home-saved",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "768",
+  "name": "plan",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "BART"
+  },
+  "fails": []
+ },
+ {
+  "tag": "768",
+  "name": "plan-suggest",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 5.75,
+   "text": "Green"
+  },
+  "fails": []
+ },
+ {
+  "tag": "768",
+  "name": "plan-filled",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "BAY AREA TRANSIT"
+  },
+  "fails": []
+ },
+ {
+  "tag": "768",
+  "name": "plan-error",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Address search by Stadia Maps,"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440",
+  "name": "home",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440",
+  "name": "home-saved",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440",
+  "name": "plan",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Tap any point on the map"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440",
+  "name": "plan-suggest",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 5.75,
+   "text": "Green"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440",
+  "name": "plan-filled",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "BAY AREA TRANSIT"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440",
+  "name": "plan-error",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Tap any point on the map"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1920",
+  "name": "home",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1920",
+  "name": "home-saved",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Speak or type a place. Rove gu"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1920",
+  "name": "plan",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Tap any point on the map"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1920",
+  "name": "plan-suggest",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 5.75,
+   "text": "Green"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1920",
+  "name": "plan-filled",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "BAY AREA TRANSIT"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1920",
+  "name": "plan-error",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 7.29,
+   "text": "Tap any point on the map"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390-dark",
+  "name": "home",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 8.8,
+   "text": "Sources and what is live"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390-dark",
+  "name": "home-saved",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 8.8,
+   "text": "Sources and what is live"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390-dark",
+  "name": "plan",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 8.8,
+   "text": "To, destination"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390-dark",
+  "name": "plan-suggest",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 5.75,
+   "text": "Green"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390-dark",
+  "name": "plan-filled",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 8.8,
+   "text": "To, destination"
+  },
+  "fails": []
+ },
+ {
+  "tag": "390-dark",
+  "name": "plan-error",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 8.8,
+   "text": "From, starting point"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440-dark",
+  "name": "home",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 8.8,
+   "text": "Sources and what is live"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440-dark",
+  "name": "home-saved",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 8.8,
+   "text": "Sources and what is live"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440-dark",
+  "name": "plan",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 8.8,
+   "text": "To, destination"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440-dark",
+  "name": "plan-suggest",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 5.75,
+   "text": "Green"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440-dark",
+  "name": "plan-filled",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 8.8,
+   "text": "To, destination"
+  },
+  "fails": []
+ },
+ {
+  "tag": "1440-dark",
+  "name": "plan-error",
+  "overflow": 0,
+  "panelOverflow": 0,
+  "small": [],
+  "smallCount": 0,
+  "worst": {
+   "ratio": 8.8,
+   "text": "From, starting point"
+  },
+  "fails": []
+ }
+]
