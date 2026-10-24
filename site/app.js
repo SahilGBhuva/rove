@@ -2961,9 +2961,9 @@ function voiceViaServer({ demo }) {
   announceAccess('Speak after the tone.');
   // The lead-in lets a screen reader finish speaking before the microphone starts listening.
   const levels = [0, 0, 0, 0, 0];
-  const c = RoveVoice.record({ leadInMs: 1300, onLevel: rms => {
+  const c = RoveVoice.record({ leadInMs: 1300, onLevel: level => {
     // Drive the waveform from the actual input level (no level, no movement).
-    levels.shift(); levels.push(Math.min(1, rms * 9));
+    levels.shift(); levels.push(Math.max(0, Math.min(1, level))); // smoothed 0..1 level, exactly 0 when silent
     document.querySelectorAll('.rg-wave i').forEach((bar, k) => bar.style.setProperty('--l', (0.18 + levels[(k + 2) % 5] * 0.82).toFixed(2)));
   }, onState: s => {
     if (capture !== c) return;
