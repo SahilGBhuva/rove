@@ -2881,6 +2881,7 @@ function viewNavigate() {
       ${phase.check ? `<p class="rg-check">${rgIcon('info')}<span><strong>Check before boarding.</strong> ${esc(phase.check)}</span></p>` : ''}
       <p id="rgStatus" class="rg-status" data-level="${esc(status?.level || 'info')}" ${status ? '' : 'hidden'}>${esc(status?.message || '')}</p>
     </section>
+    ${arrive ? '' : '<div id="rgLive" class="rg-live" hidden></div>'}
     ${arrive ? '' : `<p id="rgCertainty" class="rg-certainty">${esc(guideCertainty(nav))}</p>`}
     ${nav.demo && ['ride', 'board'].includes(phase.kind) ? '<button type="button" class="rg-demo-skip" data-action="rg-demo-skip">Demo: skip ahead to the next reminder</button>' : ''}
     ${next && !arrive ? `<p class="rg-next"><span class="rg-next-label">Next</span><span class="rg-next-text">${esc(next.heading)}</span></p>` : ''}
