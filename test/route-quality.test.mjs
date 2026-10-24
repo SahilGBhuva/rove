@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {findJourney,findJourneys} from '../experiments/bay-router/route.mjs';
+import {findJourney,findJourneys,directFootpaths} from '../experiments/bay-router/route.mjs';
 import {pacificMidnight,serviceDayOffset} from '../experiments/bay-router/timezone.mjs';
 import {combineServiceDays} from '../experiments/bay-router/combine-days.mjs';
 import {adaptJourney,dateContext} from '../api/v2/experimental-plan.mjs';
@@ -59,4 +59,13 @@ test('balanced recommendation avoids extra transfers for negligible time savings
  const chosen=rankItineraries([quickest,simple,slow],3);
  assert.equal(chosen[0],simple);
  assert.ok(chosen.includes(quickest));
+});
+
+test('rail platform transfers have a realistic minimum buffer',()=>{
+ const nearby=[['caltrain:a','Rail',37.7,-122.4],['bart:b','Rail',37.7002,-122.4],
+   ['muni:c','Bus',37.701,-122.4],['muni:d','Bus',37.7012,-122.4]];
+ const paths=directFootpaths(nearby,250);
+ assert.ok(paths[0].find(([j])=>j===1)[1]>=180);
+ assert.ok(paths[2].find(([j])=>j===3)[1]>=75);
+ assert.ok(paths[0].find(([j])=>j===1)[1]>paths[2].find(([j])=>j===3)[1]);
 });

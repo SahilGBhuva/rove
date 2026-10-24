@@ -6,16 +6,17 @@
 
 1. **Faster stop searches:** Multi-destination connection scanning replaces repeated scans for every boarding/exit pair. Cache combined GTFS service days and transfer footpaths in warm serverless processes.
 2. **Transfer-aware routing:** Search both earliest-arrival and a second transfer-penalized profile; prioritize simpler itineraries when the time difference is small. Keep the absolute fastest as an alternative.
-3. **Accurate modes:** GTFS rail type `2` is `RAIL` (Caltrain), not `BUS`; cable-car type `5` is distinguished from ordinary buses.
-4. **Service-day correctness:** Carry the exact scanned GTFS trip index, including duplicate trip IDs across adjacent service days. Calculate real Pacific midnight and 23/25-hour service-day offsets across daylight saving transitions.
-5. **Walking transfer safeguards:** Do not rank a verified walking connection that takes longer than the available transfer window ahead of feasible options. Unknown paths remain labeled as unverified; never invent geometry.
-6. **External routing efficiency:** Deduplicate concurrent pedestrian-router lookups for shared walking legs.
-7. **Regression tests and QA:** New deterministic transfer, time-zone, trip-identity, and geometry tests; reproducible eight-journey Bay Area scenario runner (`node scripts/verify-preview-routing.mjs`).
+3. **Realistic transfers:** Add conservative platform transfer buffers (three minutes for rail-linked stops, 75 seconds for local bus-stop changes) to avoid connections that require impossible one-minute platform changes.
+4. **Accurate modes:** GTFS rail type `2` is `RAIL` (Caltrain), not `BUS`; cable-car type `5` is distinguished from ordinary buses.
+5. **Service-day correctness:** Carry the exact scanned GTFS trip index, including duplicate trip IDs across adjacent service days. Calculate real Pacific midnight and 23/25-hour service-day offsets across daylight saving transitions.
+6. **Walking transfer safeguards:** Do not rank a verified walking connection that takes longer than the available transfer window ahead of feasible options. Unknown paths remain labeled as unverified; never invent geometry.
+7. **External routing efficiency:** Deduplicate concurrent pedestrian-router lookups for shared walking legs.
+8. **Regression tests and QA:** New deterministic transfer, time-zone, trip-identity, and geometry tests; reproducible eight-journey Bay Area scenario runner (`node scripts/verify-preview-routing.mjs`).
 
 ## Demo examples checked against the Oct 23 schedule
 
 - Haight/Ashbury → Chase Center: first result uses Muni 37 + 22, one transfer, approximately 43 minutes.
-- Sunnyvale → downtown Berkeley: first result uses Caltrain → BART at Millbrae, one transfer, approximately 136 minutes; the 127-minute, four-transfer option remains a faster alternative rather than the recommended first choice.
+- Sunnyvale → downtown Berkeley: first result uses Caltrain → BART at Millbrae, one transfer, approximately 138 minutes; the 127-minute, four-transfer option remains a faster alternative rather than the recommended first choice.
 - Powell → Oakland: BART with zero transfers, approximately 16 minutes.
 
 These are **scheduled example results, not live trip predictions**. Durations and service depend on the requested time and date. Warm local algorithm-only checks were approximately 0.5–1.5 seconds for several sample journeys when the machine was not under load; external pedestrian routing can add up to 3.8 seconds. No production latency SLA is established.

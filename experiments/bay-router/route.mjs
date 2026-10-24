@@ -31,8 +31,13 @@ export function directFootpaths(stops, radiusMeters = 220, maxPerStop = 12) {
       }
     }
     candidates.sort((a, b) => a[1] - b[1]);
-    footpaths[i] = candidates.slice(0, maxPerStop).map(([j, distance]) =>
-      [j, Math.ceil(distance / 1.2 + 45)]);
+    footpaths[i] = candidates.slice(0, maxPerStop).map(([j, distance]) => {
+      // A platform-to-platform rail transfer needs more time than crossing a
+      // bus stop. Conservative minimums prevent infeasible one-minute changes.
+      const rail=/^(bart|caltrain):/.test(stops[i][0]) || /^(bart|caltrain):/.test(stops[j][0]);
+      const boardingBuffer=rail?180:75;
+      return [j, Math.ceil(distance / 1.2 + boardingBuffer)];
+    });
   }
   return footpaths;
 }
