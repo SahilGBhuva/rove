@@ -2042,7 +2042,8 @@ async function submitPlan() {
     pushView({ name: 'results' }, { detent: 'half' });
     renderJourney(); revealJourney(); applyMapState(); updatePlanMarkers(); fitJourney(state.journey);
     const best = sortedItineraryIndexes()[0];
-    announceAccess(`${plural(Math.min(itineraries.length, 3), 'route')} found. ${routeChoiceSpeech(itineraries[best], 1)}`);
+    if (plan.voiceFlow) voiceOfferRoutes(0);
+    else announceAccess(`${plural(Math.min(itineraries.length, 3), 'route')} found. ${routeChoiceSpeech(itineraries[best], 1)}`);
   } catch (error) {
     plan.loading = false;
     // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
@@ -2744,6 +2745,140 @@ function updateGuideLive() {
   if (el) { el.textContent = status?.message || ''; el.dataset.level = status?.level || 'info'; el.hidden = !status; }
   const c = document.getElementById('rgCertainty');
   if (c) c.textContent = guideCertainty(nav);
+  renderLivePanel();
+}
+
+/* ---- Live tracking (public/js/live-tracker.js decides what to say; api/v2/live.mjs fetches) ----
+ * Follows the exact trip the rider is catching or riding. Live times replace scheduled ones on the
+ * guide's phases (so reminders, Repeat and the certainty line say "live"), but nothing here ever
+ * advances a step: only the rider's confirmation does. */
+const livePacer = window.RoveLive ? RoveLive.createPacer(15000) : null;
+const LIVE_POLL_MS = 20000;
+function liveLeg(nav) {
+  const p = guidePhase(nav);
+  if (!p || nav.demo || !['board', 'ride'].includes(p.kind)) return null;
+  const leg = p.leg;
+  return leg?.mode === 'TRANSIT' && leg.tripId && leg.agencyId ? leg : null;
+}
+async function pollLive(nav, force = false) {
+  const leg = liveLeg(nav);
+  if (!leg || nav.liveBusy || !navigator.onLine) return;
+  if (!force && nav.live?.leg === leg && Date.now() - nav.live.at < LIVE_POLL_MS) return;
+  nav.liveBusy = true;
+  const q = new URLSearchParams({ agency: leg.agencyId, trip: leg.tripId, route: leg.routeId || '', board: leg.from?.stopId || '', exit: leg.to?.stopId || '', sb: String(Math.round(Date.parse(leg.startTime) / 1000)), se: String(Math.round(Date.parse(leg.endTime) / 1000)) });
+  let data;
+  try { data = await fetch('/api/v2/live?' + q, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined }).then(r => r.json()); }
+  catch { data = { status: 'unavailable', reasons: ['Live data could not be reached.'] }; }
+  nav.liveBusy = false;
+  if (state.nav !== nav) return;
+  nav.live = { leg, data, at: Date.now() };
+  applyLive(nav);
+  updateGuideLive();
+}
+/* Put live times on this leg's phases; facts are rewritten so nothing still says "not live". */
+function applyLive(nav) {
+  const { leg, data } = nav.live;
+  for (const p of nav.guide.phases) {
+    if (p.leg !== leg) continue;
+    if (data.status === 'canceled') p.canceled = true;
+    if (data.status !== 'live') continue;
+    const est = p.kind === 'board' ? data.board : p.kind === 'ride' ? data.exit : null;
+    if (!est) continue;
+    const ms = est.time * 1000;
+    const late = Number.isFinite(est.delay) && Math.abs(est.delay) >= 60 ? `, about ${plural(Math.round(Math.abs(est.delay) / 60), 'minute')} ${est.delay > 0 ? 'late' : 'early'}` : '';
+    const text = `${p.kind === 'board' ? 'Departs' : 'Arrives'} ${rgClock(ms)}. Live time${est.source === 'delay' ? ' (estimated from the trip’s live delay)' : ''}${late}.`;
+    if (p.kind === 'board') p.departs = ms; else p.arrives = ms;
+    p.live = true;
+    p.facts = p.facts.map(f => (/^(Departs|Arrives) /.test(f) ? text : f));
+  }
+}
+function liveSummary(nav) {
+  const phase = guidePhase(nav);
+  const d = nav.live?.leg === phase?.leg ? nav.live.data : null;
+  const est = d?.status === 'live' ? (phase.kind === 'board' ? d.board : d.exit) : null;
+  if (!est) return '';
+  const mins = Math.max(0, Math.round((est.time * 1000 - Date.now()) / 60000));
+  return phase.kind === 'board'
+    ? ` Live: ${phase.vehicle?.name || 'your vehicle'} ${mins ? `in about ${plural(mins, 'minute')}` : 'arriving now'}${Number.isFinite(est.stopsAway) ? `, ${plural(est.stopsAway, 'stop')} away` : ''}.`
+    : ` Live: ${phase.place} in about ${plural(Math.max(1, mins), 'minute')}${Number.isFinite(est.stopsAway) ? (est.stopsAway === 0 ? ', next stop' : `, ${plural(est.stopsAway + 1, 'stop')}`) : ''}.`;
+}
+function liveSay(notice) {
+  accessVibrate(notice.priority >= 2 ? [220, 110, 220] : [90]);
+  guideSay(notice.message);
+}
+/* Called every guide tick: decide spoken live/GPS updates and pace them. */
+function liveTick(nav) {
+  if (!window.RoveLive || nav.demo) return;
+  const phase = guidePhase(nav);
+  if (!phase) return;
+  const now = Date.now();
+  nav.liveGiven ||= {}; nav.liveMemory ||= {};
+  const given = nav.liveGiven[nav.gs.index] ||= new Set();
+  const memory = nav.liveMemory[nav.gs.index] ||= {};
+  let notices = [];
+  if (['board', 'ride'].includes(phase.kind)) {
+    pollLive(nav);
+    if (nav.live?.leg === phase.leg) notices = RoveLive.liveNotices({ kind: phase.kind, vehicleName: phase.vehicle?.name || 'Your vehicle', place: phase.place, live: nav.live.data, now: Math.floor(now / 1000), given, memory });
+  } else if (['walk', 'transfer'].includes(phase.kind)) {
+    nav.walk = RoveLive.walkNotices({ fix: nav.fix, target: [phase.leg?.to?.lon, phase.leg?.to?.lat], place: phase.place, now, given, distanceWords: RoveJourneyGuide.distanceWords });
+    notices = nav.walk.notices;
+  }
+  for (const n of notices) {
+    given.add(n.key);
+    if (n.key.startsWith('delay:')) memory.delay = nav.live?.data?.board?.delay;
+    const out = livePacer.offer(n, now);
+    if (out) liveSay(out);
+  }
+  const waiting = livePacer.flush(now);
+  if (waiting) liveSay(waiting);
+}
+/* The live panel inside the trip card. Patched in place; skipped while focus is inside it. */
+function liveHtml(nav) {
+  const phase = guidePhase(nav);
+  if (!phase || phase.kind === 'arrive') return '';
+  if (nav.demo) return '';
+  const now = Date.now();
+  if (['board', 'ride'].includes(phase.kind)) {
+    if (!liveLeg(nav)) return '';
+    const L = nav.live?.leg === phase.leg ? nav.live : null;
+    if (!L) return `<p class="rg-live-quiet">${rgIcon('refresh')}<span>Checking live data…</span></p>`;
+    const d = L.data;
+    if (d.status === 'canceled') return `<p class="rg-live-alert">${rgIcon('warning')}<span>The agency reports this trip as canceled. Open Help to find another route.</span></p>`;
+    const est = d.status === 'live' ? (phase.kind === 'board' ? d.board : d.exit) : null;
+    if (!est) return `<p class="rg-live-quiet">${rgIcon('info')}<span>No live data for this trip right now. Times are scheduled.</span></p>`;
+    const mins = Math.max(0, Math.round((est.time * 1000 - now) / 60000));
+    const stops = Number.isFinite(est.stopsAway) ? (phase.kind === 'board' ? (est.stopsAway === 0 ? 'At the previous stop or here' : plural(est.stopsAway, 'stop') + ' away') : (est.stopsAway === 0 ? 'Next stop' : plural(est.stopsAway + 1, 'stop') + ' to go')) : null;
+    const v = d.vehicle && Number.isFinite(d.vehicle.lat) ? d.vehicle : null;
+    const target = phase.kind === 'board' ? [phase.leg.from?.lon, phase.leg.from?.lat] : [phase.leg.to?.lon, phase.leg.to?.lat];
+    const away = v && Number.isFinite(target[0]) ? RoveJourneyGuide.distanceWords(RoveLive.metersBetween([v.lon, v.lat], target)) : null;
+    const timing = !Number.isFinite(est.delay) || Math.abs(est.delay) < 60 ? 'On time' : `${plural(Math.round(Math.abs(est.delay) / 60), 'min')} ${est.delay > 0 ? 'late' : 'early'}`;
+    const detail = [stops, away && `${phase.kind === 'board' ? 'Vehicle' : 'You are'} about ${away} ${phase.kind === 'board' ? 'from your stop' : 'from your stop'}`, timing].filter(Boolean).join(' · ');
+    const next = phase.kind === 'board' ? (d.next || []).filter(x => x.tripId !== String(phase.leg.tripId).replace(/^[a-z]+:/, '')).slice(0, 2).map(x => Math.max(0, Math.round((x.time * 1000 - now) / 60000))) : [];
+    return `<div class="rg-live-row"><span class="rg-live-badge"><i aria-hidden="true"></i>Live</span><span class="rg-live-label">${esc(phase.kind === 'board' ? 'Arrives in' : `To ${phase.place}`)}</span><span class="rg-live-time"><b>${mins ? mins : 'Now'}</b>${mins ? '<small>min</small>' : ''}</span></div>
+      <p class="rg-live-detail">${esc(detail)}</p>
+      ${next.length ? `<p class="rg-live-next">Also on this route: ${next.map(m => `${m} min`).join(', ')}</p>` : ''}
+      <p class="rg-live-meta">${esc(est.source === 'delay' ? 'Estimated from the trip’s live delay' : 'Live prediction')} · updated ${Math.max(0, Math.round((now - L.at) / 1000))} s ago · ${esc(d.source || '')}</p>`;
+  }
+  const w = nav.walk;
+  if (!w || w.status === 'no-gps') return `<p class="rg-live-quiet">${rgIcon('target')}<span>Waiting for your location. Turn on location to hear the distance to ${esc(phase.place)}.</span></p>`;
+  if (w.status === 'weak') return `<p class="rg-live-quiet">${rgIcon('target')}<span>GPS signal is weak (about ${Math.round(w.accuracy)} m), so distance is hidden.</span></p>`;
+  if (w.status !== 'ok') return `<p class="rg-live-quiet">${rgIcon('target')}<span>Updating your location…</span></p>`;
+  return `<div class="rg-live-row"><span class="rg-live-badge is-gps"><i aria-hidden="true"></i>GPS</span><span class="rg-live-label">To ${esc(phase.place)}</span><span class="rg-live-time is-distance"><b>${esc(RoveJourneyGuide.distanceWords(w.meters))}</b></span></div>
+    <p class="rg-live-detail">Toward the ${esc(w.direction)} · estimate, accurate to about ${Math.round(w.accuracy)} m</p>`;
+}
+function renderLivePanel() {
+  const nav = state.nav;
+  const slot = document.getElementById('rgLive');
+  if (!nav || !slot) return;
+  if (slot.contains(document.activeElement)) return; // never move a screen reader's focus
+  const html = liveHtml(nav);
+  if (slot.dataset.html !== html) { slot.innerHTML = html; slot.dataset.html = html; }
+  slot.hidden = !html;
+  for (const span of document.querySelectorAll('.rg-facts li span')) {
+    const phase = guidePhase(nav);
+    const fact = phase?.facts.find(f => /^(Departs|Arrives) /.test(f));
+    if (fact && /^(Departs|Arrives) /.test(span.textContent) && span.textContent !== fact) span.textContent = fact;
+  }
 }
 
 function guideTick() {
@@ -2756,9 +2891,11 @@ function guideTick() {
     const r = due[due.length - 1];
     nav.alert = { ...r, index: nav.gs.index };
     accessVibrate(r.level === 'exit' ? [250, 120, 250, 120, 250] : r.level === 'uncertain' ? [450] : [150, 100, 150]);
-    guideSay(r.message);
+    const out = livePacer ? livePacer.offer({ key: r.key, message: r.message, priority: r.level === 'prepare' ? 1 : 2 }, Date.now()) : r;
+    if (out) guideSay(out.message);
     saveTrip(nav);
   }
+  liveTick(nav);
   updateGuideLive();
 }
 
@@ -2771,7 +2908,8 @@ function guideEnter(nav, preface = '') {
   document.getElementById('rgHeading')?.focus({ preventScroll: true });
   $('#panelBody').scrollTop = 0;
   focusStep();
-  guideSay(`${preface ? preface + ' ' : ''}${guideSpeech(guidePhase(nav))}`);
+  guideSay(`${preface ? preface + ' ' : ''}${guideSpeech(guidePhase(nav))}${liveSummary(nav)}`);
+  if (typeof window.RoveLive !== 'undefined') { renderLivePanel(); pollLive(nav, true); }
 }
 
 function beginNav(it, { destination, access = 'WALK', demo = false, restore = null } = {}) {
@@ -2876,12 +3014,12 @@ function viewNavigate() {
       ${flash}
       <p class="rg-kind">${mark}<span>${esc(kind)}</span></p>
       <h1 id="rgHeading" tabindex="-1">${esc(arrive ? 'You\u2019ve arrived' : phase.heading)}</h1>
+      ${arrive ? '' : '<div id="rgLive" class="rg-live" role="group" aria-label="Live status" hidden></div>'}
       ${arrive ? `<p class="rg-arrival-place">${esc(phase.place)}</p>${arrivalSummaryHtml(nav)}` : ''}
       ${phase.facts.length ? `<ul class="rg-facts">${phase.facts.map(f => `<li>${rgIcon(factIcon(f))}<span>${esc(f)}</span></li>`).join('')}</ul>` : ''}
       ${phase.check ? `<p class="rg-check">${rgIcon('info')}<span><strong>Check before boarding.</strong> ${esc(phase.check)}</span></p>` : ''}
       <p id="rgStatus" class="rg-status" data-level="${esc(status?.level || 'info')}" ${status ? '' : 'hidden'}>${esc(status?.message || '')}</p>
     </section>
-    ${arrive ? '' : '<div id="rgLive" class="rg-live" hidden></div>'}
     ${arrive ? '' : `<p id="rgCertainty" class="rg-certainty">${esc(guideCertainty(nav))}</p>`}
     ${nav.demo && ['ride', 'board'].includes(phase.kind) ? '<button type="button" class="rg-demo-skip" data-action="rg-demo-skip">Demo: skip ahead to the next reminder</button>' : ''}
     ${next && !arrive ? `<p class="rg-next"><span class="rg-next-label">Next</span><span class="rg-next-text">${esc(next.heading)}</span></p>` : ''}
@@ -2958,7 +3096,7 @@ function voiceStatusHtml() {
 function updateVoiceSlot() {
   const slot = document.querySelector('.rg-voice-slot');
   if (slot) slot.innerHTML = voiceStatusHtml();
-  else render();
+  else if (['plan', 'demo'].includes(currentView().name)) render();
 }
 function planDestinationResults() { return $$('#planSuggest .result:not([data-action="plan-map"]):not([data-action="plan-locate"]):not([data-action="plan-pick-location"])'); }
 function voiceResultsReady() {
@@ -2972,12 +3110,14 @@ function voiceResultsReady() {
   if (slot) slot.innerHTML = voiceStatusHtml();
   if (!results.length) { announceAccess(`Heard ${heard}. No matching places. Try again, or type your destination.`); return; }
   const first = results[0].querySelector('.row-title')?.textContent || results[0].textContent.trim();
+  if (plan.voiceFlow) { voiceAskMatch(heard, 0); return; }
   announceAccess(`Heard ${heard}. ${plural(results.length, 'match', 'matches')}. First: ${first}. Choose one to confirm.`);
   results[0].focus({ preventScroll: true });
 }
 
 /* What happens with recognised words, whichever engine produced them. */
 function voiceHeard(words, demo) {
+  if (voiceIntent) { const intent = voiceIntent; voiceIntent = null; state.plan.voice = null; updateVoiceSlot(); intent.handle(words); return; }
   const plan = state.plan;
   const text = String(words || '').trim();
   if (!text) { voiceFail('no-speech', demo); return; }
@@ -2992,9 +3132,11 @@ function voiceHeard(words, demo) {
 }
 function voiceFail(error, demo) {
   const plan = state.plan;
+  earcon('error');
+  if (voiceIntent) { voiceIntent = null; plan.voice = null; updateVoiceSlot(); guideSay(error === 'no-speech' ? "I didn't hear an answer. You can tap your choice instead." : "Voice isn't working right now. You can tap your choice instead."); return; }
   plan.voice = { state: 'error', error };
   updateVoiceSlot();
-  announceAccess(VOICE_ERRORS[error] || "Voice input didn't work. Try again, or type your destination.");
+  guideSay(VOICE_ERRORS[error] || "Voice input didn't work. Try again, or type your destination.");
   if (error === 'voice-download') { $('[data-action="voice-install"]')?.focus({ preventScroll: true }); return; }
   if (!demo && error !== 'no-speech') $('#planTo')?.focus({ preventScroll: true });
 }
@@ -3004,22 +3146,104 @@ function voiceCancelAll() {
   const c = capture; capture = null; c?.cancel();
 }
 
-function voiceDestination({ demo = false } = {}) {
-  stopSpeaking();
-  voiceCancelAll();
-  if (!demo && currentView().name !== 'plan') openPlan({});
-  if (voiceServer !== false && window.RoveVoice?.supported() && navigator.onLine) voiceViaServer({ demo });
-  else voiceViaBrowser({ demo });
+/* ---- Voice conversation: everything a rider needs is spoken and signalled by sound, so the
+ * whole destination and route choice works without seeing the screen. ---- */
+let voiceIntent = null; // set while Rove waits for a spoken answer (yes/no, start/next/repeat)
+const VOICE_DOWN_KEY = 'rove-voice-server-down';
+function earcon(kind) { try { window.RoveVoice?.earcon?.(kind); } catch { /* no audio */ } }
+function voiceServerKnownDown() { try { return Date.now() - Number(localStorage.getItem(VOICE_DOWN_KEY) || 0) < 6 * 3600e3; } catch { return false; } }
+function voiceMode() { return voiceServer !== false && !voiceServerKnownDown() && window.RoveVoice?.supported() && navigator.onLine ? 'server' : 'browser'; }
+/* Speak and resolve once finished (or after a reading-time estimate when the screen reader is the
+ * voice), so the microphone never records Rove or VoiceOver. */
+function sayThenWait(text) {
+  return new Promise(resolve => {
+    let off = null, timer = null;
+    const done = () => { off?.(); clearTimeout(timer); resolve(); };
+    const estimate = Math.min(9000, 900 + String(text).length * 55);
+    if (accessPreference('speak', true) && speaker && speakOut(text)) {
+      off = speaker.onChange(st => { if (['done', 'failed', 'stopped', 'unsupported'].includes(st.state)) done(); });
+      timer = setTimeout(done, estimate + 4000);
+    } else {
+      announceAccess(text);
+      timer = setTimeout(done, estimate);
+    }
+  });
+}
+function voiceListen({ demo = false } = {}) {
+  if (voiceMode() === 'server') voiceViaServer({ demo, leadIn: 200 });
+  else { earcon('start'); setTimeout(() => voiceViaBrowser({ demo }), 320); }
+}
+function yesNo(words) {
+  const w = ` ${String(words).toLowerCase()} `;
+  if (/\b(yes|yeah|yep|yup|correct|right|sure|ok|okay|that one|go there)\b/.test(w)) return 'yes';
+  if (/\b(no|nope|next|wrong|another)\b/.test(w)) return 'no';
+  return null;
+}
+function matchLabel(btn) {
+  const title = btn.querySelector('.row-title')?.textContent?.trim() || btn.textContent.trim();
+  // Read the agency/area only: line badges and hidden helper text would run together ("BlueGreenOrange").
+  const metaEl = btn.querySelector('.row-meta')?.cloneNode(true);
+  metaEl?.querySelectorAll('.badge, .badges, .visually-hidden, [aria-hidden="true"]').forEach(n => n.remove());
+  const meta = metaEl?.textContent?.replace(/\s+/g, ' ').trim();
+  return meta ? `${title}, ${meta}` : title;
+}
+/* "I heard Lake Merritt. Best match: Lake Merritt, BART. Say yes, or no for the next match." */
+async function voiceAskMatch(heard, i = 0, retried = false) {
+  const btn = planDestinationResults()[i];
+  if (!btn) { voiceIntent = null; await sayThenWait(`That was the last match for ${heard}. Tap Speak to try again, or type your destination.`); return; }
+  if (!accessPreference('speak', true)) btn.focus({ preventScroll: true }); // screen-reader users can also double-tap it
+  await sayThenWait(retried ? 'Please say yes or no.' : i === 0 ? `I heard ${heard}. Best match: ${matchLabel(btn)}. Say yes to go there, or no for the next match.` : `Next match: ${matchLabel(btn)}. Say yes or no.`);
+  voiceIntent = { handle: words => {
+    const a = yesNo(words);
+    if (a === 'yes') { voiceIntent = null; earcon('ok'); handleAction(btn); }
+    else if (a === 'no') voiceAskMatch(heard, i + 1);
+    else if (!retried) voiceAskMatch(heard, i, true);
+    else { voiceIntent = null; sayThenWait('Sorry, I did not catch that. You can tap a match to choose it.'); }
+  } };
+  voiceListen({});
+}
+/* After routes are found by a voice flow: read one route at a time and act on start / next / repeat. */
+async function voiceOfferRoutes(k = 0, retried = false) {
+  const order = sortedItineraryIndexes().slice(0, 3);
+  const its = state.plan.results?.itineraries || [];
+  if (!order.length) return;
+  const n = ((k % order.length) + order.length) % order.length;
+  const it = its[order[n]];
+  await sayThenWait(retried ? 'Please say start, next, or repeat.'
+    : `${n === 0 && !retried ? `${plural(order.length, 'route')} found. ` : ''}${routeChoiceSpeech(it, n + 1)} Say start to begin this route${order.length > 1 ? ', next for another route' : ''}, or repeat.`);
+  if (currentView().name !== 'results') return;
+  toast('Listening: say start, next, or repeat');
+  voiceIntent = { handle: words => {
+    const w = ` ${String(words).toLowerCase()} `;
+    if (/\b(start|begin|go|yes|this one|let'?s go)\b/.test(w)) { voiceIntent = null; state.plan.voiceFlow = false; earcon('ok'); startNavigation(order[n]); }
+    else if (/\b(next|another|other|no)\b/.test(w)) voiceOfferRoutes(n + 1);
+    else if (/\b(repeat|again|what)\b/.test(w)) voiceOfferRoutes(n);
+    else if (!retried) voiceOfferRoutes(n, true);
+    else { voiceIntent = null; sayThenWait('Sorry, I did not catch that. You can tap Start route 1.'); }
+  } };
+  voiceListen({});
 }
 
-function voiceViaServer({ demo }) {
+async function voiceDestination({ demo = false } = {}) {
+  stopSpeaking();
+  voiceCancelAll();
+  voiceIntent = null;
+  if (!demo && currentView().name !== 'plan') openPlan({});
+  state.plan.voiceFlow = !demo;
+  state.plan.voice = { state: 'starting', mode: voiceMode() };
+  updateVoiceSlot();
+  await sayThenWait(demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.' : 'Where would you like to go? Say it after the tone.');
+  if (state.plan.voice?.state !== 'starting') return; // cancelled while Rove was speaking
+  voiceListen({ demo });
+}
+
+function voiceViaServer({ demo, leadIn = 1300 }) {
   const plan = state.plan;
   plan.voice = { state: 'starting', mode: 'server' };
   updateVoiceSlot();
-  announceAccess('Speak after the tone.');
-  // The lead-in lets a screen reader finish speaking before the microphone starts listening.
+  // The lead-in lets any remaining speech finish before the microphone starts listening.
   const levels = [0, 0, 0, 0, 0];
-  const c = RoveVoice.record({ leadInMs: 1300, onLevel: level => {
+  const c = RoveVoice.record({ leadInMs: leadIn, onLevel: level => {
     // Drive the waveform from the actual input level (no level, no movement).
     levels.shift(); levels.push(Math.max(0, Math.min(1, level))); // smoothed 0..1 level, exactly 0 when silent
     document.querySelectorAll('.rg-wave i').forEach((bar, k) => bar.style.setProperty('--l', (0.18 + levels[(k + 2) % 5] * 0.82).toFixed(2)));
@@ -3032,6 +3256,7 @@ function voiceViaServer({ demo }) {
   capture = c;
   c.done.then(async ({ blob, mediaType, heard }) => {
     if (capture !== c) return;
+    earcon('stop');
     if (!heard || blob.size < 1000) { capture = null; voiceFail('no-speech', demo); return; }
     plan.voice = { state: 'understanding', mode: 'server' };
     updateVoiceSlot();
@@ -3047,7 +3272,8 @@ function voiceViaServer({ demo }) {
     if (body?.code === 'VOICE_BUSY') { voiceFail('voice-busy', demo); return; }
     // Rove's speech service is not usable here: fall back to the browser's recognizer right away.
     voiceServer = false;
-    if (BrowserRecognition()) { announceAccess("Rove's voice service isn't available. Using your browser's voice input. Say it again now."); voiceViaBrowser({ demo }); return; }
+    try { localStorage.setItem(VOICE_DOWN_KEY, String(Date.now())); } catch { /* storage unavailable */ }
+    if (BrowserRecognition()) { capture = null; sayThenWait('Sorry, please say that once more after the tone.').then(() => { earcon('start'); setTimeout(() => voiceViaBrowser({ demo }), 320); }); return; }
     voiceFail(navigator.onLine ? 'voice-service' : 'offline', demo);
   }, error => {
     if (capture !== c) return;
@@ -3210,6 +3436,7 @@ function toggleSaved(agencyId, stopId) {
 
 function handleAction(el) {
   const action = el.dataset.action;
+  if (voiceIntent && !/^voice-/.test(action) && el.isConnected && !el.matches('#planSuggest .result') && action !== 'nav-start') { voiceIntent = null; voiceCancelAll(); }
   const view = currentView();
   const plan = state.plan;
   switch (action) {
@@ -3330,7 +3557,7 @@ function handleAction(el) {
       guideEnter(nav, before.confirmSpeech);
       break;
     }
-    case 'rg-repeat': { const nav = state.nav; const phase = guidePhase(nav); if (!phase) break; const st = guideStatus(nav); guideSay(`${guideSpeech(phase)}${st ? ' ' + st.message : ''}`, { force: true }); break; }
+    case 'rg-repeat': { const nav = state.nav; const phase = guidePhase(nav); if (!phase) break; const st = guideStatus(nav); guideSay(`${guideSpeech(phase)}${st ? ' ' + st.message : ''}${liveSummary(nav)}`, { force: true }); break; }
     case 'rg-help': {
       const nav = state.nav;
       if (!nav) break;
@@ -3401,7 +3628,7 @@ function afterPick() {
   render();
   const next = picked === 'from' && !plan.to ? '#planTo' : picked === 'to' && !plan.from ? '#planFrom' : null;
   // Spoken destination confirmed by choosing a match: go straight to routes when the start is known.
-  if (picked === 'to' && plan.voice?.state === 'heard') {
+  if (picked === 'to' && (plan.voice?.state === 'heard' || plan.voiceFlow)) {
     plan.voice = null;
     if (plan.from) { announceAccess(`Destination: ${plan.to?.name}. Finding routes.`); submitPlan(); return; }
     announceAccess(`Destination: ${plan.to?.name}. Now choose a starting point. Use my location is first.`);
@@ -3843,7 +4070,7 @@ function normalizeItinerary(it) {
     const transit = Boolean(leg.transit);
     const startTime = leg.start?.estimated || leg.start?.scheduled;
     const endTime = leg.end?.estimated || leg.end?.scheduled;
-    const end = p => p ? { name: displayName(p.stop?.station?.name || p.name || ''), lat: p.lat, lon: p.lon, platform: p.stop?.platform || null, stopName: p.name, parking: p.parking ? (p.parking.name || 'Parking') : null, parkingCapacity: Number.isFinite(p.parking?.capacity) ? p.parking.capacity : null } : null;
+    const end = p => p ? { name: displayName(p.stop?.station?.name || p.name || ''), lat: p.lat, lon: p.lon, platform: p.stop?.platform || null, stopId: p.stop?.id || null, stopName: p.name, parking: p.parking ? (p.parking.name || 'Parking') : null, parkingCapacity: Number.isFinite(p.parking?.capacity) ? p.parking.capacity : null } : null;
     return {
       mode: transit ? 'TRANSIT' : (leg.mode === 'CAR' ? 'CAR' : 'WALK'),
       transitMode: leg.mode,
@@ -3855,6 +4082,7 @@ function normalizeItinerary(it) {
       routeTextColor: leg.route?.textColor || null,
       headsign: leg.headsign || leg.trip?.headsign || null,
       tripShortName: leg.trip?.shortName || null,
+      tripId: leg.trip?.id || null,
       from: end(leg.from),
       to: end(leg.to),
       startTime,
