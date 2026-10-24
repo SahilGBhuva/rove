@@ -1622,5 +1622,5 @@ body .panel-body:has(.rg-nav) { scroll-padding-bottom: 180px; scroll-padding-top
 }
 
 /* Integration (v2 QA): legacy captions reach 4.5:1 on the warm surfaces. */
-.rove-accessible .map-mobile-caption { color: var(--rg-ink-2); font-size: 10px; }
+.rove-accessible .map-mobile-caption { color: var(--rg-ink-2); font-size: .625rem; }
 .rove-accessible .map-loading span, .rove-accessible #mapLoading span { color: var(--rg-ink-2); }
