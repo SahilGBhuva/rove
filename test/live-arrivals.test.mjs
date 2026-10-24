@@ -13,3 +13,16 @@ test('stale feed is not shown as live',()=>{
 test('unverified agencies do not invent arrivals',()=>{
  assert.equal(selectArrivals({timestamp:now,entities:[update('SC:22','15397',now+300)]},'vta','15397',now).status,'unverified');
 });
+
+test('BART departures are verified via trip ids from the timetable (feed has no route ids)', async () => {
+  const { selectArrivals: sel } = await import('../api/v2/arrivals.mjs');
+  const now = 1_800_000_000;
+  const feed = { timestamp: now - 20, entities: [
+    { tripUpdate: { trip: { tripId: '111' }, stopTimeUpdate: [{ stopId: 'A10-1', departure: { time: now + 240, delay: 60 } }] } },
+    { tripUpdate: { trip: { tripId: '999' }, stopTimeUpdate: [{ stopId: 'A10-1', departure: { time: now + 120 } }] } }
+  ] };
+  const routes = new Map([['111', { routeId: '5', headsign: 'Daly City' }]]);
+  const r = sel(feed, 'bart', 'LAKE', now, id => routes.get(id));
+  assert.equal(r.status, 'live');
+  assert.deepEqual(r.arrivals.map(a => [a.tripId, a.routeId, a.headsign]), [['111', '5', 'Daly City']], 'unknown trips are not attached to a line');
+});
