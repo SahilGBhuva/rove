@@ -80,6 +80,16 @@
     };
   }
 
-  const api = Object.freeze({ cardinal, metersBetween, bearingTo, liveNotices, walkNotices, createPacer });
+  /* Turn-by-turn while walking: one spoken cue per maneuver, about 200 feet before it, from good GPS. */
+  function maneuverNotices({ maneuver, fix, now, given, distanceWords, text }) {
+    if (!maneuver?.step || !fix || fix.accuracy > 35 || now - fix.time > 30000) return [];
+    const key = `turn:${maneuver.index}`;
+    if (given.has(key) || maneuver.metersAhead > 60) return [];
+    const what = String(text(maneuver.step)).replace(/\.$/, '');
+    const lower = what.charAt(0).toLowerCase() + what.slice(1);
+    return [{ key, priority: 2, message: maneuver.metersAhead >= 15 ? `In about ${distanceWords(maneuver.metersAhead)}, ${lower}.` : `${what} now.` }];
+  }
+
+  const api = Object.freeze({ cardinal, metersBetween, bearingTo, liveNotices, walkNotices, maneuverNotices, createPacer });
   root.RoveLive = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

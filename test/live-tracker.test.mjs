@@ -55,3 +55,17 @@ test('pacer: urgent now, others spaced out, latest pending kept', () => {
   assert.equal(p.flush(10000), null);
   assert.equal(p.flush(21001).message, 'b');
 });
+
+test('turn-by-turn: one cue per maneuver about 200 feet before, from good GPS only', () => {
+  const words = m => `${Math.round(m * 3.28)} feet`;
+  const step = { instruction: 'Turn left onto Jessie Street.' };
+  const fix = { accuracy: 8, time: NOW };
+  const far = L.maneuverNotices({ maneuver: { index: 1, step, metersAhead: 120 }, fix, now: NOW, given: new Set(), distanceWords: words, text: s => s.instruction });
+  assert.deepEqual(far, []);
+  const near = L.maneuverNotices({ maneuver: { index: 1, step, metersAhead: 45 }, fix, now: NOW, given: new Set(), distanceWords: words, text: s => s.instruction });
+  assert.equal(near[0].message, 'In about 148 feet, turn left onto Jessie Street.');
+  const now = L.maneuverNotices({ maneuver: { index: 1, step, metersAhead: 8 }, fix, now: NOW, given: new Set(), distanceWords: words, text: s => s.instruction });
+  assert.equal(now[0].message, 'Turn left onto Jessie Street now.');
+  assert.deepEqual(L.maneuverNotices({ maneuver: { index: 1, step, metersAhead: 45 }, fix, now: NOW, given: new Set(['turn:1']), distanceWords: words, text: s => s.instruction }), []);
+  assert.deepEqual(L.maneuverNotices({ maneuver: { index: 1, step, metersAhead: 45 }, fix: { accuracy: 60, time: NOW }, now: NOW, given: new Set(), distanceWords: words, text: s => s.instruction }), [], 'weak GPS stays silent');
+});

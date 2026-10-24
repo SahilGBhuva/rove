@@ -26,6 +26,10 @@ export function decodeShape(shape, precision = 6) {
   }
   return out;
 }
+/* Valhalla sometimes prints raw floats ("Take the stairs to Level -1.5000000000."). */
+export function cleanInstruction(text) {
+  return String(text || 'Continue walking').replace(/-?\d+\.\d{2,}/g, n => String(Math.round(Number(n) * 10) / 10)).replace(/\s+/g, ' ').trim().slice(0, 180);
+}
 export function metersBetween(a,b) {
   const dy = (a.lat-b.lat)*111200;
   const dx = (a.lon-b.lon)*111200*Math.cos(a.lat*Math.PI/180);
@@ -57,7 +61,7 @@ export async function walkingPath(from,to,fetcher=fetch) {
         metersBetween({lat:last[1],lon:last[0]},to)>65) return null;
     const steps = (leg.maneuvers || []).filter(m=>Number.isInteger(m.begin_shape_index) && coordinates[m.begin_shape_index])
       .map(m=>({lat:coordinates[m.begin_shape_index][1],lon:coordinates[m.begin_shape_index][0],
-        instruction:String(m.instruction||'Continue walking').slice(0,180),
+        instruction:cleanInstruction(m.instruction),
         streetName:Array.isArray(m.street_names)?m.street_names[0]||null:null,
         relativeDirection:'CONTINUE',distanceMeters:Math.round((m.length||0)*1000)}));
     const result = {distanceMeters,durationSeconds,geometry:{type:'LineString',coordinates},steps,verified:true,provider:'Valhalla / OpenStreetMap'};

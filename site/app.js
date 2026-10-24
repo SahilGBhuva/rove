@@ -1755,6 +1755,10 @@ function transitLineNames(it) {
 const ROUTE_WARNINGS = { LONG_WALK: 'Long walk', LONG_WAIT: 'Long wait at a stop', DEPARTS_LATER: 'Leaves later than you asked', DEPARTS_MUCH_LATER: 'Leaves much later than you asked', DETOUR: 'Indirect route', BACKTRACKS: 'Doubles back' };
 const routeWarnings = it => (it.warnings || []).map(w => ROUTE_WARNINGS[w]).filter(Boolean);
 function routeChoiceSpeech(it, n) {
+  const liveText = typeof resultLiveText === 'function' ? resultLiveText(it) : '';
+  return routeChoiceSpeechBase(it, n) + (liveText ? ` ${liveText.replace('Live: leaves in', 'Live: the first vehicle leaves in').replace(' min', ' minutes')}.` : '');
+}
+function routeChoiceSpeechBase(it, n) {
   const minutes = Math.round((it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000) / 60);
   const lines = transitLineNames(it);
   const transfers = Math.max(0, lines.length - 1);
@@ -2633,7 +2637,8 @@ async function submitPlan() {
     pushView({ name: 'results' }, { detent: 'half' });
     renderJourney(); revealJourney(); applyMapState(); updatePlanMarkers(); fitJourney(state.journey);
     const best = sortedItineraryIndexes()[0];
-    if (plan.voiceFlow) voiceOfferRoutes(0);
+    startResultsLive();
+    if (plan.voiceFlow) Promise.race([loadResultsLive(), new Promise(r => setTimeout(r, 2500))]).then(() => voiceOfferRoutes(0));
     else announceAccess(`${plural(Math.min(itineraries.length, 3), 'route')} found. ${routeChoiceSpeech(itineraries[best], 1)}`);
   } catch (error) {
     plan.loading = false;
@@ -3236,12 +3241,14 @@ function routeMetaHtml(it) {
   const live = legs.some(l => l.mode === 'TRANSIT' && l.realtime);
   const walk = Number.isFinite(it.walkMeters) && it.walkMeters >= 30 ? RoveJourneyGuide.distanceWords(it.walkMeters).replace(' feet', ' ft').replace(' miles', ' mi').replace(' mile', ' mi') + ' walk' : null;
   const chips = [rides.length > 1 ? plural(rides.length - 1, 'transfer') : 'No transfers', walk, live ? 'Live times' : 'Scheduled'].filter(Boolean);
+  const liveNow = typeof resultLiveText === 'function' ? resultLiveText(it) : '';
   const chipHtml = c => {
     if (c === 'Live times') return `<span class="is-live"><i class="rg-live-dot"></i>${esc(c)}</span>`;
     if (c === 'Scheduled') return `<span class="is-sched">${rgIcon('clock')}${esc(c)}</span>`;
     if (c === walk) return `<span class="is-walk">${rgIcon('walk')}${esc(c)}</span>`;
     return `<span class="is-xfer">${rgIcon('transfer')}${esc(c)}</span>`;
   };
+  const liveChip = liveNow ? `<span class="is-livenow"><i class="rg-live-dot"></i>${esc(liveNow)}</span>` : '';
   if (!first) return `<span class="rg-route-from">${rgIcon('walk')}<span>Walking route</span></span><span class="rg-route-chips">${chips.map(chipHtml).join('')}</span>`;
   // Where you get on, where you change, where you get off: the stations a rider has to find.
   const stn = (kind, leg, at, text) => `<span class="rg-stn is-${kind}" style="--c:${esc(legInfo(leg).color)}"><i class="rg-stn-dot"></i><span class="rg-stn-t">${esc(clock(at))}</span><span class="rg-stn-name">${text}</span></span>`;
@@ -3252,7 +3259,7 @@ function routeMetaHtml(it) {
       : changes.length > 1 ? stn('xfer', changes[0], legStart(changes[0]), `Change at <b>${changes.map(l => esc(l.from?.name || 'a transfer stop')).join('</b>, then <b>')}</b>`) : '',
     stn('exit', lastRide, legEnd(lastRide), `Exit at <b>${esc(lastRide.to?.name || 'your stop')}</b>`)
   ].join('');
-  return `<span class="rg-stns">${stations}</span><span class="rg-route-chips">${chips.map(chipHtml).join('')}</span>`;
+  return `<span class="rg-stns">${stations}</span><span class="rg-route-chips">${liveChip}${chips.map(chipHtml).join('')}</span>`;
 }
 function routeStripHtml(it) {
   const legs = it.legs || [];
@@ -3382,6 +3389,89 @@ function updateGuideLive() {
   renderLivePanel();
 }
 
+/* ---- Live departures on route cards: the first vehicle of each of the top routes ---- */
+function liveQueryFor(leg) {
+  return new URLSearchParams({ agency: leg.agencyId, trip: leg.tripId, route: leg.routeId || '', board: leg.from?.stopId || '', exit: leg.to?.stopId || '', sb: String(Math.round(Date.parse(leg.startTime) / 1000)), se: String(Math.round(Date.parse(leg.endTime) / 1000)) });
+}
+function resultLive(it) { return state.plan.liveById?.[it.id] || null; }
+function resultLiveText(it) {
+  const L = resultLive(it);
+  if (!L) return '';
+  if (L.canceled) return 'Live: first vehicle canceled';
+  const mins = Math.max(0, Math.round((L.time * 1000 - Date.now()) / 60000));
+  const late = Number.isFinite(L.delay) && Math.abs(L.delay) >= 60 ? `, ${Math.round(Math.abs(L.delay) / 60)} min ${L.delay > 0 ? 'late' : 'early'}` : '';
+  return `Live: leaves in ${mins ? `${mins} min` : 'under a minute'}${late}`;
+}
+async function loadResultsLive() {
+  const plan = state.plan;
+  if (!plan.results || plan.results.demo || !navigator.onLine) return;
+  plan.liveById ||= {};
+  const its = plan.results.itineraries || [];
+  await Promise.all(sortedItineraryIndexes().slice(0, 3).map(async i => {
+    const it = its[i];
+    const leg = it?.legs.find(l => l.mode === 'TRANSIT');
+    if (!leg?.tripId || !leg.agencyId) return;
+    try {
+      const d = await fetch('/api/v2/live?' + liveQueryFor(leg), { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined }).then(r => r.json());
+      if (d.status === 'live' && d.board) plan.liveById[it.id] = { time: d.board.time, delay: d.board.delay, at: Date.now() };
+      else if (d.status === 'canceled') plan.liveById[it.id] = { canceled: true, at: Date.now() };
+      else delete plan.liveById[it.id];
+    } catch { /* keep the scheduled view */ }
+  }));
+  patchResultsLive();
+}
+/* Update chips and spoken labels in place (no re-render: focus stays put). */
+function patchResultsLive() {
+  if (currentView().name !== 'results') return;
+  const its = state.plan.results?.itineraries || [];
+  const order = sortedItineraryIndexes();
+  for (const btn of document.querySelectorAll('.itinerary[data-index]')) {
+    const i = Number(btn.dataset.index), it = its[i];
+    if (!it) continue;
+    const text = resultLiveText(it);
+    let chip = btn.querySelector('.is-livenow');
+    const chips = btn.querySelector('.rg-route-chips');
+    if (text && chips) {
+      if (!chip) { chip = document.createElement('span'); chip.className = 'is-livenow'; chips.prepend(chip); }
+      chip.innerHTML = `<i class="rg-live-dot"></i>${esc(text)}`;
+    } else chip?.remove();
+    btn.setAttribute('aria-label', routeChoiceSpeech(it, order.indexOf(i) + 1));
+  }
+}
+let resultsLiveTimer = null;
+function startResultsLive() {
+  clearInterval(resultsLiveTimer);
+  loadResultsLive();
+  resultsLiveTimer = setInterval(() => { if (currentView().name !== 'results' || document.hidden) return; loadResultsLive(); }, 30000);
+}
+
+/* ---- Walking: turn-by-turn from the planner's street steps, plus a Maps handoff ---- */
+const walkStepText = st => String(st?.instruction || (typeof stepText === 'function' ? stepText(st) : '') || 'Continue walking').replace(/\s+/g, ' ').trim();
+function walkSteps(phase) {
+  const leg = phase?.leg;
+  return leg && ['walk', 'transfer'].includes(phase.kind) && Array.isArray(leg.steps) && leg.steps.length && Array.isArray(leg.geometry?.coordinates) ? leg.steps : [];
+}
+function walkDirectionsSpeech(phase) {
+  const steps = walkSteps(phase);
+  if (!steps.length) return '';
+  const first = steps.slice(0, 2).map(st => `${walkStepText(st).replace(/\.$/, '')}${Number.isFinite(st.distanceMeters) && st.distanceMeters >= 15 ? ` for about ${RoveJourneyGuide.distanceWords(st.distanceMeters)}` : ''}`);
+  const joined = first.map((t, i) => (i ? t.charAt(0).toLowerCase() + t.slice(1) : t)).join('. Then ');
+  return ` Directions: ${joined}.${steps.length > 2 ? ' Rove will tell you each turn as you walk.' : ''}`;
+}
+function mapsHandoffHtml(phase) {
+  const to = phase?.leg?.to;
+  if (!to || !Number.isFinite(to.lat) || !Number.isFinite(to.lon) || !['walk', 'transfer'].includes(phase.kind)) return '';
+  const apple = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
+  const ll = `${to.lat.toFixed(6)},${to.lon.toFixed(6)}`;
+  const url = apple ? `https://maps.apple.com/?daddr=${ll}&dirflg=w` : `https://www.google.com/maps/dir/?api=1&destination=${ll}&travelmode=walking`;
+  return `<a class="rg-handoff" href="${url}" target="_blank" rel="noopener">${rgIcon('route')}<span>Walking directions in ${apple ? 'Apple Maps' : 'Google Maps'}</span><span class="visually-hidden">. Opens the Maps app. Come back to Rove and confirm when you reach ${esc(phase.place)}.</span></a>`;
+}
+function walkStepsHtml(phase) {
+  const steps = walkSteps(phase);
+  if (!steps.length) return '';
+  return `<details class="rg-walk-steps"><summary>Walking directions, ${plural(steps.length, 'step')}</summary><ol>${steps.map(st => `<li>${esc(walkStepText(st))}${Number.isFinite(st.distanceMeters) && st.distanceMeters >= 5 ? ` <span>${esc(RoveJourneyGuide.distanceWords(st.distanceMeters))}</span>` : ''}</li>`).join('')}</ol></details>`;
+}
+
 /* ---- Live tracking (public/js/live-tracker.js decides what to say; api/v2/live.mjs fetches) ----
  * Follows the exact trip the rider is catching or riding. Live times replace scheduled ones on the
  * guide's phases (so reminders, Repeat and the certainty line say "live"), but nothing here ever
@@ -3428,6 +3518,7 @@ function applyLive(nav) {
 }
 function liveSummary(nav) {
   const phase = guidePhase(nav);
+  if (phase && ['walk', 'transfer'].includes(phase.kind)) return walkDirectionsSpeech(phase);
   const d = nav.live && phase?.leg && nav.live.leg === phase.leg ? nav.live.data : null; // arrival has no leg
   const est = d?.status === 'live' ? (phase.kind === 'board' ? d.board : d.exit) : null;
   if (!est) return '';
@@ -3456,6 +3547,15 @@ function liveTick(nav) {
   } else if (['walk', 'transfer'].includes(phase.kind)) {
     nav.walk = RoveLive.walkNotices({ fix: nav.fix, target: [phase.leg?.to?.lon, phase.leg?.to?.lat], place: phase.place, now, given, distanceWords: RoveJourneyGuide.distanceWords });
     notices = nav.walk.notices;
+    const steps = walkSteps(phase);
+    nav.walkTurn = null;
+    if (steps.length && nav.fix && nav.fix.accuracy <= 35 && now - nav.fix.time < 30000) {
+      nav.walkTurn = RoveNavigation.nextManeuver(nav.fix.point, phase.leg.geometry.coordinates, steps);
+      notices = notices.concat(RoveLive.maneuverNotices({ maneuver: nav.walkTurn, fix: nav.fix, now, given, distanceWords: RoveJourneyGuide.distanceWords, text: walkStepText }));
+      // Several fixes far from the walking path: say so plainly and offer help. Never claims a safe path.
+      memory.off = nav.walkTurn && nav.walkTurn.offRouteMeters > Math.max(45, nav.fix.accuracy * 2) ? (memory.off || 0) + 1 : 0;
+      if (memory.off >= 3 && !given.has('off-route')) notices.push({ key: 'off-route', priority: 2, message: 'You may be off the walking route. Stop somewhere safe, then use Where am I, or open walking directions in Maps.' });
+    }
   }
   for (const n of notices) {
     given.add(n.key);
@@ -3497,8 +3597,9 @@ function liveHtml(nav) {
   if (!w || w.status === 'no-gps') return `<p class="rg-live-quiet">${rgIcon('target')}<span>Waiting for your location. Turn on location to hear the distance to ${esc(phase.place)}.</span></p>`;
   if (w.status === 'weak') return `<p class="rg-live-quiet">${rgIcon('target')}<span>GPS signal is weak (about ${Math.round(w.accuracy)} m), so distance is hidden.</span></p>`;
   if (w.status !== 'ok') return `<p class="rg-live-quiet">${rgIcon('target')}<span>Updating your location…</span></p>`;
+  const turn = nav.walkTurn?.step ? `<p class="rg-live-turn">${rgIcon('arrow')}<span><b>${esc(walkStepText(nav.walkTurn.step).replace(/\.$/, ''))}</b> in about ${esc(RoveJourneyGuide.distanceWords(nav.walkTurn.metersAhead))}</span></p>` : '';
   return `<div class="rg-live-row"><span class="rg-live-badge is-gps"><i aria-hidden="true"></i>GPS</span><span class="rg-live-label">To ${esc(phase.place)}</span><span class="rg-live-time is-distance"><b>${esc(RoveJourneyGuide.distanceWords(w.meters))}</b></span></div>
-    <p class="rg-live-detail">Toward the ${esc(w.direction)} · estimate, accurate to about ${Math.round(w.accuracy)} m</p>`;
+    ${turn}<p class="rg-live-detail">Toward the ${esc(w.direction)} · estimate, accurate to about ${Math.round(w.accuracy)} m</p>`;
 }
 function renderLivePanel() {
   const nav = state.nav;
@@ -3686,6 +3787,7 @@ function viewNavigate() {
       ${metrics.length ? `<ul class="rg-metrics">${metrics.join('')}</ul>` : ''}
       ${/* Live countdown sits with the timing it refines: the most time-sensitive information. */ ''}
       ${arrive ? '' : '<div id="rgLive" class="rg-live" role="group" aria-label="Live status" hidden></div>'}
+      ${walkStepsHtml(phase)}${mapsHandoffHtml(phase)}
       ${/* Reminders sit with the timing they refer to, above the detail facts, so "get ready to exit" is never below the fold. */ ''}
       <p id="rgStatus" class="rg-status" data-level="${esc(status?.level || 'info')}" ${status ? '' : 'hidden'}>${esc(status?.message || '')}</p>
       ${facts.length ? `<ul class="rg-facts">${facts.map(f => `<li>${rgIcon(factIcon(f))}<span>${esc(f)}</span></li>`).join('')}</ul>` : ''}
@@ -4210,6 +4312,7 @@ function handleAction(el) {
       plan.error = null; plan.noServiceWindow = false; plan.sort = 'fastest'; plan.expanded = 0; plan.showAll = false;
       state.journey = plan.later[0];
       pushView({ name: 'results' }, { detent: 'half' });
+      startResultsLive();
       announceAccess(`Later trips. ${routeChoiceSpeech(plan.later[0], 1)}`);
       break;
     }
