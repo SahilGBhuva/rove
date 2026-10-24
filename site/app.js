@@ -1393,16 +1393,16 @@ function alertsHtml(alerts, max = 2) {
 function viewHome() {
   const saved = !state.nav && loadTrip();
   const places = savedPlaces().slice(0, 4);
-  const resume = state.nav ? `<section class="rg-resume" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle">Trip in progress</h2><p>${esc(guidePhase()?.heading || '')}</p><button type="button" class="rg-primary small" data-action="access-my-journey">Return to trip</button></section>`
-    : saved ? `<section class="rg-resume" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle">Unfinished trip${saved.demo ? ' (demo)' : ''}</h2><p>To ${esc(saved.destination?.name || 'your destination')} · step ${saved.gs.index + 1}</p><div class="rg-resume-actions"><button type="button" class="rg-primary small" data-action="trip-resume">Resume trip</button><button type="button" class="rg-text-button" data-action="trip-discard">Discard</button></div></section>` : '';
+  const resume = state.nav ? `<section class="rg-resume" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle"><span class="rg-resume-dot" aria-hidden="true"></span>Trip in progress</h2><p>${esc(guidePhase()?.heading || '')}</p><button type="button" class="rg-primary small" data-action="access-my-journey"><span>Return to trip</span>${rgIcon('arrow')}</button></section>`
+    : saved ? `<section class="rg-resume is-paused" aria-labelledby="rgResumeTitle"><h2 id="rgResumeTitle"><span class="rg-resume-dot" aria-hidden="true"></span>Unfinished trip${saved.demo ? ' (demo)' : ''}</h2><p>To ${esc(saved.destination?.name || 'your destination')} · step ${saved.gs.index + 1}</p><div class="rg-resume-actions"><button type="button" class="rg-primary small" data-action="trip-resume"><span>Resume trip</span>${rgIcon('arrow')}</button><button type="button" class="rg-text-button" data-action="trip-discard">Discard</button></div></section>` : '';
   const link = (action, icon, title, sub) => `<button type="button" class="rg-link" data-action="${action}"><span class="rg-link-icon">${rgIcon(icon)}</span><span class="rg-link-text"><span>${title}</span><small>${sub}</small></span><svg class="rg-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>`;
   return `<div class="rg-home">
-    <div class="rg-brand" aria-hidden="true">${ROVE_MARK}<span class="rg-wordmark">rove</span><span class="rg-brand-sub">Bay Area transit</span></div>
+    <div class="rg-brand" aria-hidden="true">${ROVE_MARK}<span class="rg-wordmark">rove</span><span class="rg-brand-sub">Bay Area<br>transit</span></div>
     ${resume}
     <h1 id="roveHomeTitle" class="rg-home-title" tabindex="-1">Where to?</h1>
     <p class="rg-home-sub">Speak or type a place. Rove guides you one confirmed step at a time.</p>
     <div class="rg-stack rg-hero">
-      <button type="button" class="rg-primary rg-speak" data-action="voice-destination"><span class="rg-speak-icon">${MIC_ICON}</span><span>Speak destination</span></button>
+      <button type="button" class="rg-primary rg-speak" data-action="voice-destination"><span class="rg-speak-icon">${MIC_ICON}</span><span class="rg-speak-label">Speak destination</span></button>
       <button type="button" class="rg-field" data-action="plan">${SEARCH_ICON}<span>Type a destination</span></button>
     </div>
     ${places.length ? `<section class="rg-saved" aria-labelledby="rgSavedTitle"><h2 id="rgSavedTitle" class="rg-label">Saved places</h2><div class="rg-chips">${places.map(p => `<button type="button" class="rg-chip" data-action="go-saved" data-label="${esc(p.label)}">${esc(p.label)}</button>`).join('')}</div></section>` : ''}
@@ -2621,14 +2621,18 @@ function arrivalSummaryHtml(nav) {
 }
 
 /* Home motif: a quiet route line with stations and one vehicle travelling it (static with reduced motion). */
-const HOME_MOTIF = `<svg class="rg-motif" viewBox="0 0 360 150" aria-hidden="true" focusable="false">
-  <path class="rg-motif-ghost" d="M-10 118 C 60 118, 70 54, 140 54 S 230 104, 290 72 S 350 30, 380 30"/>
-  <path class="rg-motif-line" id="rgMotifPath" d="M-10 118 C 60 118, 70 54, 140 54 S 230 104, 290 72 S 350 30, 380 30"/>
-  <path class="rg-motif-walk" d="M18 140 C 30 132, 34 124, 44 118"/>
-  <circle class="rg-motif-stop" cx="44" cy="118" r="6"/><circle class="rg-motif-stop" cx="140" cy="54" r="6"/><circle class="rg-motif-stop is-transfer" cx="240" cy="96" r="7.5"/><circle class="rg-motif-stop is-end" cx="330" cy="36" r="7"/>
-  <circle class="rg-motif-vehicle" r="5.5"/>
+const HOME_MOTIF = `<svg class="rg-motif" viewBox="0 0 360 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+  <path class="rg-motif-cross" d="M192 -12 V 112"/>
+  <path class="rg-motif-ghost" d="M-12 78 H 64 Q 76 78 84.5 69.5 L 117.5 36.5 Q 126 28 138 28 H 232 Q 244 28 252.5 36.5 L 265.5 49.5 Q 274 58 286 58 H 372"/>
+  <path class="rg-motif-line" pathLength="1" d="M-12 78 H 64 Q 76 78 84.5 69.5 L 117.5 36.5 Q 126 28 138 28 H 232 Q 244 28 252.5 36.5 L 265.5 49.5 Q 274 58 286 58 H 372"/>
+  <path class="rg-motif-walk" d="M36 99 V 87"/>
+  <circle class="rg-motif-stop s1" cx="36" cy="78" r="5.5"/>
+  <circle class="rg-motif-stop s2 is-transfer" cx="192" cy="28" r="7.5"/>
+  <circle class="rg-motif-halo s3" cx="322" cy="58" r="13"/>
+  <circle class="rg-motif-stop s3 is-end" cx="322" cy="58" r="5.5"/>
+  <g class="rg-motif-vehicle" transform="translate(322 58)"><rect x="-10" y="-6" width="20" height="12" rx="6"/><circle cx="4" cy="0" r="2"/></g>
 </svg>`;
-const ROVE_MARK = '<svg class="rg-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9"/><circle cx="10" cy="22" r="3"/><circle cx="22" cy="10" r="3"/><path d="M12.5 20.5c6-1.5 3-9 8-10"/></svg>';
+const ROVE_MARK = '<svg class="rg-mark" viewBox="0 0 32 32" aria-hidden="true"><rect class="rg-mark-bg" width="32" height="32" rx="9.5"/><path class="rg-mark-line" d="M9.5 22.5h3.2c2.2 0 3.3-1 4-3l1.6-4.6c.7-2 1.8-3 4-3h.2"/><circle class="rg-mark-stop" cx="9.5" cy="22.5" r="2.6"/><circle class="rg-mark-stop is-end" cx="22.5" cy="11.9" r="2.6"/></svg>';
 
 
 function guideFor(it, destinationName) { return Guide.buildGuide(it, { destinationName, clock: rgClock }); }
