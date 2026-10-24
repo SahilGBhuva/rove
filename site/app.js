@@ -3649,6 +3649,42 @@ function guideTick() {
   updateGuideLive();
 }
 
+/* Hands-free journey confirmation. The rider, not GPS or a timetable, must say
+ * they boarded or got off. Microphone sessions are short, not always-on. */
+async function askJourneyVoice(nav = state.nav, preface = '') {
+  if (!nav?.gs || state.nav !== nav || currentView().name !== 'navigate') return;
+  const index = nav.gs.index, phase = guidePhase(nav);
+  if (!phase || nav.showHelp) return;
+  voiceCancelAll();
+  const question = phase.kind === 'board'
+    ? `Have you boarded ${phase.vehicle?.name || 'your vehicle'}? Say yes only when you are physically on board. Say no if you are still waiting.`
+    : phase.kind === 'ride'
+    ? `Have you got off at ${phase.place}? Say yes only after exiting at the correct stop. Say no if you are still riding.`
+    : phase.kind === 'arrive'
+    ? 'Have you reached your destination? Say yes to finish, or no to hear the instruction again.'
+    : `Have you reached ${phase.place}? Say yes only when you are there, or no to repeat directions.`;
+  await sayThenWait((preface ? preface + ' ' : '') + guideSpeech(phase) + ' ' + question + ' You can also say repeat or help.');
+  if (state.nav !== nav || nav.gs.index !== index || currentView().name !== 'navigate' || nav.showHelp) return;
+  voiceIntent = { handle: words => {
+    if (state.nav !== nav || nav.gs.index !== index) return;
+    const w = String(words).toLowerCase();
+    if (/\b(repeat|again|instruction)\b/.test(w)) { guideSay(guideSpeech(phase), { force: true }); askJourneyVoice(nav); }
+    else if (/\b(help|lost|problem)\b/.test(w)) {
+      const btn = document.querySelector('[data-action="rg-help"]');
+      if (btn) handleAction(btn);
+    }
+    else if (/\b(no|nope|not yet|not boarded|haven'?t|didn'?t|waiting|still on|still riding|not there|not off|wrong stop)\b/.test(w)) {
+      guideSay(phase.kind === 'ride' ? 'Okay, stay on board until you confirm your stop. I will remind you near the scheduled arrival.' : 'Okay. No step was advanced. Say Repeat or use the Repeat button when needed.', { force: true });
+    }
+    else if (/\b(yes|yeah|yep|i have|boarded|got off|exited|arrived|i am there)\b/.test(w)) {
+      const btn = document.querySelector('.rg-dock [data-action="rg-confirm"]');
+      if (btn && Number(btn.dataset.phase) === index) handleAction(btn);
+    }
+    else guideSay('I did not understand. Your trip has not advanced. Tap Answer by voice to try again.', { force: true });
+  } };
+  voiceListen({});
+}
+
 /* After any phase change: re-render, move focus to the new instruction, and say it. */
 function guideEnter(nav, preface = '') {
   nav.alert = null;
@@ -3658,7 +3694,8 @@ function guideEnter(nav, preface = '') {
   document.getElementById('rgHeading')?.focus({ preventScroll: true });
   $('#panelBody').scrollTop = 0;
   focusStep();
-  guideSay(`${preface ? preface + ' ' : ''}${guideSpeech(guidePhase(nav))}${liveSummary(nav)}`);
+  if (nav.voiceQuestions) askJourneyVoice(nav, preface);
+  else guideSay(`${preface ? preface + ' ' : ''}${guideSpeech(guidePhase(nav))}${liveSummary(nav)}`);
   if (typeof window.RoveLive !== 'undefined') { renderLivePanel(); pollLive(nav, true); }
 }
 
@@ -3671,7 +3708,7 @@ function beginNav(it, { destination, access = 'WALK', demo = false, restore = nu
     follow: true, headingUp: true, voice: false, fix: null, heading: null, compassHeading: null, compassEnabled: false, lastCompassAt: 0, lastCameraAt: 0,
     offRouteFixes: 0, lastOffRouteAt: 0, rerouteAt: 0, rerouting: false,
     maneuver: null, spokenKey: null, speechAllowed: false, lastUiAt: 0, showHelp: false, alert: null,
-    status: demo ? 'Demo journey' : 'Waiting for GPS permission…', error: null, controller: null
+    voiceQuestions: Boolean(state.plan.voiceGuidanceRequested || restore?.voiceQuestions), status: demo ? 'Demo journey' : 'Waiting for GPS permission…', error: null, controller: null
   };
   nav.guide = guideFor(it, destination?.name);
   nav.gs = Guide.createState(nav.guide, navNow(nav));
@@ -3679,6 +3716,7 @@ function beginNav(it, { destination, access = 'WALK', demo = false, restore = nu
   state.nav = nav;
   renderJourney(); applyMapState();
   pushView({ name: 'navigate' }, { detent: 'full' });
+  state.plan.voiceGuidanceRequested = false;
   guideEnter(nav, restore ? 'Trip resumed.' : demo ? 'Demo journey started. Times are simulated.' : 'Trip started.');
   // Location is advisory only (exit-stop estimates, Where am I, rerouting). Never used in the demo.
   if (!demo && 'geolocation' in navigator && window.isSecureContext) {
@@ -3809,6 +3847,7 @@ function viewNavigate() {
         : `<button type="button" class="rg-confirm" data-action="rg-confirm" data-phase="${i}"${phase.confirmAria ? ` aria-label="${esc(phase.confirmAria)}"` : ''}>${esc(arrive ? 'Done' : phase.confirmLabel)}</button>
       ${arrive ? '' : `<div class="rg-dock-row">
         <button type="button" class="rg-secondary" data-action="rg-repeat">Repeat</button>
+        <button type="button" class="rg-secondary" data-action="rg-answer-voice">Answer by voice</button>
         <button type="button" class="rg-secondary" data-action="rg-help" aria-expanded="false" aria-controls="rgHelp">Help</button>
       </div>`}`}
     </div>
@@ -4102,7 +4141,7 @@ async function voiceOfferRoutes(k = 0, retried = false) {
   toast('Listening: say start, next, or repeat');
   voiceIntent = { handle: words => {
     const w = ` ${String(words).toLowerCase()} `;
-    if (/\b(start|begin|go|yes|this one|let'?s go)\b/.test(w)) { voiceIntent = null; state.plan.voiceFlow = false; earcon('ok'); startNavigation(order[n]); }
+    if (/\b(start|begin|go|yes|this one|let'?s go)\b/.test(w)) { voiceIntent = null; state.plan.voiceFlow = false; state.plan.voiceGuidanceRequested = true; earcon('ok'); startNavigation(order[n]); }
     else if (/\b(next|another|other|no)\b/.test(w)) voiceOfferRoutes(n + 1);
     else if (/\b(repeat|again|what)\b/.test(w)) voiceOfferRoutes(n);
     else if (!retried) voiceOfferRoutes(n, true);
@@ -4455,6 +4494,7 @@ function handleAction(el) {
       guideEnter(nav, before.confirmSpeech);
       break;
     }
+    case 'rg-answer-voice': { if (state.nav?.gs) { state.nav.voiceQuestions = true; askJourneyVoice(state.nav); } break; }
     case 'rg-repeat': { const nav = state.nav; const phase = guidePhase(nav); if (!phase) break; const st = guideStatus(nav); guideSay(`${guideSpeech(phase)}${st ? ' ' + st.message : ''}${liveSummary(nav)}`, { force: true }); break; }
     case 'rg-help': {
       const nav = state.nav;
