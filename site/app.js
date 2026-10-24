@@ -3981,10 +3981,11 @@ let voiceSilences = 0;      // times in a row nothing was heard for the destinat
 const VOICE_REASKS = 2;
 /* Speak a short prompt, then the tone, then listen again. */
 function voiceAgain(demo, prompt) {
+  const turn = ++voiceTurn;
   capture = null;
   state.plan.voice = { state: 'starting', mode: voiceMode() };
   updateVoiceSlot();
-  sayThenWait(prompt).then(() => { if (state.plan.voice?.state === 'starting') voiceListen({ demo }); });
+  sayThenWait(prompt).then(() => { if (turn === voiceTurn && state.plan.voice?.state === 'starting') voiceListen({ demo }); });
 }
 function voiceFail(error, demo) {
   const plan = state.plan;
@@ -3999,7 +4000,7 @@ function voiceFail(error, demo) {
   plan.voice = { state: 'error', error };
   updateVoiceSlot();
   guideSay(VOICE_ERRORS[error] || "Voice input didn't work. Try again, or type your destination.");
-  if (!demo) $('#planTo')?.focus({ preventScroll: true });
+  if (!demo) $(plan.voiceField === 'from' ? '#planFrom' : '#planTo')?.focus({ preventScroll: true });
 }
 /* ---- Start screen: browsers only allow sound after a tap, so Rove opens on one large button that
  * fills the screen. The first tap (or Enter) unlocks audio and Rove asks where to go out loud. ---- */
@@ -4008,8 +4009,8 @@ function showWake() {
   const saved = loadTrip();
   const wrap = document.createElement('div');
   wrap.id = 'rgWake'; wrap.className = 'rg-wake';
-  wrap.setAttribute('role', 'dialog'); wrap.setAttribute('aria-modal', 'true'); wrap.setAttribute('aria-label', 'Start Rove');
-  wrap.innerHTML = `<button type="button" class="rg-wake-go" id="rgWakeGo"><span class="rg-wake-mic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span><strong class="rg-wake-title">Tap anywhere to start</strong><span class="rg-wake-sub">${saved ? 'Rove will ask if you want to continue your trip.' : 'Rove will ask where you want to go.'} Speak after the tone.</span></button><button type="button" class="rg-wake-skip" id="rgWakeSkip">Use the screen instead</button>`;
+  wrap.setAttribute('role', 'dialog'); wrap.setAttribute('aria-modal', 'true'); wrap.setAttribute('aria-label', 'Tap to start Rove'); wrap.setAttribute('aria-describedby', 'rgWakeInstructions');
+  wrap.innerHTML = `<button type="button" class="rg-wake-go" id="rgWakeGo"><span class="rg-wake-mic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span><strong class="rg-wake-title">Tap anywhere to start</strong><span id="rgWakeInstructions" class="rg-wake-sub">${saved ? 'Rove will ask if you want to continue your trip.' : 'Rove will ask where you are starting and where you want to go.'} Speak after the tone.</span></button><button type="button" class="rg-wake-skip" id="rgWakeSkip">Use the screen instead</button>`;
   document.body.appendChild(wrap);
   document.body.classList.add('has-wake');
   const close = () => { wrap.remove(); document.body.classList.remove('has-wake'); };
@@ -4017,14 +4018,20 @@ function showWake() {
     close();
     try { window.RoveVoice?.unlock?.(); } catch { /* no audio */ }
     const t = loadTrip();
-    if (t) voiceDestination({ prompt: `You have an unfinished trip to ${t.destination?.name || 'your destination'}. Say resume to continue it, or say where you'd like to go, after the tone.` });
+    if (t) voiceDestination({ field: 'to', prompt: `You have an unfinished trip to ${t.destination?.name || 'your destination'}. Say resume to continue it, or say where you'd like to go, after the tone.` });
     else voiceDestination();
   });
   wrap.querySelector('#rgWakeSkip').addEventListener('click', () => { close(); (document.querySelector('#panel h1, #panel [data-action="voice-destination"]'))?.focus?.({ preventScroll: true }); });
   wrap.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); } });
   wrap.querySelector('#rgWakeGo').focus({ preventScroll: true });
+  // Some desktop browsers permit this on load; iOS/Safari often requires the first tap.
+  // The focused, labelled start control is the reliable screen-reader fallback.
+  if (accessPreference('speak', true) && !speakOut('Tap to start Rove.')) {
+    announceAccess('Tap to start Rove.');
+  }
 }
 function voiceCancelAll() {
+  voiceTurn++;
   try { recognition?.abort(); } catch { /* none active */ }
   recognition = null;
   const c = capture; capture = null; c?.cancel();
@@ -4032,6 +4039,7 @@ function voiceCancelAll() {
 
 /* ---- Voice conversation: everything a rider needs is spoken and signalled by sound, so the
  * whole destination and route choice works without seeing the screen. ---- */
+let voiceTurn = 0; // invalidates delayed prompts/listeners from previous turns
 let voiceIntent = null; // set while Rove waits for a spoken answer (yes/no, start/next/repeat)
 let voiceServerModel = null; // which server model is configured; a failure is remembered per model
 // Older builds remembered a server failure for hours and then used the browser recognizer, which
@@ -4059,7 +4067,7 @@ function sayThenWait(text) {
 }
 function voiceListen({ demo = false } = {}) {
   if (voiceMode() === 'server') voiceViaServer({ demo, leadIn: 200 });
-  else { earcon('start'); setTimeout(() => voiceViaBrowser({ demo }), 320); }
+  else { const turn = voiceTurn; earcon('start'); setTimeout(() => { if (turn === voiceTurn) voiceViaBrowser({ demo }); }, 320); }
 }
 function yesNo(words) {
   const w = ` ${String(words).toLowerCase()} `;
@@ -4077,6 +4085,7 @@ function matchLabel(btn) {
 }
 /* "I heard Lake Merritt. Best match: Lake Merritt, BART. Say yes, or no for the next match." */
 async function voiceAskMatch(heard, i = 0, retried = false) {
+  const turn = ++voiceTurn;
   const btn = planDestinationResults()[i];
   if (!btn) { voiceIntent = null; await sayThenWait(`That was the last match for ${heard}. Tap Speak to try again, or type your destination.`); return; }
   if (!accessPreference('speak', true)) btn.focus({ preventScroll: true }); // screen-reader users can also double-tap it
@@ -4093,6 +4102,7 @@ async function voiceAskMatch(heard, i = 0, retried = false) {
 }
 /* After routes are found by a voice flow: read one route at a time and act on start / next / repeat. */
 async function voiceOfferRoutes(k = 0, retried = false) {
+  const turn = ++voiceTurn;
   const order = sortedItineraryIndexes().slice(0, 3);
   const its = state.plan.results?.itineraries || [];
   if (!order.length) return;
@@ -4115,13 +4125,17 @@ async function voiceOfferRoutes(k = 0, retried = false) {
 }
 
 let voiceGen = 0, voiceStartedAt = 0;
-async function voiceDestination({ demo = false, prompt = null, field = 'to' } = {}) {
+/* Spoken planning asks the starting point first, then the destination. A start the rider picked
+ * themselves is kept; an automatic "Your location" is still asked about. */
+async function voiceDestination({ demo = false, prompt = null, field = null } = {}) {
+  if (!field) field = demo || (state.plan.from && state.plan.from.kind !== 'location') ? 'to' : 'from';
   // A second tap right after the first (or a double tap) must not start a second conversation.
   if (Date.now() - voiceStartedAt < 1200 && ['starting', 'listening'].includes(state.plan.voice?.state)) return;
   voiceStartedAt = Date.now();
   const my = ++voiceGen;
   stopSpeaking();
   voiceCancelAll();
+  const turn = voiceTurn;
   voiceIntent = null;
   if (!demo && currentView().name !== 'plan') openPlan({});
   state.plan.voiceFlow = !demo;
@@ -4129,8 +4143,11 @@ async function voiceDestination({ demo = false, prompt = null, field = 'to' } = 
   voiceSilences = 0; voiceRetried = false;
   state.plan.voice = { state: 'starting', mode: voiceMode() };
   updateVoiceSlot();
-  await sayThenWait(prompt || (demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.' : 'Where would you like to go? Say it after the tone.'));
-  if (my !== voiceGen || state.plan.voice?.state !== 'starting') return; // cancelled or restarted while Rove was speaking
+  if (field === 'from') state.plan.from = null;
+  await sayThenWait(prompt || (demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.'
+    : field === 'from' ? 'Where are you starting from? Say my location to start where you are, or say a place or station, after the tone.'
+    : 'Where would you like to go? Say it after the tone.'));
+  if (my !== voiceGen || turn !== voiceTurn || state.plan.voice?.state !== 'starting') return; // cancelled or restarted while Rove was speaking
   voiceListen({ demo });
 }
 
@@ -4535,6 +4552,12 @@ function afterPick() {
     if (plan.from && plan.from.kind !== 'location') { guideSay(`Destination: ${plan.to?.name}. Starting from ${plan.from.name}. Finding routes.`); submitPlan(); return; }
     plan.from = null;
     voiceDestination({ field: 'from', prompt: `Destination: ${plan.to?.name}. Where are you starting from? Say my location to start where you are, or say a place or station, after the tone.` });
+    return;
+  }
+  if (picked === 'from' && plan.voiceFlow && plan.voiceField === 'from' && !plan.to) {
+    plan.voice = null;
+    const where = plan.from?.kind === 'location' ? 'your current location' : plan.from?.name || 'your location';
+    voiceDestination({ field: 'to', prompt: `Starting from ${where}. Where would you like to go? Say it after the tone.` });
     return;
   }
   if (picked === 'from' && plan.voiceFlow && plan.voiceField === 'from' && plan.to) {
@@ -5374,7 +5397,7 @@ function onAutocompleteResults(target) {
   if ((target === 'from' || target === 'to') && currentView().name === 'plan' && state.plan.focus === target) {
     updatePlanSuggestions();
     if (autocomplete.commitOnResults === target) { autocomplete.commitOnResults = null; commitPlanField(target); }
-    if (target === 'to' && state.plan.voicePending) voiceResultsReady();
+    if (state.plan.voicePending && target === state.plan.focus) voiceResultsReady();
   }
 }
 
