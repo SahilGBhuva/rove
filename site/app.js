@@ -2407,7 +2407,7 @@ function viewAccess() {
 function readNavInstruction() {
  const step = state.nav?.steps[state.nav.i];
  if (!step) return;
- speakText(`${step.title}. ${step.meta || ''}. Confirm boarding and safe paths independently.`);
+ speakText(window.RoveJourneyAudio?.describeStep(step, { remainingSteps: state.nav.steps.length - state.nav.i - 1 }) || `${step.title}. Confirm boarding and safe paths independently.`);
 }
 function viewSources() {
   const rows = state.network.agencies.map(a => `<li class="rg-source-row"><span class="rg-source-dot" style="background:${esc(a.color)}" aria-hidden="true"></span><span class="rg-source-main"><span class="rg-source-name">${esc(a.name)}</span><span class="rg-source-meta">${plural(a.routes.length, 'line')} · Schedule valid ${esc(formatGtfsDate(a.feed?.start))} to ${esc(formatGtfsDate(a.feed?.end))}</span></span></li>`).join('');
@@ -3090,7 +3090,7 @@ function toggleNavVoice() {
     if (next?.step && next.metersAhead <= 350) {
       speakNav('In ' + Math.max(10, Math.round(next.metersAhead / 10) * 10) + ' meters, ' + stepText(next.step));
       nav.spokenKey = String(nav.i) + ':' + next.index;
-    } else speakNav('Voice guidance on.');
+    } else speakNav('Voice guidance on. ' + (window.RoveJourneyAudio?.describeStep(nav.steps[nav.i], { remainingSteps: nav.steps.length - nav.i - 1 }) || nav.steps[nav.i]?.title || 'Check your current step.'));
   }
   render();
 }
