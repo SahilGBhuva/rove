@@ -632,9 +632,20 @@ function addTransitLayers() {
   map.addSource('transit-routes', { type: 'geojson', data: routeFeatures(), tolerance: 0.6, lineMetrics: true });
   const stops = stopFeatures();
   map.addSource('transit-stops', { type: 'geojson', data: stops });
+  // Most map views never show bus stop names. Do not send thousands of bus
+  // labels to a second GeoJSON worker until the rider actually zooms in.
+  const compactLabels = { type: 'FeatureCollection', features: stops.features.filter(f => f.properties.cat !== 'bus') };
+  let detailedLabels = map.getZoom() >= MAP_ZOOM.busStopLabels;
+  const refreshStopLabels = () => {
+    const needsDetail = map.getZoom() >= MAP_ZOOM.busStopLabels;
+    if (needsDetail === detailedLabels || !map.getSource('transit-stop-labels')) return;
+    detailedLabels = needsDetail;
+    map.getSource('transit-stop-labels').setData(needsDetail ? stops : compactLabels);
+  };
+  map.on('zoomend', refreshStopLabels);
   // Labels get their own copy of the stops, so a font server outage cannot take the stop dots with it
   // (MapLibre drops a whole tile when one of its symbol layers fails to load glyphs).
-  map.addSource('transit-stop-labels', { type: 'geojson', data: stops });
+  map.addSource('transit-stop-labels', { type: 'geojson', data: detailedLabels ? stops : compactLabels });
   map.addSource('vehicles', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addSource('journey', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addSource('journey-points', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
