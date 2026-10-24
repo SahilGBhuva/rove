@@ -1,1 +1,175 @@
-/* Rove redesign: map. Owned by one workstream; see docs/design/OWNERSHIP-V2.md. */
+/* Rove redesign: map. Owned by one workstream; see docs/design/OWNERSHIP-V2.md.
+ *
+ * The chrome that floats over the map (controls, layers panel, attribution, popups, trip markers).
+ * Controls follow the MAP's theme (body.theme-dark is set by the Dark map style), because they sit
+ * on the map; the layers panel follows the app's colour tokens (--rg-*), because it is app UI.
+ * Every control is at least 48 x 48 px. No blur, no animated shadows: the map must pan smoothly
+ * on low-end phones. */
+
+:root {
+  --map-ctl-bg: #fffdf8;
+  --map-ctl-ink: #17201a;
+  --map-ctl-ink-2: #4a524b;
+  --map-ctl-line: rgba(23, 32, 26, .1);
+  --map-ctl-hover: #f2eee5;
+  --map-ctl-press: #e9e4d8;
+  --map-ctl-accent: #1f5a3d;
+  --map-ctl-shadow: 0 0 0 1px rgba(23, 32, 26, .07), 0 1px 2px rgba(23, 32, 26, .08), 0 6px 18px rgba(23, 32, 26, .1);
+  --map-ctl-size: 48px;
+  --map-ctl-radius: 14px;
+  --map-attrib-bg: rgba(250, 248, 242, .9);
+  --map-attrib-ink: #4a524b;
+}
+body.theme-dark {
+  --map-ctl-bg: #18201b;
+  --map-ctl-ink: #eef0ea;
+  --map-ctl-ink-2: #b4bcb3;
+  --map-ctl-line: rgba(238, 240, 234, .1);
+  --map-ctl-hover: #212a24;
+  --map-ctl-press: #29332c;
+  --map-ctl-accent: #86d3a3;
+  --map-ctl-shadow: 0 0 0 1px rgba(238, 240, 234, .07), 0 1px 2px rgba(0, 0, 0, .5), 0 8px 22px rgba(0, 0, 0, .4);
+  --map-attrib-bg: rgba(20, 26, 23, .88);
+  --map-attrib-ink: #b4bcb3;
+}
+body.map-satellite {
+  --map-ctl-shadow: 0 0 0 1px rgba(0, 0, 0, .18), 0 2px 4px rgba(0, 0, 0, .25), 0 8px 22px rgba(0, 0, 0, .35);
+}
+
+/* ---- Controls: one stack, one visual language ---- */
+.map-controls { gap: 10px; align-items: flex-end; }
+@media (min-width: 768px) { .map-controls { right: 20px; bottom: 36px; } }
+.map-controls .control-group {
+  background: var(--map-ctl-bg); color: var(--map-ctl-ink);
+  border-radius: var(--map-ctl-radius); box-shadow: var(--map-ctl-shadow); overflow: hidden;
+}
+body.map-satellite .map-controls .control-group { background: var(--map-ctl-bg); }
+.map-controls .control-group button {
+  position: relative; width: var(--map-ctl-size); height: var(--map-ctl-size);
+  min-width: var(--map-ctl-size); min-height: var(--map-ctl-size);
+  display: grid; place-items: center; color: var(--map-ctl-ink); background: transparent;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: background-color var(--m-small, 200ms) var(--e-std, ease), color var(--m-small, 200ms) var(--e-std, ease), opacity var(--m-press, 120ms) ease;
+}
+.map-controls .control-group button[hidden] { display: none; }
+.map-controls .control-group button + button { border-top: 1px solid var(--map-ctl-line); }
+.map-controls .control-group button + button[hidden] + button,
+.map-controls .control-group button[hidden] + button { border-top: 0; }
+.map-controls .control-group button svg {
+  width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+#locateButton svg { width: 21px; height: 21px; fill: none; stroke: currentColor; }
+#locateButton.active { color: var(--map-ctl-accent); }
+#locateButton.active svg { fill: currentColor; fill-opacity: .18; color: var(--map-ctl-accent); }
+.map-controls .control-group button[aria-expanded="true"] { color: var(--map-ctl-accent); background: var(--map-ctl-hover); }
+@media (hover: hover) {
+  .map-controls .control-group button:hover { background: var(--map-ctl-hover); transform: none; }
+}
+.map-controls .control-group button:active { background: var(--map-ctl-press); transform: none; }
+.map-controls .control-group button:focus-visible {
+  outline: 3px solid var(--map-ctl-accent) !important; outline-offset: -4px !important; box-shadow: none !important; border-radius: calc(var(--map-ctl-radius) - 2px);
+}
+/* A dot on Layers while any network layer or agency is hidden, so a saved filter is never a mystery. */
+#layersButton.filtered::after {
+  top: 10px; right: 10px; width: 9px; height: 9px; background: var(--map-ctl-accent); box-shadow: 0 0 0 2px var(--map-ctl-bg);
+}
+
+@media (max-width: 767px) {
+  .map-controls { right: max(12px, env(safe-area-inset-right, 0px)); gap: 8px; }
+  /* Short phone screens: pinch zooms, so the zoom pair steps aside to keep the stack compact. */
+  @media (max-height: 640px) { .map-controls .zoom-group { display: none; } }
+}
+
+/* ---- Layers panel ---- */
+.layers-popover {
+  width: 336px; padding: 6px 18px 16px;
+  background: var(--rg-surface, #fffdf8); color: var(--rg-ink, #17201a);
+  border-radius: 20px; box-shadow: 0 0 0 1px var(--rg-line, #e1dccf), 0 2px 6px rgba(23, 32, 26, .06), 0 18px 44px rgba(23, 32, 26, .16);
+}
+@media (min-width: 768px) { .layers-popover { right: 80px; bottom: 36px; max-height: calc(100dvh - 72px); } }
+.layers-popover .popover-head { min-height: 52px; margin-right: -10px; }
+.layers-popover .popover-head h2 { font-size: 1.125rem; font-weight: 750; letter-spacing: -.01em; }
+.layers-popover .popover-head .icon-button { width: 48px; height: 48px; color: var(--rg-ink-2, #4a524b); }
+.layers-popover .label {
+  margin: 14px 0 8px; font-size: .8125rem; line-height: 18px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--rg-ink-2, #4a524b);
+}
+.layers-popover .label-row .text-button { min-height: 48px; color: var(--rg-green, #1f5a3d); font-weight: 700; text-transform: none; letter-spacing: 0; font-size: .875rem; }
+
+/* Map style: three radio cards with a miniature of each basemap. */
+.layers-popover .style-picker { gap: 10px; }
+.layers-popover .style-picker button {
+  min-height: 96px; padding: 0 0 8px; gap: 8px; font-size: .875rem; font-weight: 650; color: var(--rg-ink-2, #4a524b); border-radius: 14px;
+}
+.layers-popover .style-picker button[aria-checked="true"] { color: var(--rg-ink, #17201a); font-weight: 750; }
+.layers-popover .style-swatch { height: 62px; border-radius: 12px; box-shadow: inset 0 0 0 1px rgba(23, 32, 26, .1); }
+.layers-popover .style-picker button[aria-checked="true"] .style-swatch {
+  box-shadow: inset 0 0 0 1px rgba(23, 32, 26, .1), 0 0 0 2px var(--rg-surface, #fffdf8), 0 0 0 4.5px var(--rg-green, #1f5a3d);
+}
+.layers-popover .style-picker button:focus-visible { outline-offset: 3px !important; border-radius: 14px; }
+.style-swatch.standard { background:
+  linear-gradient(118deg, transparent 47%, #fbf9f3 47% 48.5%, #0099d8 48.5% 52%, #fbf9f3 52% 53.5%, transparent 53.5%),
+  linear-gradient(26deg, transparent 57%, #fbf9f3 57% 58.5%, #ed1c24 58.5% 61.5%, #fbf9f3 61.5% 63%, transparent 63%),
+  radial-gradient(ellipse at 82% 82%, #dde5d2 0 22%, transparent 23%),
+  linear-gradient(160deg, #c6d4da 0 24%, transparent 24%),
+  #f2eee5; }
+.style-swatch.dark { background:
+  linear-gradient(118deg, transparent 47%, #111613 47% 48.5%, #2aa8e0 48.5% 52%, #111613 52% 53.5%, transparent 53.5%),
+  linear-gradient(26deg, transparent 57%, #111613 57% 58.5%, #ff5a5f 58.5% 61.5%, #111613 61.5% 63%, transparent 63%),
+  radial-gradient(ellipse at 82% 82%, #17251c 0 22%, transparent 23%),
+  linear-gradient(160deg, #0d171c 0 24%, transparent 24%),
+  #141a17; }
+
+/* Switch rows: 56px tall, a key that previews how each layer looks on the map. */
+.layers-popover .toggle-row { min-height: 56px; gap: 12px; font-size: 1rem; font-weight: 650; border-top-color: var(--rg-line, #e1dccf); }
+.layers-popover .toggle-row > span:not(.dot):not(.layer-key) small { font-weight: 500; font-size: .8125rem; line-height: 17px; color: var(--rg-ink-2, #4a524b); }
+.layers-popover .toggle-row > .layer-key { flex: none; position: relative; width: 28px; height: 28px; border-radius: 8px; background: var(--rg-bg, #f6f3ec); box-shadow: inset 0 0 0 1px var(--rg-line, #e1dccf); }
+.layer-key-rail::before { content: ""; position: absolute; left: 4px; right: 4px; top: 12px; height: 4px; border-radius: 2px; background: #0099d8; box-shadow: 0 0 0 1.5px #fbf9f3; }
+.layer-key-rail::after { content: ""; position: absolute; left: 10px; top: 9px; width: 6px; height: 6px; margin-top: 1px; border-radius: 50%; background: #fffdf8; box-shadow: 0 0 0 1.75px #17201a; }
+.layer-key-bus::before { content: ""; position: absolute; left: 4px; right: 4px; top: 13px; height: 2px; border-radius: 1px; background: #005b95; opacity: .5; }
+.layer-key-bus::after { content: ""; position: absolute; left: 11px; top: 11.5px; width: 5px; height: 5px; border-radius: 50%; background: #7d827a; box-shadow: 0 0 0 1px #fffdf8; }
+.layer-key-live::before { content: ""; position: absolute; left: 9px; top: 11px; width: 10px; height: 10px; border-radius: 50%; background: #0099d8; box-shadow: 0 0 0 1.5px #fffdf8; }
+.layer-key-live::after { content: ""; position: absolute; left: 11px; top: 4px; border: 3px solid transparent; border-bottom: 5px solid #0099d8; border-top: 0; }
+.layers-popover .toggle-row i { width: 44px; height: 26px; border-radius: 13px; background: var(--rg-line, #e1dccf); }
+.layers-popover .toggle-row i::after { left: 3px; top: 3px; width: 20px; height: 20px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .22); }
+.layers-popover .toggle-row input:checked + i { background: var(--rg-green, #1f5a3d); }
+.layers-popover .toggle-row input:checked + i::after { transform: translateX(18px); }
+.layers-popover .toggle-row input:focus-visible + i { outline: 3px solid var(--rg-focus, #1f5a3d); outline-offset: 2px; }
+.layers-popover .toggle-row .dot { width: 12px; height: 12px; margin: 0 8px; border-radius: 50%; box-shadow: 0 0 0 2px var(--rg-surface, #fffdf8), 0 0 0 3px var(--rg-line, #e1dccf); }
+
+@media (max-width: 767px) {
+  .layers-popover { left: 12px; right: 12px; width: auto; border-radius: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-controls .control-group button { transition: none; }
+  .layers-popover { animation: none !important; }
+}
+
+/* ---- Attribution: always visible, quiet, readable on both map themes ---- */
+.maplibregl-ctrl-attrib {
+  background: var(--map-attrib-bg) !important; color: var(--map-attrib-ink) !important;
+  font-size: 11.5px !important; border-radius: 8px 8px 0 0;
+}
+body.map-satellite .maplibregl-ctrl-attrib { background: rgba(255, 255, 255, .9) !important; color: #3d4046 !important; }
+body.theme-dark .maplibregl-ctrl-attrib-button { filter: invert(1); }
+
+/* ---- Map popups (vehicle details, route chooser, right-click menu) ---- */
+.maplibregl-popup-content {
+  border-radius: 14px; padding: 12px 14px; border: 0;
+  background: var(--rg-surface, #fffdf8); color: var(--rg-ink, #17201a);
+  box-shadow: 0 0 0 1px var(--rg-line, #e1dccf), 0 10px 30px rgba(23, 32, 26, .16);
+}
+.maplibregl-popup-tip { border-top-color: var(--rg-surface, #fffdf8) !important; border-bottom-color: var(--rg-surface, #fffdf8) !important; }
+.maplibregl-popup-close-button { width: 40px; height: 40px; font-size: 20px; color: var(--rg-ink-2, #4a524b); }
+
+/* ---- Trip end markers: start is a ring, destination a solid disc with a centre dot ---- */
+.plan-marker {
+  width: 20px; height: 20px; border-radius: 50%; background: var(--map-ctl-bg); border: 5px solid var(--map-ctl-accent);
+  box-shadow: 0 0 0 2px var(--map-ctl-bg), 0 2px 6px rgba(23, 32, 26, .28);
+}
+.plan-marker-to {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--map-ctl-ink); border: 0;
+  box-shadow: 0 0 0 3px var(--map-ctl-bg), 0 2px 8px rgba(23, 32, 26, .32);
+  display: grid; place-items: center;
+}
+.plan-marker-to::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--map-ctl-bg); }
