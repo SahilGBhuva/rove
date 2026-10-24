@@ -61,3 +61,22 @@ test('voice status is patched in place so VoiceOver focus does not move while th
   assert.match(body, /slot\.innerHTML = voiceStatusHtml\(\)/);
   assert.match(app, /RoveVoice\.record\(\{ leadInMs: 1300/);
 });
+
+
+test('guided voice trip asks for origin first and then destination', () => {
+  assert.match(app, /data-action="voice-journey"[^>]*>/);
+  assert.match(app, /function startVoiceJourney\(\)/);
+  assert.match(app, /Where are you starting from\?/);
+  assert.match(app, /Where would you like to go\?/);
+  assert.match(app, /planVoiceStep === 'from' && plan\.voice\?\.state === 'heard'/);
+  assert.match(app, /voiceAdvanceFromStart\(\)/);
+  assert.match(app, /requestAutocomplete\(text, which\)/);
+  assert.match(app, /state\.plan\.voicePending && target === state\.plan\.focus/);
+});
+
+test('voice journey provides manual microphone control and GPS permission route', () => {
+  assert.match(app, /data-action="voice-continue"|button\('voice-continue'/);
+  assert.match(app, /locate\(\{ thenPick: 'from' \}\)/);
+  assert.match(app, /planVoiceStep = null; state\.plan\.voice = null/);
+  assert.match(app, /state\.plan\.draft\.from = ''/);
+});

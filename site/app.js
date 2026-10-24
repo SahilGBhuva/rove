@@ -1422,7 +1422,7 @@ function viewHome() {
     <h1 id="roveHomeTitle" class="rg-home-title" tabindex="-1">Where to?</h1>
     <p class="rg-home-sub">Speak or type a place. Rove guides you one confirmed step at a time.</p>
     <div class="rg-stack rg-hero">
-      <button type="button" class="rg-primary rg-speak" data-action="voice-destination"><span class="rg-speak-icon">${MIC_ICON}</span><span class="rg-speak-label">Speak destination</span></button>
+      <button type="button" class="rg-primary rg-speak" data-action="voice-journey"><span class="rg-speak-icon">${MIC_ICON}</span><span class="rg-speak-label">Plan with voice</span></button>
       <button type="button" class="rg-field" data-action="plan">${SEARCH_ICON}<span>Type a destination</span></button>
     </div>
     ${places.length ? `<section class="rg-saved" aria-labelledby="rgSavedTitle"><h2 id="rgSavedTitle" class="rg-label">Saved places</h2><div class="rg-chips">${places.map(p => `<button type="button" class="rg-chip" data-action="go-saved" data-label="${esc(p.label)}">${esc(p.label)}</button>`).join('')}</div></section>` : ''}
@@ -1947,7 +1947,7 @@ function viewPlan() {
   return `${backHeader()}
     <div class="hero plan-hero"><h1 class="title-2">Directions</h1></div>
     <div id="planNotice">${planNoticeHtml()}</div>
-    <div class="rg-voice-row"><button type="button" class="rg-mic" data-action="voice-destination" aria-label="Speak destination">${MIC_ICON}<span>Speak</span></button><div class="rg-voice-slot">${voiceStatusHtml()}</div></div>
+    <div class="rg-voice-row"><button type="button" class="rg-mic" data-action="voice-journey" aria-label="Plan a journey with voice">${MIC_ICON}<span>Plan with voice</span></button><div class="rg-voice-slot">${voiceStatusHtml()}</div></div>
     <form class="plan-form${plan.focus ? ' suggesting' : ''}" data-plan-form novalidate>
       <div class="plan-fields">
         ${field('planFrom', 'from', 'Starting point', 'From')}
@@ -2916,6 +2916,7 @@ function viewNavigate() {
 let recognition = null;
 let capture = null;
 let voiceServer = null;   // null = unknown, true/false after probing /api/v2/transcribe
+let planVoiceStep = null; // null = ordinary destination dictation; 'from'/'to' = guided voice journey
 let voiceUseLocal = false; // browser cloud recognition failed while online; use on-device instead
 const BrowserRecognition = () => window.SpeechRecognition || window.webkitSpeechRecognition || null;
 const VOICE_ERRORS = {
@@ -2944,7 +2945,7 @@ async function probeVoiceServer() {
 function voiceStatusHtml() {
   const v = state.plan.voice;
   if (!v) return '';
-  const retry = currentView().name === 'demo' ? 'demo-speak' : 'voice-destination';
+  const retry = currentView().name === 'demo' ? 'demo-speak' : planVoiceStep ? 'voice-retry-step' : 'voice-destination';
   /* Every visual reflects real state: the bars move only from the live microphone level
    * (server mode); the browser recognizer gives no level, so it gets a ring instead. */
   const mic = '<svg class="rg-vx-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>';
@@ -2952,9 +2953,10 @@ function voiceStatusHtml() {
   const button = (action, label, primary = false) => `<button type="button" class="rg-text-button rg-vx-button${primary ? ' is-primary' : ''}" data-action="${action}">${label}</button>`;
   const actions = (...buttons) => `<span class="rg-vx-actions">${buttons.join('')}</span>`;
   const thinking = '<span class="rg-vx-visual is-thinking" aria-hidden="true"><span class="rg-vx-dots"><i></i><i></i><i></i></span></span>';
+  if (v.state === 'prompt') return `<div class="rg-listening rg-vx" role="status">${text('' + esc(v.prompt))}${actions(button('voice-continue', 'Speak now', true), button('voice-stop', 'Cancel'))}</div>`;
   if (v.state === 'starting') return `<div class="rg-listening rg-vx" data-vx="waiting" role="status"><span class="rg-vx-visual is-waiting" aria-hidden="true">${mic}<span class="rg-pulse is-waiting"></span></span>${text('Speak after the tone.')}${actions(button('voice-stop', 'Cancel'))}</div>`;
   if (v.state === 'listening' && v.mode === 'server') return `<div class="rg-listening rg-vx" data-vx="listening" data-mode="server" role="status"><span class="rg-vx-visual is-level" aria-hidden="true"><span class="rg-vx-live"></span><span class="rg-wave"><i></i><i></i><i></i><i></i><i></i></span></span>${text('Listening', "I'll stop when you pause.")}${actions(button('voice-done', 'Done', true), button('voice-stop', 'Cancel'))}</div>`;
-  if (v.state === 'listening') return `<div class="rg-listening rg-vx" data-vx="listening" data-mode="browser" role="status"><span class="rg-vx-visual is-ring" aria-hidden="true"><span class="rg-mic-ring"></span>${mic}</span>${text('Listening', 'Say a place, address, or station.')}${actions(button('voice-stop', 'Cancel'))}</div>`;
+  if (v.state === 'listening') return `<div class="rg-listening rg-vx" data-vx="listening" data-mode="browser" role="status"><span class="rg-vx-visual is-ring" aria-hidden="true"><span class="rg-mic-ring"></span>${mic}</span>${text('Listening', planVoiceStep === 'from' ? 'Say where you are starting.' : 'Say your destination.')}${actions(button('voice-stop', 'Cancel'))}</div>`;
   if (v.state === 'understanding') return `<div class="rg-listening rg-vx" data-vx="understanding" role="status">${thinking}${text('Understanding…')}</div>`;
   if (v.state === 'installing') return `<div class="rg-listening rg-vx" data-vx="installing" role="status">${thinking}${text('Downloading on-device voice…')}</div>`;
   if (v.state === 'heard') return `<p class="rg-heard rg-vx" data-vx="heard"${v.matches === 0 ? ' data-tone="none"' : ''}><span class="rg-vx-visual is-heard" aria-hidden="true"><svg class="rg-vx-glyph" viewBox="0 0 24 24">${v.matches === 0 ? '<path d="M12 7.5v5.5M12 16.5v.01"/>' : '<path d="m6.5 12.5 3.6 3.6 7.4-8.2"/>'}</svg></span><span class="rg-vx-text">Heard <q>${esc(v.heard)}</q>${v.matches === 0 ? '. No matches; try again or type.' : '. Choose the right match below.'}</span></p>`;
@@ -2978,9 +2980,9 @@ function voiceResultsReady() {
   plan.voice = { state: 'heard', heard, matches: results.length };
   const slot = document.querySelector('.rg-voice-slot');
   if (slot) slot.innerHTML = voiceStatusHtml();
-  if (!results.length) { announceAccess(`Heard ${heard}. No matching places. Try again, or type your destination.`); return; }
+  if (!results.length) { announceAccess(`Heard ${heard}. No matching places. Try again, or type the place.`); return; }
   const first = results[0].querySelector('.row-title')?.textContent || results[0].textContent.trim();
-  announceAccess(`Heard ${heard}. ${plural(results.length, 'match', 'matches')}. First: ${first}. Choose one to confirm.`);
+  announceAccess(`Heard ${heard}. ${plural(results.length, 'match', 'matches')}. First: ${first}. Choose one to confirm your ${planVoiceStep === 'from' ? 'starting point' : 'destination'}.`, true);
   results[0].focus({ preventScroll: true });
 }
 
@@ -2991,9 +2993,14 @@ function voiceHeard(words, demo) {
   if (!text) { voiceFail('no-speech', demo); return; }
   if (demo) { plan.voice = null; startDemo(text); return; }
   plan.voice = { state: 'heard', heard: text };
-  plan.to = null; plan.draft.to = text; plan.query = text; plan.focus = 'to'; plan.voicePending = text;
+  const which = planVoiceStep || 'to';
+  if (planVoiceStep === 'from' && /^(?:(?:my|your|current)\s+)?(?:current\s+)?location$|^here$|^where i am$/i.test(text.replace(/[.!?]+$/, ''))) {
+    if (currentLocationPlace()) { plan.from = currentLocationPlace(); plan.draft.from = ''; plan.voice = null; render(); voiceAdvanceFromStart(); return; }
+    plan.voice = null; announceAccess('Requesting your location. Your browser may ask for permission.', true); locate({ thenPick: 'from' }); return;
+  }
+  plan[which] = null; plan.draft[which] = text; plan.query = text; plan.focus = which; plan.voicePending = text;
   render();
-  requestAutocomplete(text, 'to');
+  requestAutocomplete(text, which);
   updatePlanSuggestions();
   if (autocomplete.status !== 'loading') voiceResultsReady();
   setTimeout(voiceResultsReady, 3000); // geocoder slow or offline: announce local stop matches anyway
@@ -3004,7 +3011,7 @@ function voiceFail(error, demo) {
   updateVoiceSlot();
   announceAccess(VOICE_ERRORS[error] || "Voice input didn't work. Try again, or type your destination.");
   if (error === 'voice-download') { $('[data-action="voice-install"]')?.focus({ preventScroll: true }); return; }
-  if (!demo && error !== 'no-speech') $('#planTo')?.focus({ preventScroll: true });
+  if (!demo && error !== 'no-speech') $(planVoiceStep === 'from' ? '#planFrom' : '#planTo')?.focus({ preventScroll: true });
 }
 function voiceCancelAll() {
   try { recognition?.abort(); } catch { /* none active */ }
@@ -3012,6 +3019,38 @@ function voiceCancelAll() {
   const c = capture; capture = null; c?.cancel();
 }
 
+function startVoiceJourney() {
+  planVoiceStep = 'from';
+  voiceCancelAll();
+  if (currentView().name !== 'plan') openPlan({});
+  state.plan.voicePending = null;
+  state.plan.voice = { state: 'starting', mode: 'server' };
+  updateVoiceSlot();
+  // Begin speech within the tap gesture on iOS; do not activate the mic until the prompt finishes.
+  const prompt = 'Where are you starting from? Say a place, or say my current location.';
+  announceAccess(prompt, true);
+  // Waiting also works if system speech is unavailable; the visible prompt stays on screen.
+  voicePromptThenListen('from', prompt);
+}
+function voicePromptThenListen(step, prompt) {
+  const plan = state.plan;
+  planVoiceStep = step;
+  plan.voice = { state: 'prompt', step, prompt };
+  updateVoiceSlot();
+  const ready = () => {
+    if (planVoiceStep !== step || plan.voice?.state !== 'prompt') return;
+    voiceDestination();
+  };
+  // Leave time for synthesized speech or VoiceOver to finish before recording.
+  // A manual Continue button remains available for slow screen readers.
+  clearTimeout(voicePromptThenListen.timer);
+  voicePromptThenListen.timer = setTimeout(ready, Math.max(2500, prompt.length * 75));
+}
+function voiceAdvanceFromStart() {
+  if (planVoiceStep !== 'from') return;
+  voicePromptThenListen('to', 'Where would you like to go?');
+  announceAccess('Where would you like to go?', true);
+}
 function voiceDestination({ demo = false } = {}) {
   stopSpeaking();
   voiceCancelAll();
@@ -3384,12 +3423,15 @@ function handleAction(el) {
     }
     case 'trip-resume': { const t = loadTrip(); if (!t) { render(); announceAccess('That trip has expired.'); break; } state.plan.to = t.destination; beginNav(t.it, { destination: t.destination, access: t.access, demo: t.demo, restore: t }); break; }
     case 'trip-discard': clearTrip(); render(); announceAccess('Saved trip discarded.'); document.getElementById('roveHomeTitle')?.focus({ preventScroll: true }); break;
-    case 'voice-destination': voiceDestination(); break;
-    case 'voice-stop': voiceCancelAll(); state.plan.voice = null; updateVoiceSlot(); announceAccess('Stopped listening.'); if (currentView().name === 'plan') $('#planTo')?.focus({ preventScroll: true }); break;
+    case 'voice-journey': startVoiceJourney(); break;
+    case 'voice-continue': clearTimeout(voicePromptThenListen.timer); voiceDestination(); break;
+    case 'voice-retry-step': voiceDestination(); break;
+    case 'voice-destination': planVoiceStep = null; voiceDestination(); break;
+    case 'voice-stop': clearTimeout(voicePromptThenListen.timer); voiceCancelAll(); planVoiceStep = null; state.plan.voice = null; updateVoiceSlot(); announceAccess('Stopped listening.'); if (currentView().name === 'plan') $('#planTo')?.focus({ preventScroll: true }); break;
     case 'voice-done': capture?.stop(); break;
     case 'voice-install': voiceInstallLocal(); break;
     case 'demo': state.plan.voice = null; pushView({ name: 'demo' }, { detent: 'full' }); break;
-    case 'demo-speak': voiceDestination({ demo: true }); break;
+    case 'demo-speak': planVoiceStep = null; voiceDestination({ demo: true }); break;
     case 'demo-continue': startDemo(); break;
     case 'it-more': plan.showAll = true; render(); break;
     default: break;
@@ -3408,9 +3450,12 @@ function afterPick() {
   render();
   const next = picked === 'from' && !plan.to ? '#planTo' : picked === 'to' && !plan.from ? '#planFrom' : null;
   // Spoken destination confirmed by choosing a match: go straight to routes when the start is known.
+  if (picked === 'from' && planVoiceStep === 'from' && plan.voice?.state === 'heard') {
+    plan.voice = null; voiceAdvanceFromStart(); return;
+  }
   if (picked === 'to' && plan.voice?.state === 'heard') {
-    plan.voice = null;
-    if (plan.from) { announceAccess(`Destination: ${plan.to?.name}. Finding routes.`); submitPlan(); return; }
+    plan.voice = null; planVoiceStep = null;
+    if (plan.from) { announceAccess(`Destination: ${plan.to?.name}. Finding routes.`, true); submitPlan(); return; }
     announceAccess(`Destination: ${plan.to?.name}. Now choose a starting point. Use my location is first.`);
   }
   if (next) requestAnimationFrame(() => $(next)?.focus());
@@ -3625,7 +3670,7 @@ function onPosition(pos) {
     if (first || pick) toast('You are outside the Bay Area. Search for a Bay Area place to plan a trip.');
     if (pick) return;
   }
-  if (pick && currentView().name === 'plan') { state.plan[pick] = currentLocationPlace(); afterPick(); return; }
+  if (pick && currentView().name === 'plan') { state.plan[pick] = currentLocationPlace(); if (pick === 'from' && planVoiceStep === 'from') { state.plan.draft.from = ''; state.plan.voice = null; render(); voiceAdvanceFromStart(); return; } afterPick(); return; }
   if (first && ['home'].includes(currentView().name)) render();
 }
 
@@ -3643,6 +3688,7 @@ function centerOnGrantedLocation() {
 }
 function onPositionError(err) {
   locate.pendingPick = null;
+  if (planVoiceStep === 'from') { state.plan.voice = null; planVoiceStep = null; render(); announceAccess('Could not find your location. Enter a starting point instead.', true); }
   toast(err?.code === 1 ? 'Location is off. Search for a stop or line to get started.' : 'Your location could not be found. Please try again.');
 }
 
@@ -4237,7 +4283,7 @@ function onAutocompleteResults(target) {
   if ((target === 'from' || target === 'to') && currentView().name === 'plan' && state.plan.focus === target) {
     updatePlanSuggestions();
     if (autocomplete.commitOnResults === target) { autocomplete.commitOnResults = null; commitPlanField(target); }
-    if (target === 'to' && state.plan.voicePending) voiceResultsReady();
+    if (state.plan.voicePending && target === state.plan.focus) voiceResultsReady();
   }
 }
 
