@@ -3985,8 +3985,8 @@ function showWake() {
   const saved = loadTrip();
   const wrap = document.createElement('div');
   wrap.id = 'rgWake'; wrap.className = 'rg-wake';
-  wrap.setAttribute('role', 'dialog'); wrap.setAttribute('aria-modal', 'true'); wrap.setAttribute('aria-label', 'Start Rove');
-  wrap.innerHTML = `<button type="button" class="rg-wake-go" id="rgWakeGo"><span class="rg-wake-mic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span><strong class="rg-wake-title">Tap anywhere to start</strong><span class="rg-wake-sub">${saved ? 'Rove will ask if you want to continue your trip.' : 'Rove will ask where you want to go.'} Speak after the tone.</span></button><button type="button" class="rg-wake-skip" id="rgWakeSkip">Use the screen instead</button>`;
+  wrap.setAttribute('role', 'dialog'); wrap.setAttribute('aria-modal', 'true'); wrap.setAttribute('aria-label', 'Tap to start Rove'); wrap.setAttribute('aria-describedby', 'rgWakeInstructions');
+  wrap.innerHTML = `<button type="button" class="rg-wake-go" id="rgWakeGo"><span class="rg-wake-mic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span><strong class="rg-wake-title">Tap anywhere to start</strong><span id="rgWakeInstructions" class="rg-wake-sub">${saved ? 'Rove will ask if you want to continue your trip.' : 'Rove will ask where you want to go.'} Speak after the tone.</span></button><button type="button" class="rg-wake-skip" id="rgWakeSkip">Use the screen instead</button>`;
   document.body.appendChild(wrap);
   document.body.classList.add('has-wake');
   const close = () => { wrap.remove(); document.body.classList.remove('has-wake'); };
@@ -4000,6 +4000,11 @@ function showWake() {
   wrap.querySelector('#rgWakeSkip').addEventListener('click', () => { close(); (document.querySelector('#panel h1, #panel [data-action="voice-destination"]'))?.focus?.({ preventScroll: true }); });
   wrap.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); } });
   wrap.querySelector('#rgWakeGo').focus({ preventScroll: true });
+  // Some desktop browsers permit this on load; iOS/Safari often requires the first tap.
+  // The focused, labelled start control is the reliable screen-reader fallback.
+  if (accessPreference('speak', true) && !speakOut('Tap to start Rove.')) {
+    announceAccess('Tap to start Rove.');
+  }
 }
 function voiceCancelAll() {
   voiceTurn++;
