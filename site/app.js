@@ -3428,7 +3428,7 @@ function applyLive(nav) {
 }
 function liveSummary(nav) {
   const phase = guidePhase(nav);
-  const d = nav.live?.leg === phase?.leg ? nav.live.data : null;
+  const d = nav.live && phase?.leg && nav.live.leg === phase.leg ? nav.live.data : null; // arrival has no leg
   const est = d?.status === 'live' ? (phase.kind === 'board' ? d.board : d.exit) : null;
   if (!est) return '';
   const mins = Math.max(0, Math.round((est.time * 1000 - Date.now()) / 60000));
