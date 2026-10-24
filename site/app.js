@@ -3423,7 +3423,7 @@ async function loadResultsLive() {
 }
 /* Update chips and spoken labels in place (no re-render: focus stays put). */
 function patchResultsLive() {
-  if (currentView().name !== 'results') return;
+  if (turn !== voiceTurn || currentView().name !== 'results') return;
   const its = state.plan.results?.itineraries || [];
   const order = sortedItineraryIndexes();
   for (const btn of document.querySelectorAll('.itinerary[data-index]')) {
@@ -3957,10 +3957,11 @@ let voiceSilences = 0;      // times in a row nothing was heard for the destinat
 const VOICE_REASKS = 2;
 /* Speak a short prompt, then the tone, then listen again. */
 function voiceAgain(demo, prompt) {
+  const turn = ++voiceTurn;
   capture = null;
   state.plan.voice = { state: 'starting', mode: voiceMode() };
   updateVoiceSlot();
-  sayThenWait(prompt).then(() => { if (state.plan.voice?.state === 'starting') voiceListen({ demo }); });
+  sayThenWait(prompt).then(() => { if (turn === voiceTurn && state.plan.voice?.state === 'starting') voiceListen({ demo }); });
 }
 function voiceFail(error, demo) {
   const plan = state.plan;
@@ -4001,6 +4002,7 @@ function showWake() {
   wrap.querySelector('#rgWakeGo').focus({ preventScroll: true });
 }
 function voiceCancelAll() {
+  voiceTurn++;
   try { recognition?.abort(); } catch { /* none active */ }
   recognition = null;
   const c = capture; capture = null; c?.cancel();
@@ -4009,6 +4011,7 @@ function voiceCancelAll() {
 /* ---- Voice conversation: everything a rider needs is spoken and signalled by sound, so the
  * whole destination and route choice works without seeing the screen. ---- */
 let voiceJourneyStep = null; // 'from' then 'to' for guided planning
+let voiceTurn = 0; // invalidates delayed prompts/listeners from previous turns
 let voiceIntent = null; // set while Rove waits for a spoken answer (yes/no, start/next/repeat)
 let voiceServerModel = null; // which server model is configured; a failure is remembered per model
 // Older builds remembered a server failure for hours and then used the browser recognizer, which
@@ -4036,7 +4039,7 @@ function sayThenWait(text) {
 }
 function voiceListen({ demo = false } = {}) {
   if (voiceMode() === 'server') voiceViaServer({ demo, leadIn: 200 });
-  else { earcon('start'); setTimeout(() => voiceViaBrowser({ demo }), 320); }
+  else { const turn = voiceTurn; earcon('start'); setTimeout(() => { if (turn === voiceTurn) voiceViaBrowser({ demo }); }, 320); }
 }
 function yesNo(words) {
   const w = ` ${String(words).toLowerCase()} `;
@@ -4054,10 +4057,12 @@ function matchLabel(btn) {
 }
 /* "I heard Lake Merritt. Best match: Lake Merritt, BART. Say yes, or no for the next match." */
 async function voiceAskMatch(heard, i = 0, retried = false) {
+  const turn = ++voiceTurn;
   const btn = planDestinationResults()[i];
   if (!btn) { voiceIntent = null; await sayThenWait(`That was the last match for ${heard}. Tap Speak to try again, or type your destination.`); return; }
   if (!accessPreference('speak', true)) btn.focus({ preventScroll: true }); // screen-reader users can also double-tap it
   await sayThenWait(retried ? 'Please say yes or no.' : i === 0 ? `I heard ${heard}. Best match: ${matchLabel(btn)}. Say yes to go there, or no for the next match.` : `Next match: ${matchLabel(btn)}. Say yes or no.`);
+  if (turn !== voiceTurn || currentView().name !== 'plan') return;
   voiceIntent = { handle: words => {
     const a = yesNo(words);
     if (a === 'yes') { voiceIntent = null; earcon('ok'); handleAction(btn); }
@@ -4069,6 +4074,7 @@ async function voiceAskMatch(heard, i = 0, retried = false) {
 }
 /* After routes are found by a voice flow: read one route at a time and act on start / next / repeat. */
 async function voiceOfferRoutes(k = 0, retried = false) {
+  const turn = ++voiceTurn;
   const order = sortedItineraryIndexes().slice(0, 3);
   const its = state.plan.results?.itineraries || [];
   if (!order.length) return;
@@ -4090,16 +4096,18 @@ async function voiceOfferRoutes(k = 0, retried = false) {
 }
 
 async function voiceContinueToDestination() {
-  voiceJourneyStep = 'to';
   voiceCancelAll();
+  const turn = voiceTurn;
+  voiceJourneyStep = 'to';
   state.plan.voice = { state: 'starting', mode: voiceMode() };
   updateVoiceSlot();
   await sayThenWait('Where would you like to go? Say it after the tone.');
-  if (voiceJourneyStep === 'to' && state.plan.voice?.state === 'starting') voiceListen({});
+  if (turn === voiceTurn && voiceJourneyStep === 'to' && state.plan.voice?.state === 'starting') voiceListen({});
 }
 async function voiceDestination({ demo = false, prompt = null } = {}) {
   stopSpeaking();
   voiceCancelAll();
+  const turn = voiceTurn;
   voiceIntent = null;
   if (!demo && currentView().name !== 'plan') openPlan({});
   state.plan.voiceFlow = !demo;
@@ -4108,7 +4116,7 @@ async function voiceDestination({ demo = false, prompt = null } = {}) {
   state.plan.voice = { state: 'starting', mode: voiceMode() };
   updateVoiceSlot();
   await sayThenWait(prompt || (demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.' : 'Where are you starting from? Say a place or my current location after the tone.'));
-  if (state.plan.voice?.state !== 'starting') return; // cancelled while Rove was speaking
+  if (turn !== voiceTurn || state.plan.voice?.state !== 'starting') return; // cancelled or superseded while Rove spoke
   voiceListen({ demo });
 }
 

@@ -56,7 +56,8 @@ test('app prefers server transcription, falls back to the browser recognizer, th
   assert.match(app, /if \(!notConfigured && !voiceRetried\)/);
   // A browser recognizer that cannot reach its cloud hands over to Rove's service.
   assert.match(app, /\['network', 'service-not-allowed', 'language-not-supported'\]\.includes\(error\) && voiceServer !== false/);
-  assert.match(app, /if \(voiceMode\(\) === 'server'\) voiceViaServer\(\{ demo, leadIn: 200 \}\);\s*else \{ earcon\('start'\); setTimeout\(\(\) => voiceViaBrowser\(\{ demo \}\), 320\); \}/);
+  assert.match(app, /if \(voiceMode\(\) === 'server'\) voiceViaServer\(\{ demo, leadIn: 200 \}\)/);
+  assert.match(app, /if \(turn === voiceTurn\) voiceViaBrowser\(\{ demo \}\)/);
   assert.match(app, /fetch\('\/api\/v2\/transcribe', \{ method: 'POST'/);
   assert.match(app, /if \(BrowserRecognition\(\)\) \{ voiceServer = false; voiceViaBrowser/);
   assert.match(app, /RoveSpeech\.recognitionFallback\(/);
@@ -117,4 +118,13 @@ test('guided voice planning collects and confirms starting point before destinat
   assert.match(app, /plan\[which\] = null; plan\.draft\[which\] = text/);
   assert.match(app, /requestAutocomplete\(text, which\)/);
   assert.match(app, /pick === 'from' && voiceJourneyStep === 'from'/);
+});
+
+
+test('voice turn token prevents stale prompts from reopening microphone', () => {
+  assert.match(app, /let voiceTurn = 0/);
+  assert.match(app, /function voiceCancelAll\(\) \{\s*voiceTurn\+\+/);
+  assert.match(app, /turn === voiceTurn && state\.plan\.voice\?\.state === 'starting'/);
+  assert.match(app, /turn !== voiceTurn \|\| state\.plan\.voice\?\.state !== 'starting'/);
+  assert.match(app, /turn === voiceTurn && voiceJourneyStep === 'to'/);
 });
