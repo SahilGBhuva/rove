@@ -331,9 +331,12 @@ export async function cachedPlan(params, planner=planWithWalking) {
 }
 export default async function handler(req,res) {
   res.setHeader('Cache-Control','public, s-maxage=20, stale-while-revalidate=20');
+  const startedAt=performance.now();
+  res.setHeader('Timing-Allow-Origin','*');
   if(req.method!=='GET')return res.status(405).json({error:'Method not allowed'});
   try {
     const result=await cachedPlan(new URL(req.url,'https://rove.invalid').searchParams);
+    res.setHeader('Server-Timing',`route;dur=${(performance.now()-startedAt).toFixed(1)}`);
     return res.status(result.status).json(result.body);
   } catch (error) {
     console.error('Preview trip planning failed:', error);
