@@ -173,3 +173,5 @@ body.theme-dark .maplibregl-ctrl-attrib-button { filter: invert(1); }
   display: grid; place-items: center;
 }
 .plan-marker-to::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--map-ctl-bg); }
+/* The 48px summary target (accessibility rule) must not tile MapLibre's info icon. */
+.maplibregl-ctrl-attrib-button { background-repeat: no-repeat !important; background-position: center !important; }

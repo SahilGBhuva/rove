@@ -304,7 +304,7 @@ export async function planWithWalking(query,now=new Date(),loader=loadDay,fetche
   result.body.routing.walkingGeometry=result.body.itineraries.some(it=>it.walkingVerified);
   result.body.routing.notes=[
     'Beta: scheduled transit times only. Walking geometry uses an external pedestrian router and may be incomplete or inaccurate. Check crossings, signs and station platforms.',
-    'Live train/bus positions and automatic boarding confirmation are not available. Keep navigation in the foreground and verify each transfer.'
+    'Plans use published schedules. During your trip Rove shows live predictions where the agency provides them, but it never confirms boarding automatically. Keep Rove open and verify each transfer.'
   ];
   for (const it of result.body.itineraries) {
     it.navigationReady=Boolean(it.walkingVerified && it.legs.some(l=>l.transit));
