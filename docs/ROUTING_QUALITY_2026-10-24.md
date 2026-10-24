@@ -16,7 +16,7 @@
 ## Demo examples checked against the Oct 23 schedule
 
 - Haight/Ashbury → Chase Center: first result uses Muni 37 + 22, one transfer, approximately 43 minutes.
-- Sunnyvale → downtown Berkeley: first result uses Caltrain → BART at Millbrae, one transfer, approximately 138 minutes; the 127-minute, four-transfer option remains a faster alternative rather than the recommended first choice.
+- Sunnyvale → downtown Berkeley: first result uses Caltrain → BART at Millbrae, one transfer, approximately 138 minutes; the previous 127-minute, four-transfer suggestion is no longer prioritized after enforcing realistic rail transfer times.
 - Powell → Oakland: BART with zero transfers, approximately 16 minutes.
 
 These are **scheduled example results, not live trip predictions**. Durations and service depend on the requested time and date. Warm local algorithm-only checks were approximately 0.5–1.5 seconds for several sample journeys when the machine was not under load; external pedestrian routing can add up to 3.8 seconds. No production latency SLA is established.
