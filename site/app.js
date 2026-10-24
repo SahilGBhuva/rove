@@ -642,6 +642,10 @@ function addTransitLayers() {
     detailedLabels = needsDetail;
     map.getSource('transit-stop-labels').setData(needsDetail ? stops : compactLabels);
   };
+  // Style changes recreate the source. Remove the previous handler so repeated
+  // satellite/dark toggles do not retain old stop collections in memory.
+  if (state.stopLabelZoomHandler) map.off('zoomend', state.stopLabelZoomHandler);
+  state.stopLabelZoomHandler = refreshStopLabels;
   map.on('zoomend', refreshStopLabels);
   // Labels get their own copy of the stops, so a font server outage cannot take the stop dots with it
   // (MapLibre drops a whole tile when one of its symbol layers fails to load glyphs).
@@ -2408,10 +2412,12 @@ async function navReroute(nav) {
   nav.rerouteAt = Date.now();
   nav.offRouteFixes = 0;
   nav.status = 'Calculating a new route from your location…';
+  // Keep the rider's focused Confirm/Help button stable while replanning.
+  // A full render here would unexpectedly reset VoiceOver focus.
+  updateGuideLive();
   const controller = new AbortController();
   nav.controller = controller;
   const timeout = setTimeout(() => controller.abort(), 25000);
-  render();
   try {
     const query = new URLSearchParams({
       fromLat: nav.fix.point[1].toFixed(6), fromLon: nav.fix.point[0].toFixed(6), fromName: 'Your location',

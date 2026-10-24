@@ -123,3 +123,17 @@ test('no legacy GPS auto-advance function remains', () => {
   assert.doesNotMatch(app, /function maybeAdvanceNavigation\(/);
   assert.doesNotMatch(app, /nav\.i = Math\.min\(nav\.i \+ 1/);
 });
+
+
+test('repeated map style changes do not leak stop label zoom listeners', () => {
+  const layers = fn('addTransitLayers');
+  assert.match(layers, /map\.off\('zoomend', state\.stopLabelZoomHandler\)/);
+  assert.match(layers, /state\.stopLabelZoomHandler = refreshStopLabels/);
+});
+
+test('rerouting does not replace focused VoiceOver controls while waiting', () => {
+  const reroute = fn('navReroute');
+  assert.match(reroute, /Calculating a new route from your location/);
+  assert.doesNotMatch(reroute, /\n  render\(\);/);
+  assert.match(reroute, /updateGuideLive\(\)/);
+});
