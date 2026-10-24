@@ -1752,7 +1752,7 @@ function audioTripSummary(it) {
 function transitLineNames(it) {
   return (it.legs || []).filter(l => l.mode === 'TRANSIT' && !l.staySeated).map(l => window.RoveJourneyGuide ? RoveJourneyGuide.vehicle(l).name : legInfo(l).badge);
 }
-const ROUTE_WARNINGS = { LONG_WALK: 'Long walk', LONG_WAIT: 'Long wait at a stop', DEPARTS_LATER: 'Leaves later than you asked', DEPARTS_MUCH_LATER: 'Leaves much later than you asked', DETOUR: 'Indirect route', BACKTRACKS: 'Doubles back' };
+const ROUTE_WARNINGS = { LONG_WALK: 'Long walk', LONG_WAIT: 'Long wait at a stop', DEPARTS_LATER: 'Leaves later than you asked', DEPARTS_MUCH_LATER: 'Leaves much later than you asked', DETOUR: 'Indirect route', BACKTRACKS: 'Doubles back', WALKING_MAY_BE_FASTER: 'Walking may be as quick' };
 const routeWarnings = it => (it.warnings || []).map(w => ROUTE_WARNINGS[w]).filter(Boolean);
 function routeChoiceSpeech(it, n) {
   const liveText = typeof resultLiveText === 'function' ? resultLiveText(it) : '';
@@ -4128,7 +4128,7 @@ let voiceGen = 0, voiceStartedAt = 0;
 /* Spoken planning asks the starting point first, then the destination. A start the rider picked
  * themselves is kept; an automatic "Your location" is still asked about. */
 async function voiceDestination({ demo = false, prompt = null, field = null } = {}) {
-  if (!field) field = demo || (state.plan.from && state.plan.from.kind !== 'location') ? 'to' : 'from';
+  if (!field) field = demo || (state.plan.from && (state.plan.from.kind !== 'location' || state.plan.fromConfirmed)) ? 'to' : 'from';
   // A second tap right after the first (or a double tap) must not start a second conversation.
   if (Date.now() - voiceStartedAt < 1200 && ['starting', 'listening'].includes(state.plan.voice?.state)) return;
   voiceStartedAt = Date.now();
@@ -4143,7 +4143,7 @@ async function voiceDestination({ demo = false, prompt = null, field = null } = 
   voiceSilences = 0; voiceRetried = false;
   state.plan.voice = { state: 'starting', mode: voiceMode() };
   updateVoiceSlot();
-  if (field === 'from') state.plan.from = null;
+  if (field === 'from') { state.plan.from = null; state.plan.fromConfirmed = false; }
   await sayThenWait(prompt || (demo ? 'Say your destination after the tone. In this demo, say Lake Merritt.'
     : field === 'from' ? 'Where are you starting from? Say my location to start where you are, or say a place or station, after the tone.'
     : 'Where would you like to go? Say it after the tone.'));
@@ -4549,11 +4549,12 @@ function afterPick() {
     plan.voice = null;
     // A start the rider chose themselves is kept; an automatic "Your location" is asked about, so
     // the rider always knows where the trip starts.
-    if (plan.from && plan.from.kind !== 'location') { guideSay(`Destination: ${plan.to?.name}. Starting from ${plan.from.name}. Finding routes.`); submitPlan(); return; }
+    if (plan.from && (plan.from.kind !== 'location' || plan.fromConfirmed)) { guideSay(`Destination: ${plan.to?.name}. Starting from ${plan.from.kind === 'location' ? 'your current location' : plan.from.name}. Finding routes.`); submitPlan(); return; }
     plan.from = null;
     voiceDestination({ field: 'from', prompt: `Destination: ${plan.to?.name}. Where are you starting from? Say my location to start where you are, or say a place or station, after the tone.` });
     return;
   }
+  if (picked === 'from' && plan.voiceFlow && plan.voiceField === 'from') plan.fromConfirmed = true; // the rider said this start
   if (picked === 'from' && plan.voiceFlow && plan.voiceField === 'from' && !plan.to) {
     plan.voice = null;
     const where = plan.from?.kind === 'location' ? 'your current location' : plan.from?.name || 'your location';

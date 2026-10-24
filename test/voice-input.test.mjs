@@ -113,7 +113,8 @@ test('Rove opens on one large Start button, then asks the destination out loud',
 
 test('spoken planning asks the starting point first, then the destination; "my location" uses GPS', () => {
   assert.match(app, /Where are you starting from\? Say my location to start where you are, or say a place or station, after the tone\./);
-  assert.match(app, /field = demo \|\| \(state\.plan\.from && state\.plan\.from\.kind !== 'location'\) \? 'to' : 'from'/, 'start first; an automatic GPS start is asked about, not assumed');
+  assert.match(app, /field = demo \|\| \(state\.plan\.from && \(state\.plan\.from\.kind !== 'location' \|\| state\.plan\.fromConfirmed\)\) \? 'to' : 'from'/, 'start first; an automatic GPS start is asked about, not assumed');
+  assert.match(app, /plan\.fromConfirmed = true; \/\/ the rider said this start/, 'a spoken "my location" is not asked about twice');
   assert.match(app, /Starting from \$\{where\}\. Where would you like to go\? Say it after the tone\./);
   assert.match(app, /function voiceStartHere\(\)/);
   assert.match(app, /voiceStartFallback\(err\?\.code === 1/, 'location denied falls back to asking for a place');
