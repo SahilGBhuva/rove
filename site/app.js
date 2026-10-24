@@ -4152,6 +4152,7 @@ async function voiceDestination({ demo = false, prompt = null, field = null } = 
 }
 
 function voiceViaServer({ demo, leadIn = 1300 }) {
+  const turn = voiceTurn;
   const plan = state.plan;
   plan.voice = { state: 'starting', mode: 'server' };
   updateVoiceSlot();
@@ -4162,14 +4163,14 @@ function voiceViaServer({ demo, leadIn = 1300 }) {
     levels.shift(); levels.push(Math.max(0, Math.min(1, level))); // smoothed 0..1 level, exactly 0 when silent
     document.querySelectorAll('.rg-wave i').forEach((bar, k) => bar.style.setProperty('--l', (0.18 + levels[(k + 2) % 5] * 0.82).toFixed(2)));
   }, onState: s => {
-    if (capture !== c) return;
+    if (capture !== c || turn !== voiceTurn) return;
     plan.voice = { state: s === 'listening' ? 'listening' : 'starting', mode: 'server' };
     updateVoiceSlot();
     if (s === 'listening') accessVibrate([40]);
   } });
   capture = c;
   c.done.then(async ({ blob, mediaType, heard }) => {
-    if (capture !== c) return;
+    if (capture !== c || turn !== voiceTurn) return;
     earcon('stop');
     if (!heard || blob.size < 1000) { capture = null; voiceFail('no-speech', demo); return; }
     plan.voice = { state: 'understanding', mode: 'server' };
@@ -4180,7 +4181,7 @@ function voiceViaServer({ demo, leadIn = 1300 }) {
       res = await fetch('/api/v2/transcribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audio, mediaType }), signal: AbortSignal.timeout ? AbortSignal.timeout(25000) : undefined });
       body = await res.json().catch(() => null);
     } catch { res = null; }
-    if (capture !== c) return; // the rider cancelled or started again
+    if (capture !== c || turn !== voiceTurn) return; // the rider cancelled or started again
     capture = null;
     if (res?.ok) { voiceRetried = false; if (body?.text) voiceHeard(body.text, demo); else voiceFail('no-speech', demo); return; }
     const notConfigured = body?.code === 'VOICE_UNAVAILABLE' || res?.status === 404 || res?.status === 405;
@@ -4200,6 +4201,7 @@ function voiceViaServer({ demo, leadIn = 1300 }) {
 }
 
 function voiceViaBrowser({ demo, local = voiceUseLocal }) {
+  const turn = voiceTurn;
   const Recognition = BrowserRecognition();
   const plan = state.plan;
   if (!Recognition) { voiceFail(navigator.onLine ? 'unsupported' : 'offline', demo); return; }
@@ -4209,10 +4211,10 @@ function voiceViaBrowser({ demo, local = voiceUseLocal }) {
   r.lang = 'en-US'; r.interimResults = false; r.maxAlternatives = 1; r.continuous = false;
   if (local && 'processLocally' in r) r.processLocally = true;
   let got = false;
-  r.onresult = e => { const words = e.results?.[0]?.[0]?.transcript?.trim(); if (!words || recognition !== r) return; got = true; recognition = null; voiceHeard(words, demo); };
-  r.onerror = e => { got = true; if (recognition !== r) return; recognition = null; recognitionError(e.error || 'unknown', { demo, local }); };
-  r.onend = () => { if (recognition === r) recognition = null; if (!got && ['listening', 'starting'].includes(plan.voice?.state)) voiceFail('no-speech', demo); };
-  r.onstart = () => { if (recognition !== r) return; plan.voice = { state: 'listening', mode: 'browser' }; updateVoiceSlot(); accessVibrate([40]); };
+  r.onresult = e => { const words = e.results?.[0]?.[0]?.transcript?.trim(); if (!words || recognition !== r || turn !== voiceTurn) return; got = true; recognition = null; voiceHeard(words, demo); };
+  r.onerror = e => { got = true; if (recognition !== r || turn !== voiceTurn) return; recognition = null; recognitionError(e.error || 'unknown', { demo, local }); };
+  r.onend = () => { if (turn !== voiceTurn) return; if (recognition === r) recognition = null; if (!got && ['listening', 'starting'].includes(plan.voice?.state)) voiceFail('no-speech', demo); };
+  r.onstart = () => { if (recognition !== r || turn !== voiceTurn) return; plan.voice = { state: 'listening', mode: 'browser' }; updateVoiceSlot(); accessVibrate([40]); };
   plan.voice = { state: 'starting', mode: 'browser' };
   updateVoiceSlot();
   try { r.start(); } catch { voiceFail('voice-service', demo); }
