@@ -24,6 +24,8 @@ data/places/
 data/logs/
 
 # Logs and local tooling
+.claude/
+.playwright-cli/
 *.log
 npm-debug.log*
 .DS_Store

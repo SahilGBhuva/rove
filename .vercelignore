@@ -1,4 +1,9 @@
 /data/
 /node_modules/
 /.git/
+/.claude/
+/.playwright-cli/
+/tmp/
+*.log
+.DS_Store
 .env*
