@@ -2136,11 +2136,19 @@ function viewResults() {
   const fastestIndex = sortedItineraryIndexes('fastest')[0];
   const sortButton = (key, label) => `<button type="button" class="seg-option" data-action="it-sort" data-sort="${key}" aria-pressed="${(plan.sort || 'fastest') === key}">${label}</button>`;
   const firstMile = { CAR_PARKING: 'Drive to transit', CAR_DROP_OFF: 'Drop-off at transit' }[plan.results?.request?.access] || 'Walk to transit';
+  const accessible = document.body.classList.contains('rove-accessible');
+  // Motion only where it explains a change: cards enter once per result set, and a timeline
+  // reveals only when it is newly opened, not on every re-render (sorting, focusing a leg).
+  const seen = viewResults.seen || (viewResults.seen = new WeakSet());
+  const entering = Boolean(plan.results) && !seen.has(plan.results);
+  if (plan.results) seen.add(plan.results);
+  const revealing = entering || viewResults.lastResults !== plan.results || viewResults.lastOpen !== plan.expanded;
+  viewResults.lastResults = plan.results; viewResults.lastOpen = plan.expanded;
   return `${backHeader()}
     <h1 class="visually-hidden">Routes from ${esc(plan.from?.name)} to ${esc(plan.to?.name)}</h1>
-    <div class="trip-card">
-      <div class="trip-ends"><p><span class="marker"><i></i></span><span>${esc(plan.from?.name)}</span></p><p><span class="marker to"><i></i></span><span>${esc(plan.to?.name)}</span></p></div>
-      <button type="button" class="text-button" data-action="back">Edit</button>
+    <div class="trip-card rg-trip">
+      <div class="trip-ends"><p><span class="marker rg-trip-from"><i></i></span><span>${esc(plan.from?.name)}</span></p><p><span class="marker to rg-trip-to">${rgIcon('pin')}</span><span>${esc(plan.to?.name)}</span></p></div>
+      <button type="button" class="text-button rg-trip-edit" data-action="back">Edit</button>
     </div>
     ${plan.results?.demo ? '<p class="rg-note rg-results-demo"><strong>Demo.</strong> Times are copied from published Muni and BART timetables and shifted to start now. Nothing is live.</p>' : ''}
     <div class="rg-results-head"><h2 class="rg-label">${plural(Math.min(order.length, plan.showAll ? order.length : 3), 'route')}</h2><button type="button" class="rg-read" data-action="access-all-routes">${MIC_ICON}<span>Read route choices aloud</span></button></div>
@@ -2148,18 +2156,23 @@ function viewResults() {
     ${plan.results?.notes?.length ? `<ul class="route-notes">${plan.results.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${areaNoteHtml()}
     ${its.length > 1 ? `<div class="segmented sort-switch" role="group" aria-label="Sort routes">${sortButton('fastest', 'Fastest')}${sortButton('transfers', 'Fewer transfers')}${sortButton('walking', 'Less walking')}</div>` : ''}
-    <ul class="itineraries">${order.slice(0, plan.showAll ? order.length : 3).map((i, n) => {
+    <ul class="itineraries rg-routes${entering ? ' is-entering' : ''}">${order.slice(0, plan.showAll ? order.length : 3).map((i, n) => {
       const it = its[i];
       const open = plan.expanded === i;
-      return `<li style="--i:${n}"><button class="itinerary rg-route" data-action="it-toggle" data-index="${i}" aria-expanded="${open}" aria-label="${esc(routeChoiceSpeech(it, n + 1))}">
-        <span class="rg-route-top"><span class="rg-route-dur">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}</span>${its.length > 1 && i === fastestIndex ? '<span class="rg-route-tag">Fastest</span>' : ''}<span class="rg-route-times">${esc(clock(new Date(it.startTime)))} – ${esc(clock(new Date(it.endTime)))}</span></span>
+      const warnings = routeWarnings(it);
+      // Focus order stays: route card, Listen, Start. Listen and Start share one action row.
+      const listen = accessible ? `<button class="button secondary audio-route rg-route-listen" data-action="access-route" data-index="${i}" aria-label="Listen to route ${n + 1} stop by stop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9.5v5h3.2l4.3 3.8V5.7L7.7 9.5Z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/></svg><span>Listen to <span class="nw">route ${n + 1}</span></span></button>` : '';
+      const start = open ? `<button class="button primary rg-route-start" data-action="nav-start" data-index="${i}"><span>Start route ${n + 1}</span>${rgIcon('arrow')}</button>` : '';
+      return `<li class="rg-route-item${open ? ' is-open' : ''}" style="--i:${n}"><button class="itinerary rg-route" data-action="it-toggle" data-index="${i}" aria-expanded="${open}" aria-label="${esc(routeChoiceSpeech(it, n + 1))}">
+        <span class="rg-route-top"><span class="rg-route-dur">${esc(durationLabel(it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000))}</span>${its.length > 1 && i === fastestIndex ? '<span class="rg-route-tag">Fastest</span>' : ''}<span class="rg-route-times">${esc(clock(new Date(it.startTime)))}<i aria-hidden="true">–</i>${esc(clock(new Date(it.endTime)))}</span><svg class="rg-route-chev" viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 7.75 4.5 4.5 4.5-4.5"/></svg></span>
         ${routeStripHtml(it)}
-        ${routeMetaHtml(it)}${routeWarnings(it).length ? `<div class="rg-warn-tags">${routeWarnings(it).map(w => `<span>${esc(w)}</span>`).join('')}</div>` : ''}</button>${document.body.classList.contains('rove-accessible') ? `<button class="button secondary audio-route" data-action="access-route" data-index="${i}" aria-label="Listen to route ${n + 1} stop by stop">Listen to route ${n + 1}</button>` : ''}
-        ${carbonComparison(it)}
-        ${open ? `<div class="action-bar it-actions"><button class="button primary" data-action="nav-start" data-index="${i}">Start route ${n + 1}</button></div>${itineraryTimeline(it)}` : ''}</li>`;
+        ${routeMetaHtml(it)}${warnings.length ? `<span class="rg-warn-tags">${warnings.map(w => `<span>${rgIcon('info')}${esc(w)}</span>`).join('')}</span>` : ''}</button>${listen || start ? `
+        <div class="rg-route-actions${start ? ' has-start' : ''}${start && revealing ? ' is-revealing' : ''}">${listen}${start}</div>` : ''}
+        ${open ? `<div class="rg-route-detail${revealing ? ' is-revealing' : ''}">${itineraryTimeline(it)}</div>` : ''}
+        ${carbonComparison(it)}</li>`;
     }).join('')}</ul>
     ${!plan.showAll && order.length > 3 ? `<button type="button" class="rg-text-button rg-more" data-action="it-more">Show ${plural(order.length - 3, 'more route')}</button>` : ''}
-    <p class="note">${plan.results?.scheduledOnly ? 'These routes use published schedules. Check live departures at your stop before you leave.' : 'Live times are shown where agencies provide them. Other times are scheduled.'}</p>`;
+    <p class="note rg-results-foot">${plan.results?.scheduledOnly ? 'These routes use published schedules. Check live departures at your stop before you leave.' : 'Live times are shown where agencies provide them. Other times are scheduled.'}</p>`;
 }
 
 /* True when the leg's line on the map is a straight join of its end stops, not the real route. */
@@ -2172,42 +2185,49 @@ function itineraryTimeline(it) {
   const legs = it.legs || [];
   const focus = state.journey === it ? state.focusLeg : null;
   const legLink = (i, text) => `<button type="button" class="leg-link" data-action="leg-focus" data-leg="${i}" aria-pressed="${focus === i}">${esc(text)}</button>`;
+  // Compact itinerary: time | rail with one marker per row | details. The rail segment below a
+  // marker shows how you travel to the next row: dotted for walking, solid line colour for a ride.
+  const time = d => esc(clock(d)).replace(/\s?([AP]M)$/i, '<small>$1</small>');
+  const row = ({ kind, seg, leg = null, at = '', node = '', color = '', body }) => {
+    const focused = leg != null && focus === leg ? ' leg-focused' : '';
+    const style = `--r:${items.length}${color ? `;--c:${esc(color)}` : ''}`;
+    items.push(`<li class="rg-tl-row is-${kind} seg-${seg}${items.length === 0 ? ' is-first' : ''}${focused}"${leg != null ? ` data-leg="${leg}"` : ''} style="${style}"><span class="rg-tl-t">${at}</span><span class="rg-tl-rail" aria-hidden="true"><span class="rg-tl-node">${node}</span></span><span class="rg-tl-body">${body}</span></li>`);
+  };
+  const badge = (leg, li) => `<span class="rg-tl-badge" style="background:${esc(li.color)};color:${esc(readableText(li.color, li.text))}">${modeIcon(leg)}<b>${esc(li.badge)}</b></span>`;
   legs.forEach((leg, i) => {
-    const focused = focus === i ? ' leg-focused' : '';
     if (leg.mode === 'CAR') {
-      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail drive"><span class="glyph">${MODE_ICONS.car}</span></span><span class="body">${legLink(i, `Drive${Number.isFinite(leg.distanceMeters) ? ` ${distanceLabel(leg.distanceMeters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))} to ${esc(parkingLabel(leg, legs))}</span>${leg.to?.parking ? `<span class="row-meta">${leg.to.parkingCapacity ? `${esc(leg.to.parkingCapacity.toLocaleString('en-US'))} spaces mapped. ` : ''}Space availability is not known.</span>` : ''}${stepsListHtml(leg, 'Driving directions')}</span></li>`);
+      row({ kind: 'drive', seg: 'drive', leg: i, at: time(legStart(leg)), node: MODE_ICONS.car, body: `${legLink(i, `Drive${Number.isFinite(leg.distanceMeters) ? ` ${distanceLabel(leg.distanceMeters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))} to ${esc(parkingLabel(leg, legs))}</span>${leg.to?.parking ? `<span class="row-meta">${leg.to.parkingCapacity ? `${esc(leg.to.parkingCapacity.toLocaleString('en-US'))} spaces mapped. ` : ''}Space availability is not known.</span>` : ''}${stepsListHtml(leg, 'Driving directions')}` });
       return;
     }
     if (leg.mode === 'WALK') {
       const meters = Number.isFinite(leg.distanceMeters) ? leg.distanceMeters : null;
       const isLast = i === legs.length - 1;
-      items.push(`<li class="${focused}" data-leg="${i}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail walk"><span class="glyph">${MODE_ICONS.walk}</span></span><span class="body">${legLink(i, `Walk${meters ? ` ${distanceLabel(meters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? ` to ${esc(state.plan.to?.name || 'your destination')}` : ` to ${esc(leg.to?.name || 'the stop')}`}</span>${stepsListHtml(leg, 'Walking directions')}</span></li>`);
+      row({ kind: 'walk', seg: 'walk', leg: i, at: time(legStart(leg)), node: rgIcon('walk'), body: `${legLink(i, `Walk${meters ? ` ${distanceLabel(meters)}` : ''}`)}<span class="row-meta">About ${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}${isLast ? ` to ${esc(state.plan.to?.name || 'your destination')}` : ` to ${esc(leg.to?.name || 'the stop')}`}</span>${stepsListHtml(leg, 'Walking directions')}` });
       return;
     }
     const li = legInfo(leg);
     const stopsCount = leg.intermediateStops ? leg.intermediateStops.length + 1 : null;
-    const timing = leg.canceled ? '<span class="status-canceled">Canceled</span>' : leg.realtime ? `<span class="${delayStatus(leg.delaySeconds).cls}">${ICONS.live}${esc(delayStatus(leg.delaySeconds).text)}</span>` : 'Scheduled';
-    const shapeNote = legShapeMissing(leg) ? '<span class="row-meta shape-note">Route shape not available. The map joins the boarding and exit stops with a dashed line.</span>' : '';
+    const timing = leg.canceled ? '<span class="status-canceled">Canceled</span>' : leg.realtime ? `<span class="${delayStatus(leg.delaySeconds).cls}">${ICONS.live}${esc(delayStatus(leg.delaySeconds).text)}</span>` : '<span class="rg-tl-sched">Scheduled</span>';
+    const shapeNote = legShapeMissing(leg) ? `<span class="row-meta shape-note">${rgIcon('info')}<span>Route shape not available. The map joins the boarding and exit stops with a dashed line.</span></span>` : '';
     if (!leg.staySeated) {
-      items.push(`<li class="${focused}" data-leg="${i}" style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legStart(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body">
-        ${legLink(i, leg.from?.name || 'Board')}
-        <span class="row-meta leg-line">${modeIcon(leg)}<span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? `<span>To ${esc(displayName(leg.headsign))}</span>` : ''}</span>
-        <span class="row-meta">${leg.from?.platform ? `Platform ${esc(leg.from.platform)} · ` : ''}${stopsCount ? `${plural(stopsCount, 'stop')} · ` : ''}${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))} · ${timing}</span>
-        ${shapeNote}${legAlertsHtml(leg)}</span></li>`);
+      row({ kind: 'board', seg: 'ride', leg: i, at: time(legStart(leg)), color: li.color, body: `${legLink(i, leg.from?.name || 'Board')}
+        <span class="row-meta leg-line">${badge(leg, li)}${leg.headsign ? `<span class="rg-tl-dir">To ${esc(displayName(leg.headsign))}</span>` : ''}</span>
+        <span class="row-meta rg-tl-facts">${leg.from?.platform ? `<span>Platform ${esc(leg.from.platform)}</span>` : ''}${stopsCount ? `<span>${plural(stopsCount, 'stop')}</span>` : ''}<span>${esc(durationLabel((legEnd(leg) - legStart(leg)) / 1000))}</span><span>${timing}</span></span>
+        ${shapeNote}${legAlertsHtml(leg)}` });
     } else {
-      items.push(`<li class="${focused}" data-leg="${i}" style="--leg-color:${esc(li.color)}"><span class="t"></span><span class="rail"></span><span class="body"><span class="row-meta leg-line">Stay on board. It continues as <span class="badge" style="background:${esc(li.color)};color:${esc(li.text)}">${esc(li.badge)}</span>${leg.headsign ? ` to ${esc(displayName(leg.headsign))}` : ''}</span>${shapeNote}</span></li>`);
+      row({ kind: 'seated', seg: 'ride', leg: i, color: li.color, body: `<span class="row-meta leg-line">Stay on board. It continues as ${badge(leg, li)}${leg.headsign ? ` to ${esc(displayName(leg.headsign))}` : ''}</span>${shapeNote}` });
     }
     const next = legs[i + 1];
     if (isTransit(next) && next.staySeated) return;
     if (!isTransit(next)) {
-      items.push(`<li style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legEnd(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body"><strong>${esc(leg.to?.name || 'Get off')}</strong><span class="row-meta">Get off</span></span></li>`);
+      row({ kind: 'alight', seg: 'walk', at: time(legEnd(leg)), color: li.color, body: `<strong>${esc(leg.to?.name || 'Get off')}</strong><span class="row-meta">${rgIcon('exit')}Get off</span>` });
     } else {
       const wait = Math.round((legStart(next) - legEnd(leg)) / 60000);
-      items.push(`<li style="--leg-color:${esc(li.color)}"><span class="t">${esc(clock(legEnd(leg)))}</span><span class="rail"><span class="node"></span></span><span class="body"><strong>${esc(leg.to?.name || 'Transfer')}</strong><span class="row-meta ${wait < 3 ? 'status-late' : ''}">Change here · ${wait <= 0 ? 'Tight connection' : `${plural(wait, 'minute')} to connect${wait < 3 ? ', tight' : ''}`}</span></span></li>`);
+      row({ kind: 'transfer', seg: 'walk', at: time(legEnd(leg)), color: li.color, node: rgIcon('transfer'), body: `<strong>${esc(leg.to?.name || 'Transfer')}</strong><span class="row-meta ${wait < 3 ? 'status-late' : ''}">${rgIcon('transfer')}Change here · ${wait <= 0 ? 'Tight connection' : `${plural(wait, 'minute')} to connect${wait < 3 ? ', tight' : ''}`}</span>` });
     }
   });
-  items.push(`<li><span class="t">${esc(clock(new Date(it.endTime)))}</span><span class="rail end" style="--leg-color:var(--ink)"><span class="node"></span></span><span class="body"><strong>Arrive at ${esc(state.plan.to?.name || 'your destination')}</strong></span></li>`);
-  return `<ol class="timeline">${items.join('')}</ol>`;
+  row({ kind: 'arrive', seg: 'none', at: time(new Date(it.endTime)), node: rgIcon('pin'), body: `<strong>Arrive at ${esc(state.plan.to?.name || 'your destination')}</strong>` });
+  return `<ol class="timeline rg-tl">${items.join('')}</ol>`;
 }
 
 /* Highlights one leg on the map and in the list, and frames it. */
@@ -2556,7 +2576,13 @@ function routeMetaHtml(it) {
   const live = (it.legs || []).some(l => l.mode === 'TRANSIT' && l.realtime);
   const walk = Number.isFinite(it.walkMeters) && it.walkMeters >= 30 ? RoveJourneyGuide.distanceWords(it.walkMeters).replace(' feet', ' ft').replace(' miles', ' mi').replace(' mile', ' mi') + ' walk' : null;
   const chips = [rides > 1 ? plural(rides - 1, 'transfer') : 'No transfers', walk, live ? 'Live times' : 'Scheduled'].filter(Boolean);
-  return `<span class="rg-route-from">${first ? `Leave ${esc(clock(legStart(first)))} from ${esc(first.from?.name || 'the stop')}` : 'Walking route'}</span><span class="rg-route-chips">${chips.map(c => `<span class="${c === 'Live times' ? 'is-live' : c === 'Scheduled' ? 'is-sched' : ''}">${esc(c)}</span>`).join('')}</span>`;
+  const chipHtml = c => {
+    if (c === 'Live times') return `<span class="is-live"><i class="rg-live-dot"></i>${esc(c)}</span>`;
+    if (c === 'Scheduled') return `<span class="is-sched">${rgIcon('clock')}${esc(c)}</span>`;
+    if (c === walk) return `<span class="is-walk">${rgIcon('walk')}${esc(c)}</span>`;
+    return `<span class="is-xfer">${rgIcon('transfer')}${esc(c)}</span>`;
+  };
+  return `<span class="rg-route-from">${first ? `<span class="rg-route-dep" aria-hidden="true"></span><span>Leave <b>${esc(clock(legStart(first)))}</b> from ${esc(first.from?.name || 'the stop')}</span>` : `${rgIcon('walk')}<span>Walking route</span>`}</span><span class="rg-route-chips">${chips.map(chipHtml).join('')}</span>`;
 }
 function routeStripHtml(it) {
   const legs = it.legs || [];
@@ -2565,14 +2591,15 @@ function routeStripHtml(it) {
     if (leg.mode === 'TRANSIT') {
       if (leg.staySeated) return;
       const li = legInfo(leg);
-      items.push(`<span class="rg-strip-line" style="background:${esc(li.color)};color:${esc(li.text)}">${modeIcon(leg)}<b>${esc(li.badge)}</b></span>`);
+      items.push(`<span class="rg-strip-line" style="background:${esc(li.color)};color:${esc(readableText(li.color, li.text))}">${modeIcon(leg)}<b>${esc(li.badge)}</b></span>`);
     } else {
       const min = legMinutes(leg);
       if (min < 2 && at > 0 && at < legs.length - 1) return;
-      items.push(`<span class="rg-strip-walk">${rgIcon('walk')}<b>${min}</b></span>`);
+      items.push(`<span class="rg-strip-walk">${leg.mode === 'CAR' ? MODE_ICONS.car : rgIcon('walk')}<b>${min}</b><small>min</small></span>`);
     }
   });
-  return `<span class="rg-strip" aria-hidden="true">${items.join('<i class="rg-strip-rail"></i>')}</span>`;
+  // Each separator travels with the item after it, so a wrapped strip never ends on a chevron.
+  return `<span class="rg-strip" aria-hidden="true">${items.map((item, n) => n ? `<span class="rg-strip-seg"><i class="rg-strip-rail"></i>${item}</span>` : item).join('')}</span>`;
 }
 
 /* Honest arrival summary: only what Rove actually recorded during this trip. */
