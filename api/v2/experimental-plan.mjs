@@ -311,11 +311,29 @@ export async function planWithWalking(query,now=new Date(),loader=loadDay,fetche
   }
   return result;
 }
+// Share in-flight identical requests and briefly reuse completed schedule-only results.
+// Only explicit departure times are cached: implicit "now" must never go stale.
+const routeResponseCache = new Map();
+const ROUTE_CACHE_TTL_MS = 20_000;
+const ROUTE_CACHE_MAX = 48;
+export async function cachedPlan(params, planner=planWithWalking) {
+  if (!params.has('time')) return planner(params);
+  const key = [...params.entries()].sort(([a,av],[b,bv])=>a.localeCompare(b)||av.localeCompare(bv)).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&');
+  const current = Date.now();
+  const existing = routeResponseCache.get(key);
+  if (existing && existing.expires > current) return existing.promise;
+  if (existing) routeResponseCache.delete(key);
+  const promise = planner(params);
+  routeResponseCache.set(key,{promise,expires:current+ROUTE_CACHE_TTL_MS});
+  while (routeResponseCache.size > ROUTE_CACHE_MAX) routeResponseCache.delete(routeResponseCache.keys().next().value);
+  try { const result=await promise; if (result.status!==200 && routeResponseCache.get(key)?.promise===promise) routeResponseCache.delete(key); return result; }
+  catch (error) { if (routeResponseCache.get(key)?.promise===promise) routeResponseCache.delete(key); throw error; }
+}
 export default async function handler(req,res) {
   res.setHeader('Cache-Control','public, s-maxage=20, stale-while-revalidate=20');
   if(req.method!=='GET')return res.status(405).json({error:'Method not allowed'});
   try {
-    const result=await planWithWalking(new URL(req.url,'https://rove.invalid').searchParams);
+    const result=await cachedPlan(new URL(req.url,'https://rove.invalid').searchParams);
     return res.status(result.status).json(result.body);
   } catch (error) {
     console.error('Preview trip planning failed:', error);
