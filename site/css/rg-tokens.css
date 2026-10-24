@@ -1,5 +1,17 @@
 /* Rove design: tokens, icons and motion system. Owned by the tokens/motion workstream.
- * Colour tokens (--rg-*) live at the end of styles.css; these are the shared motion and icon tokens. */
+ * Colour tokens (--rg-*) live at the end of styles.css; these are the shared motion, type and icon tokens.
+ *
+ * Motion language (use these in every rg-*.css file):
+ *   --m-press   120ms  finger-down feedback (scale / opacity)
+ *   --m-small   200ms  small UI changes, press release, colour changes
+ *   --m-card    280ms  screens, cards and panels entering
+ *   --m-journey 400ms  journey-state changes (step to step)
+ *   --e-out  decelerate: things arriving or settling (default)
+ *   --e-std  standard: things changing in place (colour, size)
+ * Rules: animate transform and opacity only; never delay focus or input; everything decorative
+ * stops under prefers-reduced-motion (the duration tokens become 0ms there, so colour/opacity
+ * state changes still happen, instantly). Shared keyframes: rg-enter-forward, rg-enter-back,
+ * rg-rise, rg-fade, rg-pop. */
 :root {
   --m-press: 120ms;    /* button feedback */
   --m-small: 200ms;    /* small UI transitions */
@@ -7,8 +19,92 @@
   --m-journey: 400ms;  /* journey-state transitions */
   --e-out: cubic-bezier(.22, 1, .36, 1);
   --e-std: cubic-bezier(.4, 0, .2, 1);
+  --m-stagger: 28ms;       /* gap between siblings entering together */
+  --m-shift: 16px;         /* horizontal travel of a screen push */
+  --m-rise: 8px;           /* vertical travel of a settle */
+  --press-scale: .97;      /* compact buttons */
+  --press-scale-wide: .985; /* full-width rows and cards: the same perceived depth */
+  --press-fade: .82;       /* reduced-motion press feedback (opacity, no movement) */
 }
-.rg-icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---- Icons: 24px grid, 1.75 stroke, round caps and joins ---- */
+.rg-icon {
+  width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round; flex: none; overflow: visible; shape-rendering: geometricPrecision;
+}
+
+/* ---- Typography refinements, kept at zero specificity so screen stylesheets can override ---- */
+body {
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility; font-kerning: normal;
+}
+:where(.panel-body) :where(h1, h2, h3, .rg-title, .rg-home-title) { text-wrap: balance; }
+:where(.panel-body) :where(p, li, dd, .rg-lede, .rg-body) { text-wrap: pretty; }
+/* Optical tracking: large display text tightens slightly, small caps-style labels open up. */
+:where(.panel-body) :where(h1, .rg-title, .rg-home-title) { letter-spacing: -.025em; font-feature-settings: "kern" 1, "calt" 1; }
+:where(.panel-body) :where(h2) { letter-spacing: -.012em; }
+/* Times, durations and counters never jitter as they tick. */
+:where(.panel-body, .speech-bar) :where(time, .rg-step, .rg-route-times, .rg-route-dur, .rg-badge, .rg-strip, .rg-next, .rg-certainty, .rg-coverage strong, .it-time, .it-meta, .results-when) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Screen transitions: directional push keyed on body[data-nav-dir] ----
+ * Out-ranks the generic `.panel-body.view-enter > *` (!important) rules in styles.css by specificity. */
+@keyframes rg-enter-forward { from { opacity: 0; transform: translate3d(var(--m-shift), 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes rg-enter-back    { from { opacity: 0; transform: translate3d(calc(-1 * var(--m-shift)), 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes rg-rise { from { opacity: 0; transform: translate3d(0, var(--m-rise), 0); } to { opacity: 1; transform: none; } }
+@keyframes rg-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rg-pop  { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* No direction known (first paint, deep link): a short neutral settle. */
+  body .panel-body.view-enter > * {
+    animation: rg-rise var(--m-card) var(--e-out) both !important;
+    animation-delay: 0ms !important; filter: none !important;
+  }
+  body[data-nav-dir="forward"] .panel-body.view-enter > * { animation-name: rg-enter-forward !important; }
+  body[data-nav-dir="back"] .panel-body.view-enter > * { animation-name: rg-enter-back !important; }
+  /* A small cascade so the screen reads as one sheet arriving, capped so content is never late. */
+  body[data-nav-dir] .panel-body.view-enter > :nth-child(2) { animation-delay: var(--m-stagger) !important; }
+  body[data-nav-dir] .panel-body.view-enter > :nth-child(n+3) { animation-delay: calc(2 * var(--m-stagger)) !important; }
+  /* The 16px travel must never produce a horizontal scrollbar. */
+  body[data-nav-dir] .panel-body.view-enter { overflow-x: hidden; }
+}
+
+/* ---- Press feedback: one behaviour for every tappable surface ---- */
+:is(.rg-primary, .rg-confirm, .rg-secondary, .rg-quiet, .rg-field, .rg-row-button, .rg-link, .rg-chip,
+    .rg-mic, .rg-read, .rg-text-button, .rg-end, .rg-demo-skip, .itinerary) {
+  transition-property: transform, opacity, background-color, border-color, color, box-shadow;
+  transition-duration: var(--m-small);
+  transition-timing-function: var(--e-out);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+:is(.rg-primary, .rg-confirm, .rg-secondary, .rg-quiet, .rg-chip, .rg-mic, .rg-read, .rg-demo-skip):active:not(:disabled, [aria-disabled="true"]) {
+  transform: scale(var(--press-scale)); transition-duration: var(--m-press);
+}
+:is(.rg-field, .rg-row-button, .rg-link, .itinerary):active:not(:disabled, [aria-disabled="true"]) {
+  transform: scale(var(--press-scale-wide)); transition-duration: var(--m-press);
+}
+/* Text-only buttons dim instead of shrinking (scaling a bare word looks like a glitch). */
+:is(.rg-text-button, .rg-end):active:not(:disabled, [aria-disabled="true"]) {
+  opacity: .6; transition-duration: var(--m-press);
+}
+/* Disabled: visibly inert, no press motion. Focus ring (3px, styles.css) is untouched. */
+:is(.rg-primary, .rg-confirm, .rg-secondary, .rg-quiet, .rg-field, .rg-row-button, .rg-link, .rg-chip,
+    .rg-mic, .rg-read, .rg-text-button, .rg-end, .rg-demo-skip, .itinerary):is(:disabled, [aria-disabled="true"]) {
+  opacity: .48; cursor: not-allowed; transform: none;
+}
+
+/* ---- Reduced motion: no movement, instant state changes, nothing left hidden ---- */
 @media (prefers-reduced-motion: reduce) {
-  :root { --m-press: 0ms; --m-small: 0ms; --m-card: 0ms; --m-journey: 0ms; }
+  :root { --m-press: 0ms; --m-small: 0ms; --m-card: 0ms; --m-journey: 0ms; --m-stagger: 0ms; --m-shift: 0px; --m-rise: 0px; }
+  body .panel-body.view-enter > *,
+  body[data-nav-dir] .panel-body.view-enter > * { animation: none !important; opacity: 1 !important; transform: none !important; }
+  html, .panel-body { scroll-behavior: auto !important; }
+  /* Press still answers the finger, by opacity instead of movement. */
+  :is(.rg-primary, .rg-confirm, .rg-secondary, .rg-quiet, .rg-field, .rg-row-button, .rg-link, .rg-chip,
+      .rg-mic, .rg-read, .rg-demo-skip, .itinerary):active:not(:disabled, [aria-disabled="true"]) {
+    transform: none; opacity: var(--press-fade);
+  }
 }
