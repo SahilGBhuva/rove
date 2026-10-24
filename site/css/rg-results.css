@@ -37,7 +37,8 @@
   background: radial-gradient(circle, var(--rg-ink-2) 1.2px, transparent 1.6px) center top / 3px 6px repeat-y; opacity: .55;
 }
 .rg-trip .trip-ends p { min-height: 3rem; font-size: 1.0625rem; font-weight: 650; color: var(--rg-ink); position: relative; min-width: 0; }
-.rg-trip .trip-ends p > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+/* Names wrap instead of truncating: at large text "Lake…" would hide the destination. */
+.rg-trip .trip-ends p > span:last-child { min-width: 0; overflow: visible; white-space: normal; text-overflow: clip; overflow-wrap: anywhere; padding-block: 6px; }
 .rg-trip .trip-ends p + p { border-top: 0; }
 .rg-trip .trip-ends p + p::before { content: ""; position: absolute; top: 0; left: 2.75rem; right: 0; height: 1px; background: var(--rg-line); }
 .rg-trip .marker { width: 2.75rem; }
@@ -316,6 +317,19 @@
   .rg-tl > li.rg-tl-row { grid-template-columns: 3.25rem var(--rg-node) minmax(0, 1fr); column-gap: 8px; }
   .rg-tl-t small { display: block; margin: 0; line-height: 1; }
 }
+/* Very narrow (200% text on a phone): the time moves above the row's details so nothing is squeezed. */
+@container rg-route (max-width: 16rem) {
+  .rg-tl > li.rg-tl-row { grid-template-columns: var(--rg-node) minmax(0, 1fr); column-gap: 10px; }
+  .rg-tl-rail { grid-column: 1; grid-row: 1 / span 2; }
+  .rg-tl-t { grid-column: 2; grid-row: 1; text-align: left; line-height: 1.3; }
+  .rg-tl-t:empty { display: none; }
+  .rg-tl-t small { display: inline; margin-left: 2px; }
+  .rg-tl-body { grid-column: 2; grid-row: 2; }
+  .rg-tl .leg-link { margin: 0; min-height: 3rem; }
+  .rg-tl-row.leg-focused::before { left: calc(var(--rg-node) + 4px); }
+}
+.rove-accessible .sort-switch { display: flex; flex-wrap: wrap; }
+.rove-accessible .sort-switch .seg-option { flex: 1 1 auto; min-width: 0; white-space: normal; }
 
 /* Carbon note and footer. */
 .rg-route-item .carbon-estimate {
