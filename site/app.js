@@ -4273,12 +4273,15 @@ async function ensureMicAccess() {
   try { if (sessionStorage.getItem(MIC_OK_KEY)) return 'ok'; } catch { /* storage unavailable */ }
   await sayThenWait('First, your phone will ask to use the microphone. Tap Allow. On an iPhone, Allow is the button on the right.');
   try {
+    RoveSpeech.audioSession?.('play-and-record');
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach(t => t.stop());
+    RoveSpeech.audioSession?.('playback');
     try { sessionStorage.setItem(MIC_OK_KEY, '1'); } catch { /* storage unavailable */ }
     earcon('ok');
     return 'ok';
   } catch (error) {
+    RoveSpeech.audioSession?.('playback');
     return error?.name === 'NotFoundError' || error?.name === 'OverconstrainedError' ? 'missing' : 'denied';
   }
 }

@@ -96,8 +96,7 @@
             const audio = await get(i);
             if (my !== generation) return;
             if (i + 1 < parts.length) get(i + 1);
-            if (i === 0) set({ state: 'speaking', text: message });
-            await natural.play(audio);
+            await natural.play(audio, () => { if (my === generation && status.state !== 'speaking') set({ state: 'speaking', text: message }); });
             if (my !== generation) return;
           }
           set({ state: 'done', text: message });
@@ -119,6 +118,7 @@
       // Do NOT refuse when document.hidden: macOS Chrome and Dia report a visible but partly covered
       // window as hidden, and they speak normally there. Refusing here silenced Read route choices aloud.
       // Just cancelled (this tick) counts as busy: WebKit drops speak() straight after cancel().
+      audioSession('playback');
       const justCancelled = now() - lastCancel < 50;
       const busy = Boolean(synth.speaking || synth.pending);
       const my = ++generation;
@@ -227,6 +227,13 @@
     return { action: 'fail', code: onLine ? 'voice-service' : 'offline' };
   }
 
+  /* iPhone Safari (16.4+): after the microphone has been used, page audio can be sent to the earpiece
+   * at a whisper. 'playback' routes Rove's voice to the loudspeaker (and plays with the Silent switch
+   * on); 'play-and-record' is set only while the microphone is open. No-op elsewhere. */
+  function audioSession(type) {
+    try { const s = typeof navigator !== 'undefined' && navigator.audioSession; if (s && s.type !== type) s.type = type; } catch { /* unsupported */ }
+  }
+
   /* Rove's natural (human-sounding) voice: short parts synthesized on the server (/api/v2/tts) and
    * played through one audio element, which the first tap unlocks on iPhone. Turns itself off for the
    * visit if the server says it is not available, so the device voice takes over without delay. */
@@ -242,7 +249,8 @@
       // Fetch Rove's fixed opening lines now, so the first question plays straight after the tap.
       if (ok) (root.RovePreloadSpeech || []).forEach(t => { chunk(t, 190).forEach(part => voice.audio(part).catch(() => {})); });
     }).catch(() => { ok = false; });
-    const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+    // A real 0.2 s silent clip: an empty one can fail to play on iPhone, leaving the player locked.
+    const SILENT = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUAGAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
     return Object.assign(voice, {
       available: () => ok === true,
       audio(text) {
@@ -256,12 +264,14 @@
             return blob;
           });
       },
-      play(blob) {
+      play(blob, onStart) {
+        audioSession('playback');
         return new Promise((resolve, reject) => {
           const url = URL.createObjectURL(blob);
           let timer = null;
-          const clean = () => { clearTimeout(timer); el.onended = el.onerror = null; rejectPlay = null; setTimeout(() => URL.revokeObjectURL(url), 1000); };
+          const clean = () => { clearTimeout(timer); el.onended = el.onerror = el.onplaying = null; rejectPlay = null; setTimeout(() => URL.revokeObjectURL(url), 1000); };
           rejectPlay = () => { clean(); reject(Object.assign(new Error('stopped'), { name: 'AbortError' })); };
+          el.onplaying = () => { el.onplaying = null; onStart?.(); };
           el.onended = () => { clean(); resolve(); };
           el.onerror = () => { clean(); reject(new Error('audio-error')); };
           el.src = url;
@@ -271,11 +281,11 @@
         });
       },
       stop() { try { el.pause(); } catch { /* not playing */ } rejectPlay?.(); },
-      unlock() { try { el.src = SILENT; el.play()?.catch?.(() => {}); } catch { /* unsupported */ } }
+      unlock() { try { audioSession('playback'); el.src = SILENT; el.play()?.catch?.(() => {}); } catch { /* unsupported */ } }
     });
   }
 
-  const api = { chunk, createSpeaker, recognitionFallback };
+  const api = { chunk, createSpeaker, recognitionFallback, audioSession };
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     api.speaker = createSpeaker({
       synth: window.speechSynthesis,

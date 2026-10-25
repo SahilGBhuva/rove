@@ -40,7 +40,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 
 test('the natural voice speaks every part in order and reports done with the whole message', async () => {
   const played = [];
-  const natural = { available: () => true, audio: async t => `audio:${t}`, play: async a => { played.push(a); }, stop() {}, unlock() {} };
+  const natural = { available: () => true, audio: async t => `audio:${t}`, play: async (a, onStart) => { onStart?.(); played.push(a); }, stop() {}, unlock() {} };
   const { synth, log } = fakeSynth();
   const s = createSpeaker({ synth, Utterance, natural });
   const states = []; s.onChange(st => states.push(`${st.state}:${st.text.length}`));
@@ -94,4 +94,28 @@ test('the opening lines preloaded in the natural voice match what Rove actually 
   assert.ok(list.length >= 2);
   for (const line of list) assert.ok(app.includes(`'${line}'`), `app.js says exactly: ${line}`);
   assert.ok(html.indexOf('RovePreloadSpeech') < html.indexOf('public/js/speech.js'), 'declared before speech.js loads');
+});
+
+test('"Speaking" is shown only once the natural voice is really playing', async () => {
+  let start;
+  const natural = { available: () => true, audio: async t => t, play: (a, onStart) => new Promise(res => { start = () => { onStart(); res(); }; }), stop() {}, unlock() {} };
+  const { synth } = fakeSynth();
+  const s = createSpeaker({ synth, Utterance, natural });
+  s.speak('Where are you starting from?');
+  await wait(5);
+  assert.equal(s.status.state, 'starting', 'not "speaking" before sound starts');
+  start(); await wait(5);
+  assert.equal(s.status.state, 'done');
+});
+
+test('iPhone audio is routed to the loudspeaker for speech and only switched while the mic is open', async () => {
+  const { readFileSync } = await import('node:fs');
+  const speech = readFileSync(new URL('../site/public/js/speech.js', import.meta.url), 'utf8');
+  const cap = readFileSync(new URL('../site/public/js/voice-capture.js', import.meta.url), 'utf8');
+  assert.match(speech, /function audioSession\(type\)/);
+  assert.match(speech, /play\(blob, onStart\) \{\s*audioSession\('playback'\);/);
+  assert.match(cap, /audioSession\?\.\('play-and-record'\); \/\/ microphone open/);
+  assert.match(cap, /audioSession\?\.\('playback'\); \/\/ microphone closed/);
+  const silent = speech.match(/const SILENT = 'data:audio\/wav;base64,([^']+)'/)[1];
+  assert.ok(Buffer.from(silent, 'base64').length > 1000, 'the unlock clip has real (silent) audio, not zero samples');
 });

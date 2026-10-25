@@ -79,10 +79,12 @@
     const cleanup = () => {
       clearInterval(timer); clearTimeout(timer);
       stream?.getTracks().forEach(track => track.stop());
+      root.RoveSpeech?.audioSession?.('playback'); // microphone closed: Rove's voice back on the loudspeaker
       try { source?.disconnect(); } catch { /* already disconnected */ }
     };
     const done = new Promise((resolve, reject) => {
       settle = { resolve, reject };
+      root.RoveSpeech?.audioSession?.('play-and-record'); // microphone open
       navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(s => {
         stream = s;
         if (cancelled) { cleanup(); reject(aborted()); return; }
