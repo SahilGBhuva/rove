@@ -85,3 +85,13 @@ test('the most human-sounding device voice is preferred over a compact or novelt
   createSpeaker({ synth, Utterance }).speak('Hi.');
   assert.equal(used?.name, 'Samantha (Enhanced)');
 });
+
+test('the opening lines preloaded in the natural voice match what Rove actually says', async () => {
+  const { readFileSync } = await import('node:fs');
+  const html = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
+  const list = JSON.parse(html.match(/window\.RovePreloadSpeech = (\[[^\]]+\])/)[1].replace(/'/g, '"'));
+  assert.ok(list.length >= 2);
+  for (const line of list) assert.ok(app.includes(`'${line}'`), `app.js says exactly: ${line}`);
+  assert.ok(html.indexOf('RovePreloadSpeech') < html.indexOf('public/js/speech.js'), 'declared before speech.js loads');
+});

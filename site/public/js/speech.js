@@ -236,9 +236,14 @@
     el.preload = 'auto';
     let ok = null, rejectPlay = null;
     const cache = new Map();
-    fetch('/api/v2/tts', { cache: 'no-store' }).then(r => r.json()).then(j => { if (ok !== false) ok = j?.available === true; }).catch(() => { ok = false; });
+    const voice = {};
+    fetch('/api/v2/tts', { cache: 'no-store' }).then(r => r.json()).then(j => {
+      if (ok !== false) ok = j?.available === true;
+      // Fetch Rove's fixed opening lines now, so the first question plays straight after the tap.
+      if (ok) (root.RovePreloadSpeech || []).forEach(t => { chunk(t, 190).forEach(part => voice.audio(part).catch(() => {})); });
+    }).catch(() => { ok = false; });
     const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-    return {
+    return Object.assign(voice, {
       available: () => ok === true,
       audio(text) {
         if (cache.has(text)) return Promise.resolve(cache.get(text));
@@ -267,7 +272,7 @@
       },
       stop() { try { el.pause(); } catch { /* not playing */ } rejectPlay?.(); },
       unlock() { try { el.src = SILENT; el.play()?.catch?.(() => {}); } catch { /* unsupported */ } }
-    };
+    });
   }
 
   const api = { chunk, createSpeaker, recognitionFallback };
