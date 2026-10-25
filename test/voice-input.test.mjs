@@ -156,3 +156,16 @@ test('route choices are spoken: automatically when routes appear, and by Read ro
   assert.doesNotMatch(app, /if \(document\.hidden\) stopSpeaking\(\)/);
   assert.match(app, /if \(!nav\?\.voice \|\| !nav\.speechAllowed\) return;/, 'navigation speech is not muted by a hidden page');
 });
+
+test('a trip never starts from Rove hearing itself: the mic waits for speech to end, echoes are ignored', () => {
+  const say = app.slice(app.indexOf('function sayThenWait('), app.indexOf('function voiceListen('));
+  assert.doesNotMatch(say, /setTimeout\(done, estimate \+ 4000\)/, 'no 13 s cap that opens the mic while Rove is still reading a route');
+  assert.match(say, /\['starting', 'speaking'\]\.includes\(st\.state\)\) \{ timer = setTimeout\(fallback/, 'the safety timer waits while speech is still playing');
+  assert.match(app, /function isEcho\(words\)/);
+  assert.match(app, /if \(isEcho\(words\) && echoRetries < 2\)/);
+  const offer = app.slice(app.indexOf('async function voiceOfferRoutes('), app.indexOf('let voiceGen'));
+  assert.doesNotMatch(offer, /\|go\|/, '"go" alone does not start a trip');
+  assert.match(offer, /short && \/\\b\(start\|begin\|yes/, 'only a short explicit answer starts a trip');
+  assert.match(app, /if \(w\.trim\(\)\.split\(\/\\s\+\/\)\.length > 5\) return null;/, 'a long sentence is not a yes or a no');
+  assert.match(app, /voiceIntent\?\.reask && error === 'no-speech'/, 'silence at a question asks once more');
+});

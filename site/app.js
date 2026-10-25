@@ -2681,7 +2681,7 @@ async function submitPlan() {
     renderJourney(); revealJourney(); applyMapState(); updatePlanMarkers(); fitJourney(state.journey);
     const best = sortedItineraryIndexes()[0];
     startResultsLive();
-    if (plan.voiceFlow) Promise.race([loadResultsLive(), new Promise(r => setTimeout(r, 2500))]).then(() => voiceOfferRoutes(0));
+    if (plan.voiceFlow) Promise.race([loadResultsLive(), new Promise(r => setTimeout(r, 2500))]).then(() => voiceOfferRoutes(0, false, true));
     // Voice-first: read the routes out loud as soon as they appear (the screen reader gets them if Rove voice is off).
     else if (accessPreference('speak', true)) speakText(routesAnnouncement());
     else announceAccess(routesAnnouncement());
@@ -4005,7 +4005,25 @@ function spokenDestination(words) {
     .replace(/[,.!?\s]+(?:please|thanks?|thank you)?[.!?]*$/i, '')
     .trim();
 }
+/* True when the transcript is Rove's own prompt picked up by the microphone, not the rider. */
+function isEcho(words) {
+  const said = normalizeSearch(String(words)).split(/\s+/).filter(Boolean);
+  if (said.length < 3) return false;
+  const prompt = ` ${normalizeSearch(lastPrompt)} `;
+  if (/\b(say (start|yes|next|my location|it)|after the tone|for the next match|to begin this route|for another route)\b/i.test(String(words))) return true;
+  for (let i = 0; i + 3 <= said.length; i++) if (prompt.includes(` ${said.slice(i, i + 3).join(' ')} `)) return true;
+  return false;
+}
+let echoRetries = 0;
 function voiceHeard(words, demo) {
+  if (isEcho(words) && echoRetries < 2) {
+    // Rove heard itself: listen again for the rider, without acting on it.
+    echoRetries++;
+    state.plan.voice = { state: 'starting', mode: voiceMode() }; updateVoiceSlot();
+    setTimeout(() => voiceListen({ demo }), 300);
+    return;
+  }
+  echoRetries = 0;
   if (voiceIntent) { const intent = voiceIntent; voiceIntent = null; state.plan.voice = null; updateVoiceSlot(); intent.handle(words); return; }
   const plan = state.plan;
   voiceSilences = 0;
@@ -4048,6 +4066,8 @@ function voiceFail(error, demo) {
   }
   voiceSilences = 0;
   earcon('error');
+  // Silence at a question (yes/no, start/next/repeat): ask once more before giving up.
+  if (voiceIntent?.reask && error === 'no-speech') { const again = voiceIntent.reask; voiceIntent = null; plan.voice = null; updateVoiceSlot(); again(); return; }
   if (voiceIntent) { voiceIntent = null; plan.voice = null; updateVoiceSlot(); guideSay(error === 'no-speech' ? "I didn't hear an answer. You can tap your choice instead." : "Voice isn't working right now. You can tap your choice instead."); return; }
   plan.voice = { state: 'error', error };
   updateVoiceSlot();
@@ -4111,20 +4131,29 @@ function earcon(kind) { try { window.RoveVoice?.earcon?.(kind); } catch { /* no 
 function voiceMode() { return voiceServer !== false && window.RoveVoice?.supported() ? 'server' : 'browser'; }
 /* Speak and resolve once finished (or after a reading-time estimate when the screen reader is the
  * voice), so the microphone never records Rove or VoiceOver. */
+let lastPrompt = ''; // what Rove last said before listening, to recognise it if the mic hears it back
 function sayThenWait(text) {
+  lastPrompt = String(text);
   return new Promise(resolve => {
     let off = null, timer = null;
     let settled = false;
-    const done = () => { if (settled) return; settled = true; off?.(); clearTimeout(timer); resolve(); };
+    // A short pause after Rove finishes, so the end of its own voice is not recorded.
+    const done = () => { if (settled) return; settled = true; off?.(); clearTimeout(timer); setTimeout(resolve, 450); };
     const estimate = Math.min(9000, 900 + String(text).length * 55);
+    const message = String(text).trim();
     if (accessPreference('speak', true) && speaker && speakOut(text)) {
-      // A previous utterance can finish/cancel while this prompt starts. Only
-      // advance to microphone capture when THIS prompt finishes, never on an
-      // unrelated speech event (which causes iPhone to hear Rove's own voice).
+      // Only THIS prompt finishing opens the microphone, never an unrelated speech event.
       off = speaker.onChange(st => {
-        if (st.text === String(text) && ['done', 'failed', 'stopped', 'unsupported'].includes(st.state)) done();
+        if (st.text === message && ['done', 'failed', 'stopped', 'unsupported'].includes(st.state)) done();
       });
-      timer = setTimeout(done, estimate + 4000);
+      // Safety net only if the engine sends no events at all. It never cuts off speech that is still
+      // playing (a 13 s cap used to open the mic mid-route, so Rove heard itself say "start").
+      const fallback = () => {
+        const st = speaker.status;
+        if (st.text === message && ['starting', 'speaking'].includes(st.state)) { timer = setTimeout(fallback, 1500); return; }
+        done();
+      };
+      timer = setTimeout(fallback, 2500 + message.length * 90);
     } else {
       announceAccess(text);
       timer = setTimeout(done, estimate);
@@ -4137,6 +4166,10 @@ function voiceListen({ demo = false } = {}) {
 }
 function yesNo(words) {
   const w = ` ${String(words).toLowerCase()} `;
+  // A real answer is short; a long sentence (often Rove's own prompt) is not a yes or a no.
+  if (w.trim().split(/\s+/).length > 5) return null;
+  const hasYes = /\b(yes|yeah|yep|yup|correct|right|sure|ok|okay|that one|go there)\b/.test(w), hasNo = /\b(no|nope|next|wrong|another)\b/.test(w);
+  if (hasYes && hasNo) return null;
   if (/\b(yes|yeah|yep|yup|correct|right|sure|ok|okay|that one|go there)\b/.test(w)) return 'yes';
   if (/\b(no|nope|next|wrong|another)\b/.test(w)) return 'no';
   return null;
@@ -4164,11 +4197,11 @@ async function voiceAskMatch(heard, i = 0, retried = false) {
     else if (a === 'no') voiceAskMatch(heard, i + 1);
     else if (!retried) voiceAskMatch(heard, i, true);
     else { voiceIntent = null; sayThenWait('Sorry, I did not catch that. You can tap a match to choose it.'); }
-  } };
+  }, reask: retried ? null : () => voiceAskMatch(heard, i, true) };
   voiceListen({});
 }
 /* After routes are found by a voice flow: read one route at a time and act on start / next / repeat. */
-async function voiceOfferRoutes(k = 0, retried = false) {
+async function voiceOfferRoutes(k = 0, retried = false, intro = false, note = '') {
   const turn = ++voiceTurn;
   const order = sortedItineraryIndexes().slice(0, 3);
   const its = state.plan.results?.itineraries || [];
@@ -4176,18 +4209,20 @@ async function voiceOfferRoutes(k = 0, retried = false) {
   const n = ((k % order.length) + order.length) % order.length;
   const it = its[order[n]];
   await sayThenWait(retried ? 'Please say start, next, or repeat.'
-    : `${n === 0 && !retried ? `${plural(order.length, 'route')} found. ` : ''}${routeChoiceSpeech(it, n + 1)} Say start to begin this route${order.length > 1 ? ', next for another route' : ''}, or repeat.`);
+    : `${note}${intro ? `${plural(order.length, 'route')} found. ` : ''}${routeChoiceSpeech(it, n + 1)} Say start to begin this route${order.length > 1 ? ', next for another route' : ''}, or repeat.`);
   if (turn !== voiceTurn || currentView().name !== 'results') return;
   toast('Listening: say start, next, or repeat');
   voiceIntent = { handle: words => {
     hideToast(); // the answer is in: the "Listening" bubble must not linger over the trip screen
     const w = ` ${String(words).toLowerCase()} `;
-    if (/\b(start|begin|go|yes|this one|let'?s go)\b/.test(w)) { voiceIntent = null; state.plan.voiceFlow = false; earcon('ok'); startNavigation(order[n]); }
-    else if (/\b(next|another|other|no)\b/.test(w)) voiceOfferRoutes(n + 1);
-    else if (/\b(repeat|again|what)\b/.test(w)) voiceOfferRoutes(n);
+    const short = w.trim().split(/\s+/).length <= 5;
+    // Only a short, explicit answer starts a trip ("go" alone is not enough: Rove's prompts contain it).
+    if (short && /\b(start|begin|yes|this one|let'?s go|go now)\b/.test(w) && !/\b(next|no|repeat)\b/.test(w)) { voiceIntent = null; state.plan.voiceFlow = false; earcon('ok'); startNavigation(order[n]); }
+    else if (short && /\b(next|another|other|no)\b/.test(w)) voiceOfferRoutes(n + 1, false, false, order.length === 1 ? 'This is the only route. ' : '');
+    else if (short && /\b(repeat|again|what)\b/.test(w)) voiceOfferRoutes(n);
     else if (!retried) voiceOfferRoutes(n, true);
     else { voiceIntent = null; sayThenWait('Sorry, I did not catch that. You can tap Start route 1.'); }
-  } };
+  }, reask: retried ? null : () => voiceOfferRoutes(n, true) };
   voiceListen({});
 }
 
