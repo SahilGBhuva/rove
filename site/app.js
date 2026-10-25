@@ -4599,6 +4599,26 @@ function afterPick() {
 /* Moves the trip fields in and out of their suggestion state without rebuilding them. */
 
 
+// Route speech is a critical accessibility control: bind it at document capture
+// so it still works if the results panel is replaced or its delegated handler fails.
+document.addEventListener('click', event => {
+  const button = event.target.closest?.('[data-action="access-all-routes"]');
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const order = sortedItineraryIndexes().slice(0, 3);
+  const its = state.plan.results?.itineraries || [];
+  const message = order.length
+    ? `${plural(order.length, 'route')} found. ${voiceRouteTradeoff(order, its)} ${order.map((i, n) => routeChoiceSpeech(its[i], n + 1)).join(' ')} Choose a route and select Start navigation.`
+    : 'No routes are available.';
+  const ok = speakOut(message);
+  if (!ok) {
+    announceAccess('Rove voice could not start. Check browser speech support. ' + message);
+    const bar = document.getElementById('speechBar');
+    if (bar) { bar.hidden = false; bar.dataset.state = 'failed'; bar.textContent = 'Rove voice could not start. Check browser speech support.'; }
+  }
+}, true);
+
 function bindPanel() {
   const body = $('#panelBody');
   body.addEventListener('click', e => {
