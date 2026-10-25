@@ -103,6 +103,7 @@
         } catch (e) {
           if (my !== generation) return; // stopped on purpose
           dbg(`natural voice failed (${e?.message || e}); using device voice`);
+          natural.halt?.(); // never two voices at once
           // Never go silent: say whatever is left with the device voice.
           speakDevice(parts.slice(i).join(' '), opts, message);
         }
@@ -119,6 +120,7 @@
       // Do NOT refuse when document.hidden: macOS Chrome and Dia report a visible but partly covered
       // window as hidden, and they speak normally there. Refusing here silenced Read route choices aloud.
       // Just cancelled (this tick) counts as busy: WebKit drops speak() straight after cancel().
+      try { natural?.halt?.(); } catch { /* none */ }
       audioSession('playback');
       dbg(`device voice speak "${message.slice(0, 24)}"`);
       const justCancelled = now() - lastCancel < 50;
@@ -294,12 +296,13 @@
           el.onerror = () => { dbg(`audio error ${el.error?.code || ''}`); clean(); reject(new Error('audio-error')); };
           el.src = url;
           const started = el.play();
-          timer = setTimeout(() => { if (el.paused) { dbg('audio did not start in 4 s'); clean(); reject(new Error('no-start')); } }, 4000);
+          timer = setTimeout(() => { if (el.paused && el.currentTime === 0) { dbg('audio did not start in 4 s'); clean(); reject(new Error('no-start')); } }, 4000);
           started?.then?.(() => dbg('play() ok'), () => {});
           started?.catch?.(e => { dbg(`play() rejected ${e?.name || e}`); clean(); reject(e); });
         });
       },
       stop() { if (!unlocking) { try { el.pause(); } catch { /* not playing */ } } rejectPlay?.(); },
+      halt() { try { el.pause(); el.removeAttribute('src'); el.load(); } catch { /* nothing loaded */ } rejectPlay?.(); },
       unlock() {
         try {
           audioSession('playback');

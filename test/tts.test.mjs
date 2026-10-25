@@ -119,3 +119,12 @@ test('iPhone audio is routed to the loudspeaker for speech and only switched whi
   const silent = speech.match(/const SILENT = 'data:audio\/wav;base64,([^']+)'/)[1];
   assert.ok(Buffer.from(silent, 'base64').length > 1000, 'the unlock clip has real (silent) audio, not zero samples');
 });
+
+test('no "underwater" voice: the mic is opened without echo processing, and two voices never overlap', async () => {
+  const { readFileSync } = await import('node:fs');
+  const cap = readFileSync(new URL('../site/public/js/voice-capture.js', import.meta.url), 'utf8');
+  const speech = readFileSync(new URL('../site/public/js/speech.js', import.meta.url), 'utf8');
+  assert.match(cap, /echoCancellation: false/);
+  assert.match(speech, /natural\.halt\?\.\(\); \/\/ never two voices at once/);
+  assert.match(speech, /halt\(\) \{ try \{ el\.pause\(\); el\.removeAttribute\('src'\)/);
+});

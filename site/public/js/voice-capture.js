@@ -84,8 +84,10 @@
     };
     const done = new Promise((resolve, reject) => {
       settle = { resolve, reject };
+      // No echo cancellation: Rove never records while it speaks, and the phone's echo processing
+      // makes the voice that plays afterwards sound choppy and "underwater".
       root.RoveSpeech?.audioSession?.('play-and-record'); // microphone open
-      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(s => {
+      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } }).then(s => {
         stream = s;
         if (cancelled) { cleanup(); reject(aborted()); return; }
         onState?.('waiting');

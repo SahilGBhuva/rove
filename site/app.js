@@ -4285,7 +4285,7 @@ async function ensureMicAccess() {
   await sayThenWait('First, your phone will ask to use the microphone. Tap Allow. On an iPhone, Allow is the button on the right.');
   try {
     RoveSpeech.audioSession?.('play-and-record');
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false } });
     stream.getTracks().forEach(t => t.stop());
     RoveSpeech.audioSession?.('playback');
     try { sessionStorage.setItem(MIC_OK_KEY, '1'); } catch { /* storage unavailable */ }
