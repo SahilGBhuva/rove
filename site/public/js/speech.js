@@ -99,7 +99,7 @@
           u.onend = () => {
             if (my !== generation) return;
             retained = [];
-            if (i + 1 < parts.length) speakPart(i + 1);
+            if (i + 1 < parts.length) later(() => speakPart(i + 1), 80); // let browser finish releasing the previous utterance
             else set({ state: 'done', text: message });
           };
           u.onerror = e => {
