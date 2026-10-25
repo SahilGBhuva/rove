@@ -84,8 +84,11 @@
       const queue = () => {
         if (my !== generation) return;
         try { if (synth.paused) synth.resume(); } catch { /* resume unsupported */ }
-        parts.forEach((part, i) => {
-          const u = new Utterance(part);
+        // Queue only one utterance at a time. Enqueuing an entire long route
+        // narration can silently stall Chromium/WebKit speech engines.
+        const speakPart = i => {
+          if (my !== generation || i >= parts.length) return;
+          const u = new Utterance(parts[i]);
           u.lang = opts.lang || 'en-US';
           u.rate = opts.rate || 0.95;
           u.onstart = () => {
@@ -94,18 +97,20 @@
             set({ state: 'speaking', text: message });
           };
           u.onend = () => {
-            if (my !== generation || i !== parts.length - 1) return;
+            if (my !== generation) return;
             retained = [];
-            set({ state: 'done', text: message });
+            if (i + 1 < parts.length) speakPart(i + 1);
+            else set({ state: 'done', text: message });
           };
           u.onerror = e => {
             const err = e?.error || 'unknown';
             if (err === 'interrupted' || err === 'canceled') return;
             fail(err);
           };
-          retained.push(u);
+          retained = [u];
           try { synth.speak(u); } catch { fail('exception'); }
-        });
+        };
+        speakPart(0);
         // Engines that accept speak() but never start are reported, not ignored.
         watchdog = later(() => { watchdog = null; if (my === generation && !started && !synth.speaking) fail('no-start'); }, opts.watchdogMs || 2500);
       };

@@ -119,7 +119,8 @@ test('utterances are retained until speech ends, then released', () => {
   const { env, synth } = fakeEnv();
   const s = createSpeaker(env);
   s.speak('One. Two.'.repeat(60));
-  assert.ok(s.retainedCount > 1);
+  assert.equal(s.retainedCount, 1);
+  assert.equal(synth.queue.length, 1);
   while (synth.queue.length) synth.tick();
   assert.equal(s.retainedCount, 0);
 });

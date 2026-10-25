@@ -2644,7 +2644,7 @@ async function submitPlan() {
       // Reading route choices must be automatic after Find routes, not dependent on a second button.
       // Say the route trade-off, every displayed option, and the exact action to take next.
       const order = sortedItineraryIndexes().slice(0, 3);
-      const summary = `Routes from ${plan.from.name} to ${plan.to.name}. ${plural(order.length, 'route')} found. ${voiceRouteTradeoff(order, itineraries)} ${order.map((i, n) => routeChoiceSpeech(itineraries[i], n + 1) + ' Step by step: ' + routeDetailSpeech(itineraries[i])).join(' ')} To continue, choose a route and select Start navigation. Or tap Read route choices aloud to hear this again.`;
+      const summary = `Routes from ${plan.from.name} to ${plan.to.name}. ${plural(order.length, 'route')} found. ${voiceRouteTradeoff(order, itineraries)} ${order.map((i, n) => routeChoiceSpeech(itineraries[i], n + 1)).join(' ')} To continue, choose a route and select Start navigation. Or tap Read route choices aloud to hear this again.`;
       guideSay(summary, { force: true });
     }
   } catch (error) {
@@ -4404,7 +4404,7 @@ function handleAction(el) {
     case 'access-all-routes': {
       const order = sortedItineraryIndexes().slice(0, 3);
       const its = state.plan.results?.itineraries || [];
-      speakText(order.length ? `${plural(order.length, 'route')}. ${voiceRouteTradeoff(order, its)} ${order.map((i, n) => routeChoiceSpeech(its[i], n + 1) + ' Step by step: ' + routeDetailSpeech(its[i])).join(' ')} Select Start navigation for your chosen route.` : 'No routes are available.');
+      speakText(order.length ? `${plural(order.length, 'route')}. ${voiceRouteTradeoff(order, its)} ${order.map((i, n) => routeChoiceSpeech(its[i], n + 1)).join(' ')} Select Start navigation for your chosen route.` : 'No routes are available.');
       break;
     }
     case 'access-route': { const it = state.plan.results?.itineraries?.[Number(el.dataset.index)]; if (it) speakText(routeDetailSpeech(it)); break; }
