@@ -78,7 +78,10 @@ test('a silent engine is reported as a failure, never left looking like success'
   const seen = [];
   s.onChange(st => seen.push(st.state));
   s.speak('Hello.');
-  runTimers(); // watchdog fires
+  runTimers(); // watchdog fires: one reset and retry
+  runTimers(); // the retry is queued
+  assert.notEqual(s.status.state, 'failed', 'one retry before reporting failure');
+  runTimers(); // second watchdog fires
   assert.equal(s.status.state, 'failed');
   assert.equal(s.status.reason, 'no-start');
   assert.deepEqual(seen, ['starting', 'failed']);
@@ -131,15 +134,18 @@ test('repeated taps never stack overlapping speech', () => {
   assert.deepEqual(synth.queue.map(u => u.text), ['Tap 4.']);
 });
 
-test('paused speech is resumed before speaking; hidden pages and missing engines report clearly', () => {
+test('paused speech is resumed before speaking; missing engines report clearly', () => {
   const { env, synth, log } = fakeEnv();
   synth.paused = true;
   createSpeaker(env).speak('Hi.');
   assert.ok(log.findIndex(([op]) => op === 'resume') < log.findIndex(([op]) => op === 'speak'));
 
+  // Regression (route choices silent in Chrome and Dia on macOS): a partly covered window reports
+  // document.hidden, and the browser still speaks. Rove must speak too, not refuse.
   const hidden = fakeEnv();
   hidden.env.isHidden = () => true;
-  assert.equal(createSpeaker(hidden.env).speak('Hi.'), 'failed');
+  assert.equal(createSpeaker(hidden.env).speak('Hi.'), 'started');
+  assert.ok(hidden.log.some(([op, t]) => op === 'speak' && t === 'Hi.'));
 
   const none = createSpeaker({});
   assert.equal(none.speak('Hi.'), 'unsupported');
@@ -154,8 +160,7 @@ test('app.js speaks only through RoveSpeech, and the route-choice button stays c
   assert.doesNotMatch(app, /speechSynthesis|SpeechSynthesisUtterance/, 'no direct engine calls that bypass the iOS guards');
   assert.ok(html.indexOf('public/js/speech.js') < html.indexOf('app.js?'), 'speech module loads before app.js');
   assert.match(html, /id="speechBar"/);
-  assert.match(app, /case 'access-all-routes': \{\s*const order = sortedItineraryIndexes\(\)\.slice\(0, 3\)/);
-  assert.match(app, /routeChoiceSpeech\(its\[i\], n \+ 1\)/);
+  assert.match(app, /case 'access-all-routes': \{\s*speakText\(routesAnnouncement\(\)\);/);
 });
 
 test('prime() speaks one silent utterance inside the tap, once, to unlock iPhone speech', () => {
@@ -187,4 +192,11 @@ test('a prompt right after stop() waits a moment instead of being dropped by Web
   env.synth.justCanceled = false; t += 60;
   runTimers();
   assert.ok(log.some(e => e[0] === 'speak' && e[1] === 'Where are you starting from?'), 'spoken after the pause');
+});
+
+test('a network default voice is swapped for an on-device English voice', () => {
+  const { env, synth } = fakeEnv();
+  synth.getVoices = () => [{ name: 'Google US English', lang: 'en-US', default: true, localService: false }, { name: 'Samantha', lang: 'en-US', localService: true }];
+  createSpeaker(env).speak('Hi.');
+  assert.equal(synth.queue[0].voice.name, 'Samantha');
 });

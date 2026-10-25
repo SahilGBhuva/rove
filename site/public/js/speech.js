@@ -73,14 +73,16 @@
       const parts = chunk(message, opts.maxChunk);
       if (!parts.length) return 'empty';
       if (!supported()) { set({ state: 'unsupported', text: message }); return 'unsupported'; }
-      if (env.isHidden?.()) { set({ state: 'failed', text: message, reason: 'hidden' }); return 'failed'; }
+      // Do NOT refuse when document.hidden: macOS Chrome and Dia report a visible but partly covered
+      // window as hidden, and they speak normally there. Refusing here silenced Read route choices aloud.
       // Just cancelled (this tick) counts as busy: WebKit drops speak() straight after cancel().
       const justCancelled = now() - lastCancel < 50;
       const busy = Boolean(synth.speaking || synth.pending);
       const my = ++generation;
       disarm();
       retained = [];
-      let started = false;
+      let started = false, retried = false;
+      const voice = pickVoice();
       set({ state: 'starting', text: message });
       const fail = reason => {
         if (my !== generation) return;
@@ -94,6 +96,7 @@
           const u = new Utterance(part);
           u.lang = opts.lang || 'en-US';
           u.rate = opts.rate || 0.95;
+          if (voice) u.voice = voice;
           u.onstart = () => {
             if (my !== generation || started) return;
             started = true; disarm();
@@ -113,12 +116,26 @@
           try { synth.speak(u); } catch { fail('exception'); }
         });
         // Engines that accept speak() but never start are reported, not ignored.
-        watchdog = later(() => { watchdog = null; if (my === generation && !started && !synth.speaking) fail('no-start'); }, opts.watchdogMs || 2500);
+        watchdog = later(() => {
+          watchdog = null;
+          if (my !== generation || started || synth.speaking) return;
+          // Chromium can get stuck with speech queued but never started; one reset usually clears it.
+          if (!retried) { retried = true; retained = []; cancel(); try { synth.resume(); } catch { /* unsupported */ } later(queue, 120); return; }
+          fail('no-start');
+        }, opts.watchdogMs || 2500);
       };
       if (busy) { cancel(); later(queue, 60); }
       else if (justCancelled) later(queue, 60);
       else queue(); // Synchronous: still inside the rider's tap, which unlocks audio on iOS.
       return 'started';
+    }
+
+    function pickVoice() {
+      let voices = [];
+      try { voices = synth.getVoices?.() || []; } catch { voices = []; }
+      const def = voices.find(v => v.default);
+      if (!voices.length || (def && def.localService !== false)) return null; // the default is fine
+      return voices.find(v => v.localService && /^en[-_]US/i.test(v.lang)) || voices.find(v => v.localService && /^en/i.test(v.lang)) || null;
     }
 
     /* iPhone Safari only lets speech start inside a tap, and then for the rest of the visit.

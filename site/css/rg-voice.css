@@ -248,15 +248,17 @@ body.theme-dark .speech-bar[data-state="failed"] { background: #4e1f18; box-shad
 .rg-wake { position: fixed; inset: 0; z-index: 2000; display: grid; grid-template-rows: 1fr auto; background: var(--rg-bg, #f6f4ee); color: var(--rg-ink, #14201a); padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
 .rg-wake-go { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; width: 100%; border: 0; border-radius: 28px; background: color-mix(in srgb, var(--rg-green, #1f6b45) 8%, transparent); color: inherit; font: inherit; text-align: center; cursor: pointer; padding: 2rem 1.5rem; }
 .rg-wake-go:focus-visible { outline: 4px solid var(--rg-green, #1f6b45); outline-offset: -6px; }
-.rg-wake-mic { display: grid; place-items: center; width: 7rem; height: 7rem; border-radius: 50%; background: var(--rg-green, #1f6b45); color: #fff; box-shadow: 0 0 0 0 color-mix(in srgb, var(--rg-green, #1f6b45) 35%, transparent); animation: rg-wake-pulse 2.4s ease-out infinite; }
+.rg-wake-mic { display: grid; place-items: center; width: 7rem; height: 7rem; border-radius: 50%; background: var(--rg-green, #1f6b45); color: #fff; position: relative; }
 .rg-wake-mic svg { width: 3rem; height: 3rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .rg-wake-title { font-size: 2rem; line-height: 1.15; font-weight: 750; letter-spacing: -0.01em; }
 .rg-wake-sub { font-size: 1.125rem; line-height: 1.4; max-width: 22rem; opacity: 0.8; }
 .rg-wake-skip { justify-self: center; min-height: 48px; margin-top: 12px; padding: 0 20px; border: 0; background: none; color: inherit; font: inherit; font-size: 1rem; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .rg-wake-skip:focus-visible { outline: 3px solid var(--rg-green, #1f6b45); outline-offset: 2px; border-radius: 8px; }
 body.has-wake { overflow: hidden; }
-@keyframes rg-wake-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--rg-green, #1f6b45) 35%, transparent); } 70%, 100% { box-shadow: 0 0 0 28px transparent; } }
-@media (prefers-reduced-motion: reduce) { .rg-wake-mic { animation: none; } }
+/* The pulse ring scales and fades only (GPU-composited), never animating a shadow, which repaints every frame. */
+.rg-wake-mic::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--rg-green, #1f6b45); opacity: 0; animation: rg-wake-pulse 2.4s ease-out infinite; will-change: transform, opacity; }
+@keyframes rg-wake-pulse { 0% { transform: scale(1); opacity: .45; } 70%, 100% { transform: scale(1.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .rg-wake-mic, .rg-wake-mic::after { animation: none; } }
 
 /* A stable, high-contrast next action: useful without relying on color or animation. */
 .rg-next-action {

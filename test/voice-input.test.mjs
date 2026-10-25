@@ -143,3 +143,16 @@ test('before the first recording, Rove explains the phone\'s silent microphone p
   assert.match(app, /const mic = await ensureMicAccess\(\);/, 'asked before the question, so no dialog blocks the answer');
   assert.match(app, /set Microphone to Allow, then tap Speak\./, 'a denied microphone gets spoken iPhone steps');
 });
+
+test('route choices are spoken: automatically when routes appear, and by Read route choices aloud', () => {
+  assert.match(app, /else if \(accessPreference\('speak', true\)\) speakText\(routesAnnouncement\(\)\);/, 'typed searches read the routes aloud');
+  assert.match(app, /case 'access-all-routes': \{\s*speakText\(routesAnnouncement\(\)\);/);
+  const fn = app.slice(app.indexOf('function routeChoiceDetail('), app.indexOf('function routeChoiceShort('));
+  for (const part of ['Walk ${spokenMinutes', 'Board the ${v}', 'toward ${l.headsign}', 'Get off at', 'transfer', 'Times are scheduled, not live.', 'Includes live times.']) assert.ok(fn.includes(part), part);
+  assert.match(app, /Press Start route 1 to begin, or Read route choices aloud to hear them again\./);
+  // Screen changes and a covered window no longer cut speech off.
+  const release = app.slice(app.indexOf('function releaseWakeLock()'), app.indexOf('function releaseWakeLock()') + 200);
+  assert.doesNotMatch(release, /stopSpeaking\(\)/, 'moving to the routes screen must not stop speech');
+  assert.doesNotMatch(app, /if \(document\.hidden\) stopSpeaking\(\)/);
+  assert.match(app, /if \(!nav\?\.voice \|\| !nav\.speechAllowed\) return;/, 'navigation speech is not muted by a hidden page');
+});

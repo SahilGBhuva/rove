@@ -1029,7 +1029,10 @@ function renderVehicles() {
     map.getSource('vehicle-labels')?.setData(frame);
   };
   const motion = window.RoveVehicleMotion;
-  const animate = previous?.features?.length && data.features.length && motion &&
+  // While Rove is talking or listening, vehicles jump instead of gliding: on a busy or hot device,
+  // redrawing the whole fleet 15 times a second can make speech stutter.
+  const voiceBusy = ['starting', 'speaking'].includes(speaker?.status?.state) || ['starting', 'listening', 'understanding'].includes(state.plan?.voice?.state);
+  const animate = previous?.features?.length && data.features.length && motion && !voiceBusy &&
     !window.matchMedia('(prefers-reduced-motion: reduce)').matches && !document.hidden;
   if (!animate) { paint(data); return; }
   const start = performance.now();
@@ -1766,6 +1769,43 @@ function routeChoiceSpeechBase(it, n) {
   const live = it.legs.some(l => l.mode === 'TRANSIT' && l.realtime);
   const spokenDuration = minutes < 60 ? plural(minutes, 'minute') : `${plural(Math.floor(minutes / 60), 'hour')}${minutes % 60 ? ' ' + plural(minutes % 60, 'minute') : ''}`;
   return `Route ${n}: ${spokenDuration}. ${lines.length ? lines.join(', then ') : 'Walking only'}. ${transfers ? plural(transfers, 'transfer') : 'No transfers'}.${walk} Leaves ${clock(new Date(it.startTime))}, arrives ${clock(new Date(it.endTime))}. ${live ? 'Includes live times.' : 'Scheduled times, not live.'}${it.hasCancellation ? ' Warning: includes a canceled trip.' : ''}${routeWarnings(it).length ? ` Note: ${routeWarnings(it).join(', ')}.` : ''}`;
+}
+const spokenMinutes = minutes => minutes < 60 ? plural(minutes, 'minute') : `${plural(Math.floor(minutes / 60), 'hour')}${minutes % 60 ? ' ' + plural(minutes % 60, 'minute') : ''}`;
+/* Route 1 step by step: walk, board (line, direction, stop, time), exit (stop, time), transfers, walk. */
+function routeChoiceDetail(it, n, label = '') {
+  const minutes = Math.round((it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000) / 60);
+  const parts = [`Route ${n}${label ? `, ${label},` : ''} takes ${spokenMinutes(minutes)}, leaving at ${clock(new Date(it.startTime))} and arriving at ${clock(new Date(it.endTime))}.`];
+  const legs = (it.legs || []).filter(l => !l.staySeated);
+  legs.forEach((l, i) => {
+    if (l.mode === 'WALK') {
+      const to = legs[i + 1]?.from?.name || (i === legs.length - 1 ? state.plan.to?.name || l.to?.name : l.to?.name);
+      if (legMinutes(l) >= 1 && to) parts.push(`Walk ${spokenMinutes(legMinutes(l))} to ${to}.`);
+    } else if (l.mode === 'TRANSIT') {
+      const v = window.RoveJourneyGuide ? RoveJourneyGuide.vehicle(l).name : legInfo(l).badge;
+      parts.push(`Board the ${v}${l.headsign ? ` toward ${l.headsign}` : ''} at ${l.from?.name || 'the stop'}, at ${clock(new Date(l.startTime))}. Get off at ${l.to?.name || 'your stop'} at ${clock(new Date(l.endTime))}.`);
+    } else if (l.mode === 'CAR') parts.push(`Drive ${spokenMinutes(legMinutes(l))} to ${l.to?.name || 'the station'}.`);
+  });
+  const transfers = Math.max(0, transitLineNames(it).length - 1);
+  parts.push(transfers ? `${plural(transfers, 'transfer')}.` : 'No transfers.');
+  parts.push(it.legs.some(l => l.mode === 'TRANSIT' && l.realtime) ? 'Includes live times.' : 'Times are scheduled, not live.');
+  if (it.hasCancellation) parts.push('Warning: includes a canceled trip.');
+  return parts.join(' ');
+}
+/* The other routes in one sentence each. */
+function routeChoiceShort(it, n) {
+  const minutes = Math.round((it.durationSeconds || (new Date(it.endTime) - new Date(it.startTime)) / 1000) / 60);
+  const lines = transitLineNames(it);
+  const transfers = Math.max(0, lines.length - 1);
+  return `Route ${n}: ${spokenMinutes(minutes)}, ${lines.length ? lines.join(' then ') : 'walking only'}, ${transfers ? plural(transfers, 'transfer') : 'no transfers'}, leaves ${clock(new Date(it.startTime))}, arrives ${clock(new Date(it.endTime))}.`;
+}
+/* What Rove says when routes appear, and again for Read route choices aloud. */
+function routesAnnouncement() {
+  const order = sortedItineraryIndexes().slice(0, 3);
+  const its = state.plan.results?.itineraries || [];
+  if (!order.length) return 'No routes are available.';
+  const label = { fastest: 'arriving first', transfers: 'with the fewest transfers', walking: 'with the least walking' }[state.plan.sort] || 'the recommended route';
+  const rest = order.slice(1).map((i, k) => routeChoiceShort(its[i], k + 2)).join(' ');
+  return `${plural(order.length, 'route')} found. ${routeChoiceDetail(its[order[0]], 1, label)}${rest ? ` ${rest}` : ''} Press Start route 1 to begin, or Read route choices aloud to hear them again.`;
 }
 function speakText(text) {
   announceAccess(text, true);
@@ -2642,7 +2682,9 @@ async function submitPlan() {
     const best = sortedItineraryIndexes()[0];
     startResultsLive();
     if (plan.voiceFlow) Promise.race([loadResultsLive(), new Promise(r => setTimeout(r, 2500))]).then(() => voiceOfferRoutes(0));
-    else announceAccess(`${plural(Math.min(itineraries.length, 3), 'route')} found. ${routeChoiceSpeech(itineraries[best], 1)}`);
+    // Voice-first: read the routes out loud as soon as they appear (the screen reader gets them if Rove voice is off).
+    else if (accessPreference('speak', true)) speakText(routesAnnouncement());
+    else announceAccess(routesAnnouncement());
   } catch (error) {
     plan.loading = false;
     // An outage is already explained by the planner notice above the form (with Check again), so it is not repeated below.
@@ -3081,7 +3123,7 @@ async function navReroute(nav) {
 /* Spoken directions are off by default, and announce only grounded OTP steps. */
 function speakNav(text) {
   const nav = state.nav;
-  if (!nav?.voice || !nav.speechAllowed || document.hidden) return;
+  if (!nav?.voice || !nav.speechAllowed) return;
   speakOut(text);
 }
 function toggleNavVoice() {
@@ -3138,7 +3180,6 @@ function startNavigation(index) {
 
 function releaseWakeLock() {
   stopNavOrientation();
-  stopSpeaking();
   try { state.wakeLock?.release(); } catch { /* already released */ }
   state.wakeLock = null;
   const nav = state.nav;
@@ -3640,7 +3681,7 @@ function renderLivePanel() {
 
 function guideTick() {
   const nav = state.nav;
-  if (!nav?.gs || document.hidden) return;
+  if (!nav?.gs) return;
   if (nav.flash && Date.now() - nav.flash.at > 6000) { nav.flash = null; document.querySelector('.rg-flash')?.classList.add('is-leaving'); }
   const due = Guide.dueReminders(nav.gs, navNow(nav), { clock: rgClock });
   if (due.length) {
@@ -3705,6 +3746,7 @@ function beginNav(it, { destination, access = 'WALK', demo = false, restore = nu
 
 function endTrip() {
   releaseWakeLock();
+  stopSpeaking();
   state.nav = null;
   clearTrip();
   goHome();
@@ -4420,9 +4462,7 @@ function handleAction(el) {
     case 'access-stop-speech': stopSpeaking(); announceAccess('Speech stopped.'); break;
     case 'access-dictate': voiceDestination(); break;
     case 'access-all-routes': {
-      const order = sortedItineraryIndexes().slice(0, 3);
-      const its = state.plan.results?.itineraries || [];
-      speakText(order.length ? `${plural(order.length, 'route')}. ${order.map((i, n) => routeChoiceSpeech(its[i], n + 1)).join(' ')} Choose Listen on a route for its stops.` : 'No routes are available.');
+      speakText(routesAnnouncement());
       break;
     }
     case 'access-route': { const it = state.plan.results?.itineraries?.[Number(el.dataset.index)]; if (it) speakText(routeDetailSpeech(it)); break; }
@@ -4822,8 +4862,8 @@ function bindChrome() {
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopSpeaking();
-    else {
+    // Speech is not stopped when the page becomes hidden: a covered window counts as hidden on macOS.
+    if (!document.hidden) {
       loadRealtime();
       if (state.nav) {
         if (state.nav.fix && Date.now() - state.nav.fix.time > 30000) state.nav.status = 'Refreshing GPS after returning to Rove…';
