@@ -3355,17 +3355,11 @@ function syncNavSteps(nav) {
   nav.i = idx >= 0 ? idx : nav.steps.length - 1;
 }
 
-function saveTrip(nav = state.nav) {
-  if (!nav?.gs) return;
-  const { index, history, given, snoozeUntil, startedAt } = nav.gs;
-  store.set(TRIP_KEY, { v: 1, savedAt: Date.now(), it: nav.it, destination: nav.destination, access: nav.access, demo: nav.demo, clockOffset: nav.clockOffset || 0, gs: { index, history, given, snoozeUntil, startedAt } });
-}
+// Trip progress is session-only. Do not remember journeys across page loads.
+function saveTrip(nav = state.nav) { /* intentionally not persisted */ }
 function loadTrip() {
-  const t = store.get(TRIP_KEY, null);
-  if (!t || t.v !== 1 || !Array.isArray(t.it?.legs) || !t.it.legs.length || !Number.isInteger(t.gs?.index)) return null;
-  const end = Date.parse(t.it.endTime);
-  if (Date.now() - t.savedAt > 12 * 3600e3 || !Number.isFinite(end) || Date.now() + (t.clockOffset || 0) > end + 2 * 3600e3) { clearTrip(); return null; }
-  return t;
+  clearTrip(); // remove trips stored by earlier versions
+  return null;
 }
 function clearTrip() { try { localStorage.removeItem(TRIP_KEY); } catch { /* storage unavailable */ } }
 
