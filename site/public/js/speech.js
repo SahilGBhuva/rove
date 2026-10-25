@@ -90,13 +90,13 @@
       const fetched = [];
       const get = i => (fetched[i] ||= natural.audio(parts[i]));
       (async () => {
-        let i = 0;
+        let played = 0;
         try {
-          for (; i < parts.length; i++) {
-            const audio = await get(i);
-            if (my !== generation) return;
-            if (i + 1 < parts.length) get(i + 1);
-            await natural.play(audio, () => { if (my === generation && status.state !== 'speaking') set({ state: 'speaking', text: message }); });
+          // All parts first, so one message is never half human voice and half device voice.
+          const audios = await Promise.all(parts.map((_, i) => get(i)));
+          if (my !== generation) return;
+          for (; played < audios.length; played++) {
+            await natural.play(audios[played], () => { if (my === generation && status.state !== 'speaking') set({ state: 'speaking', text: message }); });
             if (my !== generation) return;
           }
           set({ state: 'done', text: message });
@@ -105,7 +105,7 @@
           dbg(`natural voice failed (${e?.message || e}); using device voice`);
           natural.halt?.(); // never two voices at once
           // Never go silent: say whatever is left with the device voice.
-          speakDevice(parts.slice(i).join(' '), opts, message);
+          speakDevice(parts.slice(played).join(' '), opts, message);
         }
       })();
       return 'started';
@@ -257,24 +257,26 @@
     if (typeof Audio === 'undefined' || typeof fetch === 'undefined') return null;
     const el = new Audio();
     el.preload = 'auto';
-    let ok = null, rejectPlay = null, unlocking = null;
+    let ok = null, rejectPlay = null, unlocking = null, pauseUntil = 0;
     const cache = new Map();
     const voice = {};
     fetch('/api/v2/tts', { cache: 'no-store' }).then(r => r.json()).then(j => {
       if (ok !== false) ok = j?.available === true;
       dbg(`natural voice ${ok ? 'available' : 'unavailable'}`);
       // Fetch Rove's fixed opening lines now, so the first question plays straight after the tap.
-      if (ok) (root.RovePreloadSpeech || []).forEach(t => { chunk(t, 190).forEach(part => voice.audio(part).catch(() => {})); });
+      // Preloading on every page open spent the small daily voice budget, so it is off.
     }).catch(() => { ok = false; });
     // A real 0.2 s silent clip: an empty one can fail to play on iPhone, leaving the player locked.
     const SILENT = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUAGAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
     return Object.assign(voice, {
-      available: () => ok === true,
+      // Groq allows only ~10 requests a minute for this voice; after a limit hit, use the device voice for a while.
+      available: () => ok === true && Date.now() > pauseUntil,
       audio(text) {
         if (cache.has(text)) return Promise.resolve(cache.get(text));
         return fetch('/api/v2/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal: AbortSignal.timeout ? AbortSignal.timeout(9000) : undefined })
           .then(async r => {
             dbg(`tts ${r.status} "${text.slice(0, 24)}"`);
+            if (r.status === 429) { pauseUntil = Date.now() + 10 * 60e3; throw new Error('tts 429 (voice limit reached)'); }
             if (!r.ok) { if ([400, 403, 404, 503].includes(r.status)) ok = false; throw new Error(`tts ${r.status}`); }
             const blob = await r.blob();
             if (cache.size > 80) cache.delete(cache.keys().next().value);

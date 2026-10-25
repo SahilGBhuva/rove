@@ -38,6 +38,11 @@ export async function synthesize(text, { key, voice = TTS_VOICE, fetchImpl = fet
   return { status: 200, audio, contentType: response.headers.get('content-type') || 'audio/wav' };
 }
 
+/* Same text, same audio: keep recent results so repeated prompts do not spend the provider's
+ * small rate limit (Groq Orpheus: about 10 requests a minute, 100 a day). Per server instance. */
+const memo = new Map();
+const MEMO_MAX = 200;
+
 export default async function handler(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   if (req.method === 'GET') { res.setHeader('Cache-Control', 'no-store'); return res.status(200).json({ available: Boolean(process.env.GROQ_API_KEY), model: TTS_MODEL, voice: TTS_VOICE }); }
@@ -45,7 +50,12 @@ export default async function handler(req, res) {
   if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) return res.status(415).json({ error: 'JSON request required', code: 'UNSUPPORTED_MEDIA_TYPE' });
   const invalid = validateText(req.body);
   if (invalid) return res.status(400).json({ error: invalid, code: 'BAD_TEXT' });
-  const result = await synthesize(req.body.text.replace(/\s+/g, ' ').trim(), { key: process.env.GROQ_API_KEY });
+  const text = req.body.text.replace(/\s+/g, ' ').trim();
+  let result = memo.get(text);
+  if (!result) {
+    result = await synthesize(text, { key: process.env.GROQ_API_KEY });
+    if (result.status === 200) { memo.set(text, result); if (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value); }
+  }
   if (result.status !== 200) { res.setHeader('Cache-Control', 'no-store'); return res.status(result.status).json(result.body); }
   // Rove's prompts repeat a lot ("Where are you starting from?"), so the browser may keep the audio.
   res.setHeader('Cache-Control', 'private, max-age=86400');
