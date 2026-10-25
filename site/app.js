@@ -4112,6 +4112,17 @@ function unlockAudio() {
   try { window.RoveVoice?.unlock?.(); } catch { /* no Web Audio */ }
 }
 ['pointerup', 'touchend', 'click', 'keydown'].forEach(type => document.addEventListener(type, unlockAudio, { capture: true, passive: true }));
+/* ?debug=1: shows Rove's audio diagnostics on screen, so a phone screenshot explains a silent voice. */
+if (/[?&]debug=1\b/.test(location.search)) {
+  const box = document.createElement('pre');
+  box.id = 'roveAudioDebug';
+  box.setAttribute('aria-hidden', 'true');
+  box.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:3000;max-height:38vh;overflow:auto;margin:0;padding:8px;background:rgba(0,0,0,.85);color:#9fe0b4;font:11px/1.35 ui-monospace,Menlo,monospace;border-radius:10px;white-space:pre-wrap;pointer-events:none';
+  const paint = () => { box.textContent = `ua ${navigator.userAgent.match(/(iPhone|iPad|Mac|Android)[^;)]*/)?.[0] || ''} | session ${navigator.audioSession?.type || 'n/a'} | activated ${navigator.userActivation?.hasBeenActive ?? '?'}\n` + (window.__roveAudioLog || []).join('\n'); box.scrollTop = box.scrollHeight; };
+  window.addEventListener('rove-audio-log', paint);
+  document.addEventListener('DOMContentLoaded', () => { document.body.appendChild(box); paint(); });
+  if (document.body) { document.body.appendChild(box); paint(); }
+}
 function voiceCancelAll() {
   voiceTurn++;
   try { recognition?.abort(); } catch { /* none active */ }

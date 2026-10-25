@@ -100,8 +100,9 @@
             if (my !== generation) return;
           }
           set({ state: 'done', text: message });
-        } catch {
+        } catch (e) {
           if (my !== generation) return; // stopped on purpose
+          dbg(`natural voice failed (${e?.message || e}); using device voice`);
           // Never go silent: say whatever is left with the device voice.
           speakDevice(parts.slice(i).join(' '), opts, message);
         }
@@ -119,6 +120,7 @@
       // window as hidden, and they speak normally there. Refusing here silenced Read route choices aloud.
       // Just cancelled (this tick) counts as busy: WebKit drops speak() straight after cancel().
       audioSession('playback');
+      dbg(`device voice speak "${message.slice(0, 24)}"`);
       const justCancelled = now() - lastCancel < 50;
       const busy = Boolean(synth.speaking || synth.pending);
       const my = ++generation;
@@ -141,6 +143,7 @@
           u.rate = opts.rate || 0.95;
           if (voice) u.voice = voice;
           u.onstart = () => {
+            if (i === 0) dbg('device voice started');
             if (my !== generation || started) return;
             started = true; disarm();
             set({ state: 'speaking', text: shown });
@@ -152,6 +155,7 @@
           };
           u.onerror = e => {
             const err = e?.error || 'unknown';
+            dbg(`device voice error ${err}`);
             if (err === 'interrupted' || err === 'canceled') return;
             fail(err);
           };
@@ -230,7 +234,17 @@
   /* iPhone Safari (16.4+): after the microphone has been used, page audio can be sent to the earpiece
    * at a whisper. 'playback' routes Rove's voice to the loudspeaker (and plays with the Silent switch
    * on); 'play-and-record' is set only while the microphone is open. No-op elsewhere. */
+  /* Audio diagnostics: what really happened, for ?debug=1 on a phone. */
+  function dbg(message) {
+    try {
+      const log = (root.__roveAudioLog ||= []);
+      log.push(`${new Date().toISOString().slice(14, 23)} ${message}`);
+      if (log.length > 40) log.shift();
+      root.dispatchEvent?.(new Event('rove-audio-log'));
+    } catch { /* never break speech for a log */ }
+  }
   function audioSession(type) {
+    dbg(`session ${type}`);
     try { const s = typeof navigator !== 'undefined' && navigator.audioSession; if (s && s.type !== type) s.type = type; } catch { /* unsupported */ }
   }
 
@@ -241,11 +255,12 @@
     if (typeof Audio === 'undefined' || typeof fetch === 'undefined') return null;
     const el = new Audio();
     el.preload = 'auto';
-    let ok = null, rejectPlay = null;
+    let ok = null, rejectPlay = null, unlocking = null;
     const cache = new Map();
     const voice = {};
     fetch('/api/v2/tts', { cache: 'no-store' }).then(r => r.json()).then(j => {
       if (ok !== false) ok = j?.available === true;
+      dbg(`natural voice ${ok ? 'available' : 'unavailable'}`);
       // Fetch Rove's fixed opening lines now, so the first question plays straight after the tap.
       if (ok) (root.RovePreloadSpeech || []).forEach(t => { chunk(t, 190).forEach(part => voice.audio(part).catch(() => {})); });
     }).catch(() => { ok = false; });
@@ -257,6 +272,7 @@
         if (cache.has(text)) return Promise.resolve(cache.get(text));
         return fetch('/api/v2/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal: AbortSignal.timeout ? AbortSignal.timeout(9000) : undefined })
           .then(async r => {
+            dbg(`tts ${r.status} "${text.slice(0, 24)}"`);
             if (!r.ok) { if ([400, 403, 404, 503].includes(r.status)) ok = false; throw new Error(`tts ${r.status}`); }
             const blob = await r.blob();
             if (cache.size > 80) cache.delete(cache.keys().next().value);
@@ -264,28 +280,38 @@
             return blob;
           });
       },
-      play(blob, onStart) {
+      async play(blob, onStart) {
         audioSession('playback');
+        // Let the first-tap unlock clip finish starting: stopping it early leaves the player locked on iPhone.
+        if (unlocking) { await unlocking.catch(() => {}); unlocking = null; }
         return new Promise((resolve, reject) => {
           const url = URL.createObjectURL(blob);
           let timer = null;
           const clean = () => { clearTimeout(timer); el.onended = el.onerror = el.onplaying = null; rejectPlay = null; setTimeout(() => URL.revokeObjectURL(url), 1000); };
           rejectPlay = () => { clean(); reject(Object.assign(new Error('stopped'), { name: 'AbortError' })); };
-          el.onplaying = () => { el.onplaying = null; onStart?.(); };
-          el.onended = () => { clean(); resolve(); };
-          el.onerror = () => { clean(); reject(new Error('audio-error')); };
+          el.onplaying = () => { el.onplaying = null; dbg('audio playing'); onStart?.(); };
+          el.onended = () => { dbg('audio ended'); clean(); resolve(); };
+          el.onerror = () => { dbg(`audio error ${el.error?.code || ''}`); clean(); reject(new Error('audio-error')); };
           el.src = url;
           const started = el.play();
-          timer = setTimeout(() => { if (el.paused) { clean(); reject(new Error('no-start')); } }, 4000);
-          started?.catch?.(e => { clean(); reject(e); });
+          timer = setTimeout(() => { if (el.paused) { dbg('audio did not start in 4 s'); clean(); reject(new Error('no-start')); } }, 4000);
+          started?.then?.(() => dbg('play() ok'), () => {});
+          started?.catch?.(e => { dbg(`play() rejected ${e?.name || e}`); clean(); reject(e); });
         });
       },
-      stop() { try { el.pause(); } catch { /* not playing */ } rejectPlay?.(); },
-      unlock() { try { audioSession('playback'); el.src = SILENT; el.play()?.catch?.(() => {}); } catch { /* unsupported */ } }
+      stop() { if (!unlocking) { try { el.pause(); } catch { /* not playing */ } } rejectPlay?.(); },
+      unlock() {
+        try {
+          audioSession('playback');
+          el.src = SILENT;
+          unlocking = Promise.resolve(el.play()).then(() => dbg('unlock ok'), e => { dbg(`unlock failed ${e?.name || e}`); throw e; });
+          unlocking.catch(() => {});
+        } catch (e) { dbg(`unlock threw ${e?.name || e}`); }
+      }
     });
   }
 
-  const api = { chunk, createSpeaker, recognitionFallback, audioSession };
+  const api = { chunk, createSpeaker, recognitionFallback, audioSession, dbg };
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     api.speaker = createSpeaker({
       synth: window.speechSynthesis,
