@@ -67,7 +67,7 @@ test('demo is labeled simulated everywhere and never uses location', () => {
 
 test('trip state survives a reload and expires', () => {
   assert.match(fn('saveTrip'), /store\.set\(TRIP_KEY/);
-  assert.match(fn('loadTrip'), /12 \* 3600e3/);
+  assert.match(fn('loadTrip'), /90 \* 60e3/);
   assert.match(fn('endTrip'), /clearTrip\(\)/);
 });
 

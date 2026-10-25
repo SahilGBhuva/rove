@@ -169,3 +169,9 @@ test('a trip never starts from Rove hearing itself: the mic waits for speech to 
   assert.match(app, /if \(w\.trim\(\)\.split\(\/\\s\+\/\)\.length > 5\) return null;/, 'a long sentence is not a yes or a no');
   assert.match(app, /voiceIntent\?\.reask && error === 'no-speech'/, 'silence at a question asks once more');
 });
+
+test('old trips are not offered again, and trip history can be cleared', () => {
+  assert.match(app, /Date\.now\(\) - t\.savedAt > 90 \* 60e3/, 'a trip untouched for 90 minutes is history');
+  assert.match(app, /case 'clear-history': \{\s*clearTrip\(\);\s*try \{ localStorage\.removeItem\(PLACES_KEY\.recent\)/);
+  assert.match(app, /Clear trip history/);
+});

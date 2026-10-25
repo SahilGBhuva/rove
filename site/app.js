@@ -2430,6 +2430,7 @@ function viewAccess() {
         ${setting('haptics', 'Vibration', 'For reminders and confirmations, on phones that support it. iPhone Safari does not.', accessPreference('haptics', true))}
       </div>
       <button type="button" class="rg-quiet" data-action="access-demo">${rgIcon('speaker')}<span>Test Rove voice</span></button>
+      <button type="button" class="rg-quiet" data-action="clear-history">${rgIcon('clock')}<span>Clear trip history</span></button>
       ${window.RoveMode ? (() => { const audio = RoveMode.get() === 'audio'; return `<div class="rg-group rg-mode-setting" role="group" aria-labelledby="rgModeTitle"><p class="rg-switch-text"><strong id="rgModeTitle">Display</strong><span class="rg-switch-detail">${audio ? 'Audio-first: no map, spoken guidance and large controls.' : 'Map view: map with a sliding panel. Spoken guidance still works.'}</span></p><button type="button" class="rg-quiet" data-action="mode-set" data-mode="${audio ? 'classic' : 'audio'}">${audio ? 'Switch to map view' : 'Switch to audio-first'}</button></div>`; })() : ''}
       <p class="rg-body rg-fine">When you speak a destination, the recording is sent to a speech-to-text service (Groq Whisper) to turn it into text. Rove does not store recordings. If that service is unavailable, Rove uses your browser's own voice input.</p>
     </section>
@@ -3404,7 +3405,8 @@ function loadTrip() {
   const t = store.get(TRIP_KEY, null);
   if (!t || t.v !== 1 || !Array.isArray(t.it?.legs) || !t.it.legs.length || !Number.isInteger(t.gs?.index)) return null;
   const end = Date.parse(t.it.endTime);
-  if (Date.now() - t.savedAt > 12 * 3600e3 || !Number.isFinite(end) || Date.now() + (t.clockOffset || 0) > end + 2 * 3600e3) { clearTrip(); return null; }
+  // Only a trip in progress is offered again: one untouched for 90 minutes is history, not a trip.
+  if (Date.now() - t.savedAt > 90 * 60e3 || !Number.isFinite(end) || Date.now() + (t.clockOffset || 0) > end + 2 * 3600e3) { clearTrip(); return null; }
   return t;
 }
 function clearTrip() { try { localStorage.removeItem(TRIP_KEY); } catch { /* storage unavailable */ } }
@@ -4494,6 +4496,12 @@ function handleAction(el) {
     case 'access-nearby': pushView({name:'accessNearby'},{detent:'full'}); if(!state.userLocation) locate(); break;
     case 'access-refresh-location': locate(); break;
     case 'access-select-stop': { const place=placeFor(el.dataset.agency,el.dataset.stop); if(place){announceAccess('Selected '+place.s.n+'. Confirm the physical stop and direction before boarding.'); openStop(el.dataset.agency,el.dataset.stop);} break; }
+    case 'clear-history': {
+      clearTrip();
+      try { localStorage.removeItem(PLACES_KEY.recent); } catch { /* storage unavailable */ }
+      speakText('Trip history cleared. Recent places and unfinished trips are gone.');
+      break;
+    }
     case 'access-stop-speech': stopSpeaking(); announceAccess('Speech stopped.'); break;
     case 'access-dictate': voiceDestination(); break;
     case 'access-all-routes': {

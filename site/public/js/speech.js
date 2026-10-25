@@ -40,6 +40,7 @@
   /* env: { synth, Utterance, setTimeout, clearTimeout, isHidden() } (injected for tests). */
   function createSpeaker(env = {}) {
     const synth = env.synth;
+    const natural = env.natural || null;
     const Utterance = env.Utterance;
     const later = env.setTimeout || ((fn, ms) => setTimeout(fn, ms));
     const clear = env.clearTimeout || (id => clearTimeout(id));
@@ -62,17 +63,59 @@
     function stop() {
       generation++;
       disarm();
+      try { natural?.stop(); } catch { /* nothing playing */ }
       retained = [];
       if (supported() && (synth.speaking || synth.pending)) cancel();
       if (status.state === 'speaking' || status.state === 'starting') set({ state: 'stopped', text: status.text });
     }
 
     /* Returns 'started' | 'unsupported' | 'empty' | 'failed'. Never throws. */
+    /* Natural voice first (when the server offers it), the device voice otherwise or on any failure. */
     function speak(text, opts = {}) {
       const message = String(text || '');
+      if (!chunk(message).length) return 'empty';
+      if (natural?.available?.() && !opts.device) return speakNatural(message, opts);
+      return speakDevice(message, opts);
+    }
+
+    /* Plays the natural voice one short part at a time, fetching the next parts while one plays.
+     * Status text is the whole message, so callers waiting for "this prompt is done" still work. */
+    function speakNatural(message, opts) {
+      const my = ++generation;
+      disarm(); retained = [];
+      if (supported() && (synth.speaking || synth.pending)) cancel();
+      natural.stop();
+      set({ state: 'starting', text: message });
+      const parts = chunk(message, 190);
+      const fetched = [];
+      const get = i => (fetched[i] ||= natural.audio(parts[i]));
+      (async () => {
+        let i = 0;
+        try {
+          for (; i < parts.length; i++) {
+            const audio = await get(i);
+            if (my !== generation) return;
+            if (i + 1 < parts.length) get(i + 1);
+            if (i === 0) set({ state: 'speaking', text: message });
+            await natural.play(audio);
+            if (my !== generation) return;
+          }
+          set({ state: 'done', text: message });
+        } catch {
+          if (my !== generation) return; // stopped on purpose
+          // Never go silent: say whatever is left with the device voice.
+          speakDevice(parts.slice(i).join(' '), opts, message);
+        }
+      })();
+      return 'started';
+    }
+
+    function speakDevice(text, opts = {}, label = null) {
+      const message = String(text || '');
+      const shown = label ?? message;
       const parts = chunk(message, opts.maxChunk);
       if (!parts.length) return 'empty';
-      if (!supported()) { set({ state: 'unsupported', text: message }); return 'unsupported'; }
+      if (!supported()) { set({ state: 'unsupported', text: shown }); return 'unsupported'; }
       // Do NOT refuse when document.hidden: macOS Chrome and Dia report a visible but partly covered
       // window as hidden, and they speak normally there. Refusing here silenced Read route choices aloud.
       // Just cancelled (this tick) counts as busy: WebKit drops speak() straight after cancel().
@@ -83,11 +126,11 @@
       retained = [];
       let started = false, retried = false;
       const voice = pickVoice();
-      set({ state: 'starting', text: message });
+      set({ state: 'starting', text: shown });
       const fail = reason => {
         if (my !== generation) return;
         disarm(); retained = [];
-        set({ state: 'failed', text: message, reason });
+        set({ state: 'failed', text: shown, reason });
       };
       const queue = () => {
         if (my !== generation) return;
@@ -100,12 +143,12 @@
           u.onstart = () => {
             if (my !== generation || started) return;
             started = true; disarm();
-            set({ state: 'speaking', text: message });
+            set({ state: 'speaking', text: shown });
           };
           u.onend = () => {
             if (my !== generation || i !== parts.length - 1) return;
             retained = [];
-            set({ state: 'done', text: message });
+            set({ state: 'done', text: shown });
           };
           u.onerror = e => {
             const err = e?.error || 'unknown';
@@ -133,8 +176,14 @@
     function pickVoice() {
       let voices = [];
       try { voices = synth.getVoices?.() || []; } catch { voices = []; }
+      if (!voices.length) return null;
+      // The most human-sounding English voice the device has: Apple Premium/Enhanced, Edge "Natural", Siri.
+      const en = voices.filter(v => /^en[-_]?(US|GB|AU|CA|IE)?/i.test(v.lang || ''));
+      const rank = v => (/premium/i.test(v.name) ? 40 : 0) + (/enhanced|natural|neural|siri/i.test(v.name) ? 30 : 0) + (/^en[-_]US/i.test(v.lang) ? 5 : 0) + (v.localService ? 3 : 0) + (/google/i.test(v.name) ? -2 : 0) + (/compact|novelty|bells|bad news|whisper|zarvox|trinoids|bahh|boing|bubbles|cellos|jester|organ|superstar|wobble|albert|fred|junior|ralph|kathy|grandma|grandpa|eddy|flo|reed|rocko|sandy|shelley/i.test(v.name) ? -100 : 0);
+      const best = en.slice().sort((a, b) => rank(b) - rank(a))[0];
+      if (best && rank(best) >= 30) return best;
       const def = voices.find(v => v.default);
-      if (!voices.length || (def && def.localService !== false)) return null; // the default is fine
+      if (def && def.localService !== false) return null; // the default is fine
       return voices.find(v => v.localService && /^en[-_]US/i.test(v.lang)) || voices.find(v => v.localService && /^en/i.test(v.lang)) || null;
     }
 
@@ -147,6 +196,7 @@
       try {
         if (synth.pending && !synth.speaking) cancel(); // anything queued before the tap would block
         try { if (synth.paused) synth.resume(); } catch { /* resume unsupported */ }
+        try { natural?.unlock?.(); } catch { /* no audio element */ }
         primer = new Utterance(' ');
         primer.volume = 0;
         primer.lang = 'en-US';
@@ -177,12 +227,56 @@
     return { action: 'fail', code: onLine ? 'voice-service' : 'offline' };
   }
 
+  /* Rove's natural (human-sounding) voice: short parts synthesized on the server (/api/v2/tts) and
+   * played through one audio element, which the first tap unlocks on iPhone. Turns itself off for the
+   * visit if the server says it is not available, so the device voice takes over without delay. */
+  function naturalVoice() {
+    if (typeof Audio === 'undefined' || typeof fetch === 'undefined') return null;
+    const el = new Audio();
+    el.preload = 'auto';
+    let ok = null, rejectPlay = null;
+    const cache = new Map();
+    fetch('/api/v2/tts', { cache: 'no-store' }).then(r => r.json()).then(j => { if (ok !== false) ok = j?.available === true; }).catch(() => { ok = false; });
+    const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+    return {
+      available: () => ok === true,
+      audio(text) {
+        if (cache.has(text)) return Promise.resolve(cache.get(text));
+        return fetch('/api/v2/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal: AbortSignal.timeout ? AbortSignal.timeout(9000) : undefined })
+          .then(async r => {
+            if (!r.ok) { if ([400, 403, 404, 503].includes(r.status)) ok = false; throw new Error(`tts ${r.status}`); }
+            const blob = await r.blob();
+            if (cache.size > 80) cache.delete(cache.keys().next().value);
+            cache.set(text, blob);
+            return blob;
+          });
+      },
+      play(blob) {
+        return new Promise((resolve, reject) => {
+          const url = URL.createObjectURL(blob);
+          let timer = null;
+          const clean = () => { clearTimeout(timer); el.onended = el.onerror = null; rejectPlay = null; setTimeout(() => URL.revokeObjectURL(url), 1000); };
+          rejectPlay = () => { clean(); reject(Object.assign(new Error('stopped'), { name: 'AbortError' })); };
+          el.onended = () => { clean(); resolve(); };
+          el.onerror = () => { clean(); reject(new Error('audio-error')); };
+          el.src = url;
+          const started = el.play();
+          timer = setTimeout(() => { if (el.paused) { clean(); reject(new Error('no-start')); } }, 4000);
+          started?.catch?.(e => { clean(); reject(e); });
+        });
+      },
+      stop() { try { el.pause(); } catch { /* not playing */ } rejectPlay?.(); },
+      unlock() { try { el.src = SILENT; el.play()?.catch?.(() => {}); } catch { /* unsupported */ } }
+    };
+  }
+
   const api = { chunk, createSpeaker, recognitionFallback };
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     api.speaker = createSpeaker({
       synth: window.speechSynthesis,
       Utterance: window.SpeechSynthesisUtterance,
-      isHidden: () => document.hidden
+      isHidden: () => document.hidden,
+      natural: naturalVoice()
     });
   }
   root.RoveSpeech = Object.freeze(api);
